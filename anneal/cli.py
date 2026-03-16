@@ -14,7 +14,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 
-from anneal.engine.environment import GitError
+from anneal.engine.environment import GitEnvironment, GitError
 from anneal.engine.registry import Registry, RegistryError, init_project
 from anneal.engine.scope import ScopeError, compute_scope_hash, load_scope, validate_scope
 from anneal.engine.types import (
@@ -25,6 +25,7 @@ from anneal.engine.types import (
     DomainTier,
     EvalConfig,
     EvalMode,
+    ExperimentRecord,
     OptimizationTarget,
 )
 
@@ -212,6 +213,140 @@ def _handle_register(args: argparse.Namespace) -> None:
     )
 
 
+def _handle_run(args: argparse.Namespace) -> None:
+    """Handle ``anneal run``."""
+    from anneal.engine.agent import AgentInvoker  # noqa: F811
+    from anneal.engine.eval import EvalEngine  # noqa: F811
+    from anneal.engine.runner import ExperimentRunner  # noqa: F811
+    from anneal.engine.search import GreedySearch  # noqa: F811
+
+    repo_root = _find_repo_root()
+    registry = Registry(repo_root)
+    git = GitEnvironment()
+
+    try:
+        target = registry.get_target(args.target)
+    except RegistryError as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    runner = ExperimentRunner(
+        git=git,
+        agent_invoker=AgentInvoker(),
+        eval_engine=EvalEngine(),
+        search=GreedySearch(),
+        registry=registry,
+    )
+
+    def on_experiment(record: "ExperimentRecord") -> None:
+        style = "green" if record.outcome.value == "KEPT" else "red"
+        console.print(
+            f"  [{style}]{record.outcome.value}[/{style}] "
+            f"score={record.score:.3f} (baseline={record.baseline_score:.3f}) "
+            f"${record.cost_usd:.4f} {record.duration_seconds:.1f}s "
+            f"— {record.hypothesis[:80] if record.hypothesis else 'no hypothesis'}"
+        )
+
+    console.print(
+        Panel(
+            f"Running target [bold]{target.id}[/bold]\n"
+            f"  Eval mode:   {target.eval_mode.value}\n"
+            f"  Worktree:    {target.worktree_path}\n"
+            f"  Branch:      {target.git_branch}",
+            title="anneal run",
+            style="blue",
+        )
+    )
+
+    try:
+        records = asyncio.run(
+            runner.run_loop(
+                target=target,
+                max_experiments=args.experiments,
+                stop_score=args.until,
+                on_experiment=on_experiment,
+            )
+        )
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Interrupted. Current experiment will complete.[/yellow]")
+        runner.request_stop(target.id)
+        records = []
+
+    kept = sum(1 for r in records if r.outcome.value == "KEPT")
+    console.print(
+        Panel(
+            f"Target [bold]{target.id}[/bold] — {len(records)} experiments, {kept} kept",
+            title="anneal run — complete",
+            style="green",
+        )
+    )
+
+
+def _handle_stop(args: argparse.Namespace) -> None:
+    """Handle ``anneal stop``."""
+    console.print(f"[yellow]anneal stop[/yellow] is not yet implemented.")
+    sys.exit(0)
+
+
+def _handle_status(args: argparse.Namespace) -> None:
+    """Handle ``anneal status``."""
+    import json as json_mod
+
+    repo_root = _find_repo_root()
+    registry = Registry(repo_root)
+
+    target_id = args.target
+    if target_id:
+        try:
+            target = registry.get_target(target_id)
+        except RegistryError as exc:
+            console.print(f"[red]{exc}[/red]")
+            sys.exit(1)
+        targets = [target]
+    else:
+        targets = registry.all_targets()
+
+    if not targets:
+        console.print("[yellow]No targets registered.[/yellow]")
+        return
+
+    for target in targets:
+        status_path = Path(target.worktree_path) / ".anneal-status"
+        if status_path.exists():
+            status_data = json_mod.loads(status_path.read_text())
+        else:
+            status_data = {"state": "UNKNOWN", "last_score": target.baseline_score, "experiment_count": 0}
+
+        if getattr(args, "json", False):
+            console.print(json_mod.dumps(status_data, indent=2))
+        else:
+            console.print(
+                f"  [bold]{target.id}[/bold]  "
+                f"score={status_data.get('last_score', '?')}  "
+                f"experiments={status_data.get('experiment_count', 0)}  "
+                f"state={status_data.get('state', 'UNKNOWN')}"
+            )
+
+
+def _handle_list(_args: argparse.Namespace) -> None:
+    """Handle ``anneal list``."""
+    repo_root = _find_repo_root()
+    registry = Registry(repo_root)
+    targets = registry.all_targets()
+
+    if not targets:
+        console.print("[yellow]No targets registered.[/yellow]")
+        return
+
+    for target in targets:
+        console.print(
+            f"  [bold]{target.id}[/bold]  "
+            f"eval={target.eval_mode.value}  "
+            f"score={target.baseline_score:.3f}  "
+            f"branch={target.git_branch}"
+        )
+
+
 def _handle_stub(name: str) -> None:
     """Print a not-yet-implemented message for a stub subcommand."""
     console.print(f"[yellow]anneal {name}[/yellow] is not yet implemented.")
@@ -306,12 +441,12 @@ def main(argv: list[str] | None = None) -> None:
     handlers: dict[str, object] = {
         "init": lambda: _handle_init(args),
         "register": lambda: _handle_register(args),
-        "run": lambda: _handle_stub("run"),
-        "stop": lambda: _handle_stub("stop"),
+        "run": lambda: _handle_run(args),
+        "stop": lambda: _handle_stop(args),
         "resume": lambda: _handle_stub("resume"),
-        "status": lambda: _handle_stub("status"),
+        "status": lambda: _handle_status(args),
         "history": lambda: _handle_stub("history"),
-        "list": lambda: _handle_stub("list"),
+        "list": lambda: _handle_list(args),
     }
 
     try:

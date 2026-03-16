@@ -217,6 +217,8 @@ def _handle_run(args: argparse.Namespace) -> None:
     """Handle ``anneal run``."""
     from anneal.engine.agent import AgentInvoker  # noqa: F811
     from anneal.engine.eval import EvalEngine  # noqa: F811
+    from anneal.engine.knowledge import KnowledgeStore  # noqa: F811
+    from anneal.engine.notifications import NotificationManager  # noqa: F811
     from anneal.engine.runner import ExperimentRunner  # noqa: F811
     from anneal.engine.search import GreedySearch  # noqa: F811
 
@@ -230,12 +232,18 @@ def _handle_run(args: argparse.Namespace) -> None:
         console.print(f"[red]{exc}[/red]")
         sys.exit(1)
 
+    knowledge = KnowledgeStore(repo_root / target.knowledge_path)
+    knowledge.validate_and_repair()
+    notifier = NotificationManager(target.notifications)
+
     runner = ExperimentRunner(
         git=git,
         agent_invoker=AgentInvoker(),
         eval_engine=EvalEngine(),
         search=GreedySearch(),
         registry=registry,
+        knowledge=knowledge,
+        notifications=notifier,
     )
 
     def on_experiment(record: "ExperimentRecord") -> None:

@@ -19,7 +19,10 @@ from pathlib import Path
 from anneal.engine.agent import AgentInvocationError, AgentInvoker, AgentTimeoutError
 from anneal.engine.environment import GitEnvironment
 from anneal.engine.eval import EvalEngine, EvalError
+from anneal.engine.knowledge import KnowledgeStore
+from anneal.engine.notifications import NotificationManager
 from anneal.engine.registry import Registry
+from anneal.engine.safety import pre_experiment_check
 from anneal.engine.scope import enforce_scope, load_scope, verify_scope_hash
 from anneal.engine.search import GreedySearch
 from anneal.engine.types import (
@@ -46,12 +49,16 @@ class ExperimentRunner:
         eval_engine: EvalEngine,
         search: GreedySearch,
         registry: Registry,
+        knowledge: KnowledgeStore | None = None,
+        notifications: NotificationManager | None = None,
     ) -> None:
         self._git = git
         self._agent = agent_invoker
         self._eval = eval_engine
         self._search = search
         self._registry = registry
+        self._knowledge = knowledge
+        self._notifications = notifications
         self._stop_flags: set[str] = set()
         self._stop_lock = threading.Lock()
 
@@ -98,8 +105,10 @@ class ExperimentRunner:
         # Read artifact content for prompt building and stochastic eval
         artifact_content = self._read_artifacts(worktree, target.artifact_paths)
 
-        # Load recent history (stub: empty for now, knowledge store not yet wired)
+        # Load recent history from knowledge store
         history: list[ExperimentRecord] = []
+        if self._knowledge:
+            history = self._knowledge.load_records(limit=10)
 
         # 3. Invoke agent
         prompt = self._build_prompt(target, history)
@@ -282,8 +291,8 @@ class ExperimentRunner:
 
         duration = time.monotonic() - start_time
 
-        # 8. Build and return ExperimentRecord
-        return ExperimentRecord(
+        # 8. Build ExperimentRecord
+        record = ExperimentRecord(
             id=experiment_id,
             target_id=target.id,
             git_sha=git_sha,
@@ -305,6 +314,16 @@ class ExperimentRunner:
             cost_usd=cost_usd,
             bootstrap_seed=0,
         )
+
+        # 9. Persist to knowledge store + check consolidation
+        if self._knowledge:
+            self._knowledge.append_record(record)
+            self._knowledge.update_index(record)
+            if self._knowledge.should_consolidate():
+                self._knowledge.consolidate()
+                self._knowledge.regenerate_learnings()
+
+        return record
 
     # ------------------------------------------------------------------
     # Experiment loop
@@ -341,6 +360,28 @@ class ExperimentRunner:
                     consecutive_failures,
                 )
                 await self._write_status(target, RunnerState.HALTED, records[-1] if records else None)
+                if self._notifications:
+                    await self._notifications.notify_state(
+                        target.id, RunnerState.HALTED,
+                        f"{consecutive_failures} consecutive failures",
+                        score=target.baseline_score,
+                        experiment_count=len(records),
+                    )
+                break
+
+            # Pre-experiment safety checks
+            safe, reason = pre_experiment_check(
+                target, Path(target.worktree_path), context_tokens=0,
+            )
+            if not safe:
+                logger.warning("Target %s paused: %s", target.id, reason)
+                await self._write_status(target, RunnerState.PAUSED, records[-1] if records else None)
+                if self._notifications:
+                    await self._notifications.notify_state(
+                        target.id, RunnerState.PAUSED, reason,
+                        score=target.baseline_score,
+                        experiment_count=len(records),
+                    )
                 break
 
             # Run one experiment
@@ -357,6 +398,13 @@ class ExperimentRunner:
             # Callback
             if on_experiment is not None:
                 on_experiment(record)
+
+            # Milestone notification
+            if self._notifications and record.outcome is Outcome.KEPT:
+                kept_count = sum(1 for r in records if r.outcome is Outcome.KEPT)
+                await self._notifications.notify_milestone(
+                    target.id, kept_count, record.score,
+                )
 
             # Update status
             state = RunnerState.RUNNING
@@ -417,6 +465,11 @@ class ExperimentRunner:
         # Format recent history (last 5)
         history_text = self._format_history(history[-5:])
 
+        # Knowledge context (retrieved similar experiments + learnings)
+        knowledge_context = ""
+        if self._knowledge:
+            knowledge_context = self._knowledge.get_context()
+
         # Assemble prompt
         parts = [
             program_content,
@@ -424,10 +477,14 @@ class ExperimentRunner:
             "## Previous Results",
             "",
             history_text if history_text else "No previous experiments.",
+        ]
+        if knowledge_context:
+            parts.extend(["", knowledge_context])
+        parts.extend([
             "",
             "--- ARTIFACT CONTENT ---",
             artifact_content,
-        ]
+        ])
 
         return "\n".join(parts)
 

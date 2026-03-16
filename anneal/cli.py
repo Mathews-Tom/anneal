@@ -347,10 +347,102 @@ def _handle_list(_args: argparse.Namespace) -> None:
         )
 
 
-def _handle_stub(name: str) -> None:
-    """Print a not-yet-implemented message for a stub subcommand."""
-    console.print(f"[yellow]anneal {name}[/yellow] is not yet implemented.")
-    sys.exit(0)
+def _handle_resume(args: argparse.Namespace) -> None:
+    """Handle ``anneal resume``."""
+    repo_root = _find_repo_root()
+    registry = Registry(repo_root)
+
+    try:
+        target = registry.get_target(args.target)
+    except RegistryError as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    if args.increase_budget and target.budget_cap:
+        target.budget_cap.max_usd_per_day += args.increase_budget
+        console.print(f"  Budget increased to ${target.budget_cap.max_usd_per_day:.2f}/day")
+
+    if args.reset_failures:
+        console.print("  Failure counter will reset on next run")
+
+    registry.update_target(target)
+    console.print(
+        Panel(
+            f"Target [bold]{target.id}[/bold] resumed.\n"
+            f"  Run [bold]anneal run --target {target.id}[/bold] to continue.",
+            title="anneal resume",
+            style="green",
+        )
+    )
+
+
+def _handle_reregister(args: argparse.Namespace) -> None:
+    """Handle ``anneal re-register``."""
+    from anneal.engine.scope import compute_scope_hash as _compute_hash
+
+    repo_root = _find_repo_root()
+    registry = Registry(repo_root)
+
+    try:
+        target = registry.get_target(args.target)
+    except RegistryError as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    scope_path = repo_root / target.scope_path
+    new_hash = _compute_hash(scope_path)
+    target.scope_hash = new_hash
+    registry.update_target(target)
+
+    console.print(
+        Panel(
+            f"Target [bold]{target.id}[/bold] re-registered.\n"
+            f"  Scope hash updated: {new_hash[:16]}...",
+            title="anneal re-register",
+            style="green",
+        )
+    )
+
+
+def _handle_history(args: argparse.Namespace) -> None:
+    """Handle ``anneal history``."""
+    import json as json_mod
+    from anneal.engine.knowledge import KnowledgeStore
+
+    repo_root = _find_repo_root()
+    registry = Registry(repo_root)
+
+    try:
+        target = registry.get_target(args.target)
+    except RegistryError as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    store = KnowledgeStore(repo_root / target.knowledge_path)
+    records = store.load_records(limit=args.limit)
+
+    if args.outcome:
+        records = [r for r in records if r.outcome.value.lower() == args.outcome.lower()]
+
+    if not records:
+        console.print("[yellow]No experiment records found.[/yellow]")
+        return
+
+    if getattr(args, "json", False):
+        for r in records:
+            console.print(json_mod.dumps({
+                "id": r.id, "hypothesis": r.hypothesis, "score": r.score,
+                "outcome": r.outcome.value, "cost_usd": r.cost_usd,
+                "duration_seconds": r.duration_seconds,
+            }))
+    else:
+        for r in records:
+            style = "green" if r.outcome.value == "KEPT" else "dim"
+            console.print(
+                f"  [{style}]{r.outcome.value:9s}[/{style}] "
+                f"score={r.score:.3f}  ${r.cost_usd:.4f}  "
+                f"{r.hypothesis[:70] if r.hypothesis else '-'}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -418,7 +510,11 @@ def _build_parser() -> argparse.ArgumentParser:
     history.add_argument("--diff", metavar="EXP_ID", help="Show diff for a specific experiment")
     history.add_argument("--json", action="store_true", help="Output as JSON")
 
-    # -- list (stub) --
+    # -- re-register --
+    rereg = subparsers.add_parser("re-register", help="Re-hash scope after manual edits")
+    rereg.add_argument("--target", required=True, help="Target identifier")
+
+    # -- list --
     subparsers.add_parser("list", help="List all registered targets")
 
     return parser
@@ -443,9 +539,10 @@ def main(argv: list[str] | None = None) -> None:
         "register": lambda: _handle_register(args),
         "run": lambda: _handle_run(args),
         "stop": lambda: _handle_stop(args),
-        "resume": lambda: _handle_stub("resume"),
+        "resume": lambda: _handle_resume(args),
         "status": lambda: _handle_status(args),
-        "history": lambda: _handle_stub("history"),
+        "history": lambda: _handle_history(args),
+        "re-register": lambda: _handle_reregister(args),
         "list": lambda: _handle_list(args),
     }
 

@@ -33,10 +33,10 @@ Autoresearch is a proof-of-concept for one domain (ML training, single GPU, sing
 | Eval          | Single deterministic metric       | Two modes: deterministic (scalar) + stochastic (N×K binary criteria)    |
 | Metric source | Local grep from log               | Local computation, external APIs, real-world feedback                   |
 | Hardware      | NVIDIA GPU required               | Runs anywhere — no GPU needed                                           |
-| Knowledge     | Flat TSV, no cross-session memory | Structured DAG with semantic retrieval and consolidation                |
+| Knowledge     | Flat TSV, no cross-session memory | Structured DAG with semantic retrieval, consolidation, and cross-experiment learning pool |
 | Safety        | git reset                         | Budget caps, failure limits, regression guards, immutable eval boundary |
 
-Five key innovations: stochastic eval framework, multi-target orchestration, knowledge compounding with consolidation, external feedback loop integration, and embeddability (as SaaS feature, CI stage, or always-on service).
+Six key innovations: stochastic eval framework, multi-target orchestration, knowledge compounding with consolidation, cross-experiment learning pool (cross-condition, cross-target, cross-project), external feedback loop integration, and embeddability (as SaaS feature, CI stage, or always-on service).
 
 ## Why This Matters
 
@@ -53,6 +53,18 @@ LLM agents eliminate the bottleneck. They generate informed hypotheses 24/7 (dra
 ### The Compound Advantage
 
 Each experiment produces a learning record: what was tried, why, what happened, whether it was kept. This log becomes a knowledge base that future agents read before generating new hypotheses. After 100 experiments, the agent has a rich corpus of domain-specific learnings. This knowledge transfers across model generations — when Opus 5.0 arrives, hand it the accumulated research log from its predecessors.
+
+### Cross-Experiment Learning
+
+Knowledge compounds not just within a single experimental track, but _across_ them. The Learning Pool architecture enables three levels of cross-pollination:
+
+**Cross-condition** — when multiple search strategies run in parallel (e.g., guided mutation, random search, Bayesian optimization), discoveries from one strategy feed into others. A random mutation that accidentally improves a metric contains a real signal — the guided agent, with its ability to reason about _why_ that worked, can exploit the discovery intentionally.
+
+**Cross-target** — a prompt optimization target discovers "shorter sentences improve legibility." A code optimization target in the same repo applies that pattern to comments and docstrings. Learnings transfer across domains within a project through a shared Learning Pool with scope-based filtering.
+
+**Cross-project** — meta-patterns like "smaller diffs are more likely to be kept" or "agents plateau at ~80% of theoretical max" transfer across all domains. A global knowledge base accumulates these domain-agnostic observations over time, giving new optimization targets a head start.
+
+Each Learning is a distilled observation — not a raw experiment record — with mandatory source attribution (which condition, target, and project produced it). The consuming agent always knows whether it's reading its own history or cross-pollinated insights.
 
 ### Why Not CI/CD?
 

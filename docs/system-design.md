@@ -737,6 +737,93 @@ The ConsolidationRecord is deterministically extracted from experiment records �
 | **Retrieval count**   | K=5 most similar past experiments                                                               | Balances context budget (~2,000 tokens) against information density                                                                  |
 | **Retrieval latency** | <50ms for <10k vectors with numpy cosine                                                        | Not a bottleneck at any realistic experiment count                                                                                   |
 
+## Learning Pool (Cross-Experiment Knowledge Transfer)
+
+### Problem
+
+The Knowledge Store operates per-target: each target has its own `experiments.jsonl`, `learnings.md`, and vector index. When multiple search strategies or optimization targets run concurrently, discoveries in one stream are invisible to others. A random mutation that accidentally improves a criterion contains a real signal that the guided agent could exploit — but only if it can see it.
+
+### Architecture
+
+The Learning Pool provides scope-based knowledge sharing through a single interface:
+
+```python
+class LearningScope(Enum):
+    CONDITION = "condition"    # Same condition only (current behavior)
+    TARGET = "target"         # All conditions within one optimization target
+    PROJECT = "project"       # All targets within one repository
+    GLOBAL = "global"         # All projects (cross-repo meta-patterns)
+
+class LearningSignal(Enum):
+    POSITIVE = "positive"     # Mutation was kept
+    NEGATIVE = "negative"     # Mutation was discarded
+
+@dataclass(frozen=True)
+class Learning:
+    observation: str                   # Deterministic description of what happened
+    signal: LearningSignal
+    source_condition: str              # Attribution: which condition
+    source_target: str                 # Attribution: which target
+    source_experiment_ids: list[int]
+    score_delta: float
+    criterion_deltas: dict[str, float] # Per-criterion impact
+    confidence: float                  # 1.0 = single observation
+    tags: list[str]
+```
+
+A `Learning` is a distilled observation extracted deterministically from `ExperimentRecord` fields — no LLM summarization. It captures what changed, what happened, and which criteria were affected, with mandatory source attribution.
+
+### Extraction
+
+After every experiment, the runner extracts a Learning:
+
+- **KEPT experiments** → positive Learning with score delta and top criterion changes
+- **DISCARDED experiments** → negative Learning (signals what didn't work)
+- **Extraction is deterministic**: observation text = hypothesis + score delta + criterion deltas, computed from ExperimentRecord fields
+
+### Retrieval
+
+```python
+class LearningPool:
+    def retrieve(
+        self,
+        scope: LearningScope,
+        k: int = 5,
+        exclude_condition: str | None = None,
+        signal: LearningSignal | None = None,
+    ) -> list[Learning]:
+        """Retrieve top-K learnings by |score_delta| descending."""
+
+    def summarize(self, scope: LearningScope, **kwargs) -> str:
+        """Format as '## Cross-Condition Insights' for agent context."""
+```
+
+For cross-condition retrieval, the guided agent calls `retrieve(scope=TARGET, exclude_condition="guided", k=5)` — returning the top 5 most impactful discoveries from random and bayesian conditions.
+
+### Context Budget
+
+Cross-condition insights are injected as a separate context section at priority 4 (after same-condition history, before eval criteria):
+
+| Slot | Budget | Priority |
+|------|--------|----------|
+| Cross-condition insights (top 5 learnings) | ~800 tokens | 4 |
+
+If context budget is tight, this slot reduces K before other slots are truncated.
+
+### Scope Expansion (Future)
+
+The interface supports three expansion levels without redesign:
+
+- **Cross-target (Phase 2+):** `LearningPool` instantiated per-project. Multiple targets write learnings with `source_target` attribution. Retrieval filters by `LearningScope.PROJECT`.
+- **Cross-project (Phase 4+):** `PersistentLearningPool` with JSONL backing store. Shared global pool file accumulates meta-patterns. Retrieval uses `LearningScope.GLOBAL`.
+- **Semantic retrieval (Phase 2+):** Replace score-delta ranking with vector similarity. Embeds `observation` field. Same `retrieve()` interface, different ranking backend.
+
+### Design Constraints
+
+1. **Random and Bayesian never receive cross-condition data.** Random must remain context-free; Bayesian uses parameter space only. Only guided benefits from cross-pollination — this preserves experimental contrast.
+2. **Attribution is mandatory.** The consuming agent always knows the source condition and target of each Learning.
+3. **Injection is additive.** Cross-condition insights augment same-condition history — they never replace it.
+
 ## Cost Model
 
 ### Cost Formula

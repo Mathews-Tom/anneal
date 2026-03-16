@@ -86,6 +86,8 @@ These are from the broader autoresearch ecosystem — the pattern this engine pr
 
 **Experiment memory** — the agent reads what was tried before, what worked, and what failed. Prevents re-exploring dead ends, enables building on successful patterns. Learnings consolidate every 50 experiments to keep context manageable.
 
+**Cross-experiment learning** — when multiple search strategies or optimization targets run in parallel, discoveries cross-pollinate through a Learning Pool. A random mutation that accidentally improves a metric gets surfaced to the guided agent, which can reason about _why_ it worked and exploit the pattern. This extends across targets (prompt learnings inform code optimization) and across projects (meta-patterns accumulate globally).
+
 **Safety** — immutable eval boundary (the agent cannot modify its own scoring), budget caps, failure limits, time-boxing, regression guards. The `scope.yaml` declares what's mutable and what's not. The eval is always immutable.
 
 ## The Risk That Kills Most Attempts

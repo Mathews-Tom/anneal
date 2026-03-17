@@ -62,6 +62,7 @@ class AgentInvoker:
             "claude",
             "-p",
             "--output-format", "json",
+            "--no-session-persistence",
             "--allowedTools", allowed_tools,
             "--max-budget-usd", str(config.max_budget_usd),
             "--model", config.model,
@@ -106,7 +107,7 @@ class AgentInvoker:
                 f"Invalid JSON response from Claude Code: {exc}"
             ) from exc
 
-        cost_usd = float(response.get("cost_usd", 0.0))
+        cost_usd = float(response.get("total_cost_usd", response.get("cost_usd", 0.0)))
         usage = response.get("usage", {})
         input_tokens = int(usage.get("input_tokens", 0))
         output_tokens = int(usage.get("output_tokens", 0))

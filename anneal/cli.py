@@ -266,6 +266,20 @@ def _handle_register(args: argparse.Namespace) -> None:
         console.print(f"[red]Registration failed: {exc}[/red]")
         sys.exit(1)
 
+    # Run baseline eval for deterministic targets
+    if eval_mode is EvalMode.DETERMINISTIC and deterministic_eval is not None:
+        from anneal.engine.eval import DeterministicEvaluator
+        worktree_full = repo_root / target.worktree_path
+        try:
+            baseline_result = asyncio.run(
+                DeterministicEvaluator().evaluate(worktree_full, deterministic_eval)
+            )
+            target.baseline_score = baseline_result.score
+            Registry(repo_root).update_target(target)
+            console.print(f"  Baseline eval: {baseline_result.score}")
+        except Exception as exc:
+            console.print(f"  [yellow]Baseline eval failed: {exc}. Set manually via anneal configure --target {target.id} --baseline <score>[/yellow]")
+
     console.print(
         Panel(
             f"Registered target [bold]{target.id}[/bold]\n\n"
@@ -568,6 +582,10 @@ def _handle_configure(args: argparse.Namespace) -> None:
         changes.append(f"  base_url = {args.base_url}")
         console.print(f"  [dim]Note: base_url support requires setting OPENAI_BASE_URL={args.base_url} env var[/dim]")
 
+    if getattr(args, "baseline", None) is not None:
+        target.baseline_score = args.baseline
+        changes.append(f"  baseline_score = {args.baseline}")
+
     if args.time_budget is not None:
         target.time_budget_seconds = args.time_budget
         changes.append(f"  time_budget = {args.time_budget}s")
@@ -834,6 +852,7 @@ def _build_parser() -> argparse.ArgumentParser:
     conf.add_argument("--evaluator-model", help="Set evaluator model")
     conf.add_argument("--generation-model", help="Set sample generation model (stochastic)")
     conf.add_argument("--base-url", help="Set custom API base URL (for local LLMs, e.g., http://localhost:11434/v1)")
+    conf.add_argument("--baseline", type=float, help="Set baseline score manually")
     conf.add_argument("--time-budget", type=int, help="Set time budget per experiment (seconds)")
     conf.add_argument("--max-failures", type=int, help="Set max consecutive failures before HALT")
 

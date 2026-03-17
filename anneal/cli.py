@@ -219,8 +219,8 @@ def _handle_register(args: argparse.Namespace) -> None:
         budget_cap=budget_cap,
     )
 
-    # Registration-time warnings (3.9)
-    if interval < target.time_budget_seconds * 1.5:
+    # Registration-time warnings (3.9) — only warn if user explicitly set --interval
+    if args.interval is not None and interval < target.time_budget_seconds * 1.5:
         console.print(
             f"[yellow]Warning: loop_interval ({interval}s) < time_budget × 1.5 "
             f"({target.time_budget_seconds * 1.5:.0f}s). Experiments may overlap.[/yellow]"

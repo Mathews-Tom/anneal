@@ -330,122 +330,120 @@ def _handle_run(args: argparse.Namespace) -> None:
     if overrides:
         console.print(f"  [dim]Runtime overrides: {', '.join(set(overrides))}[/dim]")
 
-    target = targets[0]  # For single-target path below; multi-target loops over all
+    for target in targets:
+        knowledge = KnowledgeStore(repo_root / target.knowledge_path)
+        knowledge.validate_and_repair()
+        notifier = NotificationManager(target.notifications)
 
-    knowledge = KnowledgeStore(repo_root / target.knowledge_path)
-    knowledge.validate_and_repair()
-    notifier = NotificationManager(target.notifications)
-
-    # Select search strategy
-    if getattr(args, "search", None) == "annealing":
-        from anneal.engine.search import SimulatedAnnealingSearch  # noqa: F811
-        search_strategy = SimulatedAnnealingSearch()
-        overrides.append("search=annealing")
-    else:
-        search_strategy = GreedySearch()
-
-    runner = ExperimentRunner(
-        git=git,
-        agent_invoker=AgentInvoker(),
-        eval_engine=EvalEngine(),
-        search=search_strategy,
-        registry=registry,
-        repo_root=repo_root,
-        knowledge=knowledge,
-        notifications=notifier,
-    )
-
-    max_exp = args.experiments or 0
-    total_cost = 0.0
-    best_score = target.baseline_score
-    kept_count = 0
-
-    # Progress bar with inline status
-    progress = Progress(
-        SpinnerColumn("dots"),
-        TextColumn(f"[bold cyan]{target.id}[/]"),
-        BarColumn(bar_width=30),
-        MofNCompleteColumn(),
-        TextColumn("{task.fields[status]}"),
-        TimeElapsedColumn(),
-        console=console,
-    )
-    task_id = progress.add_task(
-        target.id,
-        total=max_exp if max_exp > 0 else None,
-        status=f"baseline={target.baseline_score:.3f}",
-    )
-
-    def on_experiment(record: ExperimentRecord) -> None:
-        nonlocal total_cost, best_score, kept_count
-        total_cost += record.cost_usd
-        if record.outcome.value == "KEPT":
-            best_score = record.score
-            kept_count += 1
-
-        outcome = record.outcome.value
-        if outcome == "KEPT":
-            tag = "[green]KEPT[/]"
-        elif outcome == "BLOCKED":
-            tag = "[yellow]BLKD[/]"
-        elif outcome == "CRASHED":
-            tag = "[red]CRASH[/]"
+        # Select search strategy
+        if getattr(args, "search", None) == "annealing":
+            from anneal.engine.search import SimulatedAnnealingSearch  # noqa: F811
+            search_strategy = SimulatedAnnealingSearch()
         else:
-            tag = "[red]DISC[/]"
+            search_strategy = GreedySearch()
 
-        failure = ""
-        if record.failure_mode:
-            failure = f"  {record.failure_mode[:60]}"
-
-        progress.update(
-            task_id,
-            advance=1,
-            status=f"{tag} {record.score:.3f}  best={best_score:.3f}  ${total_cost:.3f}{failure}",
+        runner = ExperimentRunner(
+            git=git,
+            agent_invoker=AgentInvoker(),
+            eval_engine=EvalEngine(),
+            search=search_strategy,
+            registry=registry,
+            repo_root=repo_root,
+            knowledge=knowledge,
+            notifications=notifier,
         )
 
-    console.print()
-    console.print(
-        Panel(
-            f"Running target [bold]{target.id}[/bold]\n"
-            f"  Eval mode:   {target.eval_mode.value}\n"
-            f"  Worktree:    {target.worktree_path}\n"
-            f"  Branch:      {target.git_branch}",
-            title="anneal run",
-            style="blue",
-        )
-    )
-    console.print()
+        max_exp = args.experiments or 0
+        total_cost = 0.0
+        best_score = target.baseline_score
+        kept_count = 0
 
-    try:
-        with progress:
-            records = asyncio.run(
-                runner.run_loop(
-                    target=target,
-                    max_experiments=args.experiments,
-                    stop_score=args.until,
-                    on_experiment=on_experiment,
-                )
+        # Progress bar with inline status
+        progress = Progress(
+            SpinnerColumn("dots"),
+            TextColumn(f"[bold cyan]{target.id}[/]"),
+            BarColumn(bar_width=30),
+            MofNCompleteColumn(),
+            TextColumn("{task.fields[status]}"),
+            TimeElapsedColumn(),
+            console=console,
+        )
+        task_id = progress.add_task(
+            target.id,
+            total=max_exp if max_exp > 0 else None,
+            status=f"baseline={target.baseline_score:.3f}",
+        )
+
+        def on_experiment(record: ExperimentRecord) -> None:
+            nonlocal total_cost, best_score, kept_count
+            total_cost += record.cost_usd
+            if record.outcome.value == "KEPT":
+                best_score = record.score
+                kept_count += 1
+
+            outcome = record.outcome.value
+            if outcome == "KEPT":
+                tag = "[green]KEPT[/]"
+            elif outcome == "BLOCKED":
+                tag = "[yellow]BLKD[/]"
+            elif outcome == "CRASHED":
+                tag = "[red]CRASH[/]"
+            else:
+                tag = "[red]DISC[/]"
+
+            failure = ""
+            if record.failure_mode:
+                failure = f"  {record.failure_mode[:60]}"
+
+            progress.update(
+                task_id,
+                advance=1,
+                status=f"{tag} {record.score:.3f}  best={best_score:.3f}  ${total_cost:.3f}{failure}",
             )
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Interrupted.[/yellow]")
-        runner.request_stop(target.id)
-        records = []
 
-    console.print()
-    kept = sum(1 for r in records if r.outcome.value == "KEPT")
-    cond_time = sum(r.duration_seconds for r in records)
-    console.print(
-        Panel(
-            f"Target [bold]{target.id}[/bold]\n"
-            f"  Experiments:  {len(records)}\n"
-            f"  Kept:         {kept}\n"
-            f"  Best score:   {best_score:.3f}\n"
-            f"  Total cost:   ${total_cost:.4f}\n"
-            f"  Total time:   {cond_time / 60:.1f} min",
-            title="anneal run — complete",
-            style="green",
+        console.print()
+        console.print(
+            Panel(
+                f"Running target [bold]{target.id}[/bold]\n"
+                f"  Eval mode:   {target.eval_mode.value}\n"
+                f"  Worktree:    {target.worktree_path}\n"
+                f"  Branch:      {target.git_branch}",
+                title="anneal run",
+                style="blue",
+            )
         )
-    )
+        console.print()
+
+        try:
+            with progress:
+                records = asyncio.run(
+                    runner.run_loop(
+                        target=target,
+                        max_experiments=args.experiments,
+                        stop_score=args.until,
+                        on_experiment=on_experiment,
+                    )
+                )
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Interrupted.[/yellow]")
+            runner.request_stop(target.id)
+            records = []
+
+        console.print()
+        kept = sum(1 for r in records if r.outcome.value == "KEPT")
+        cond_time = sum(r.duration_seconds for r in records)
+        console.print(
+            Panel(
+                f"Target [bold]{target.id}[/bold]\n"
+                f"  Experiments:  {len(records)}\n"
+                f"  Kept:         {kept}\n"
+                f"  Best score:   {best_score:.3f}\n"
+                f"  Total cost:   ${total_cost:.4f}\n"
+                f"  Total time:   {cond_time / 60:.1f} min",
+                title="anneal run — complete",
+                style="green",
+            )
+        )
 
 
 def _handle_stop(args: argparse.Namespace) -> None:
@@ -612,10 +610,17 @@ def _handle_dashboard(args: argparse.Namespace) -> None:
         )
     )
 
+    async def _run_dashboard() -> None:
+        await server.start()
+        try:
+            # Keep running until interrupted
+            while True:
+                await asyncio.sleep(1)
+        finally:
+            await server.stop()
+
     try:
-        asyncio.run(server.start())
-        # Keep running until interrupted
-        asyncio.get_event_loop().run_forever()
+        asyncio.run(_run_dashboard())
     except KeyboardInterrupt:
         console.print("\n[yellow]Dashboard stopped.[/yellow]")
 

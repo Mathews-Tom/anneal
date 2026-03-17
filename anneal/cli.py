@@ -219,6 +219,22 @@ def _handle_register(args: argparse.Namespace) -> None:
         budget_cap=budget_cap,
     )
 
+    # Registration-time warnings (3.9)
+    if interval < target.time_budget_seconds * 1.5:
+        console.print(
+            f"[yellow]Warning: loop_interval ({interval}s) < time_budget × 1.5 "
+            f"({target.time_budget_seconds * 1.5:.0f}s). Experiments may overlap.[/yellow]"
+        )
+    for artifact_path in args.artifact:
+        ap = repo_root / artifact_path
+        if ap.exists():
+            size = ap.stat().st_size
+            if size > 50_000:
+                console.print(
+                    f"[yellow]Warning: artifact {artifact_path} is {size / 1024:.0f}KB. "
+                    f"Large artifacts consume context budget and may reduce mutation quality.[/yellow]"
+                )
+
     if args.dry_run:
         console.print(
             Panel(
@@ -285,25 +301,36 @@ def _handle_run(args: argparse.Namespace) -> None:
     registry = Registry(repo_root)
     git = GitEnvironment()
 
-    try:
-        target = registry.get_target(args.target)
-    except RegistryError as exc:
-        console.print(f"[red]{exc}[/red]")
-        sys.exit(1)
+    # Resolve target(s)
+    if args.target:
+        try:
+            targets = [registry.get_target(args.target)]
+        except RegistryError as exc:
+            console.print(f"[red]{exc}[/red]")
+            sys.exit(1)
+    else:
+        targets = registry.all_targets()
+        if not targets:
+            console.print("[yellow]No targets registered. Use 'anneal register' first.[/yellow]")
+            sys.exit(1)
+        console.print(f"  Running all {len(targets)} registered targets sequentially")
 
     # Apply runtime overrides (ephemeral — not persisted to config.toml)
     overrides: list[str] = []
-    if args.samples is not None and target.eval_config.stochastic:
-        target.eval_config.stochastic.sample_count = args.samples
-        overrides.append(f"samples={args.samples}")
-    if args.confidence is not None and target.eval_config.stochastic:
-        target.eval_config.stochastic.confidence_level = args.confidence
-        overrides.append(f"confidence={args.confidence}")
-    if args.agent_budget is not None:
-        target.agent_config.max_budget_usd = args.agent_budget
-        overrides.append(f"agent_budget=${args.agent_budget:.2f}")
+    for target in targets:
+        if args.samples is not None and target.eval_config.stochastic:
+            target.eval_config.stochastic.sample_count = args.samples
+            overrides.append(f"samples={args.samples}")
+        if args.confidence is not None and target.eval_config.stochastic:
+            target.eval_config.stochastic.confidence_level = args.confidence
+            overrides.append(f"confidence={args.confidence}")
+        if args.agent_budget is not None:
+            target.agent_config.max_budget_usd = args.agent_budget
+            overrides.append(f"agent_budget=${args.agent_budget:.2f}")
     if overrides:
-        console.print(f"  [dim]Runtime overrides: {', '.join(overrides)}[/dim]")
+        console.print(f"  [dim]Runtime overrides: {', '.join(set(overrides))}[/dim]")
+
+    target = targets[0]  # For single-target path below; multi-target loops over all
 
     knowledge = KnowledgeStore(repo_root / target.knowledge_path)
     knowledge.validate_and_repair()
@@ -693,7 +720,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # -- run (stub) --
     run = subparsers.add_parser("run", help="Run optimization loop")
-    run.add_argument("--target", required=True, help="Target identifier")
+    run.add_argument("--target", help="Target identifier (omit to run all registered targets)")
     run.add_argument("--experiments", type=int, help="Stop after N experiments")
     run.add_argument("--until", type=float, help="Stop when score reaches threshold")
     run.add_argument("--foreground", action="store_true", help="Block terminal")

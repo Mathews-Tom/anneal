@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from anneal.engine.agent import AgentInvocationError, AgentInvoker, AgentTimeoutError
+from anneal.engine.context import build_target_context
 from anneal.engine.environment import GitEnvironment
 from anneal.engine.eval import EvalEngine, EvalError
 from anneal.engine.knowledge import KnowledgeStore
@@ -118,8 +119,18 @@ class ExperimentRunner:
         if self._knowledge:
             history = self._knowledge.load_records(limit=10)
 
-        # 3. Invoke agent
-        prompt = self._build_prompt(target, history)
+        # 3. Build context with budget assembly and invoke agent
+        knowledge_context = ""
+        if self._knowledge:
+            knowledge_context = self._knowledge.get_context()
+
+        prompt, context_tokens = build_target_context(
+            target=target,
+            worktree_path=worktree,
+            repo_root=self._repo_root or worktree,
+            history=history,
+            knowledge_context=knowledge_context,
+        )
         try:
             agent_result = await self._agent.invoke(
                 target.agent_config,

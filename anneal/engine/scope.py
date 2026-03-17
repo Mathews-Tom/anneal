@@ -169,17 +169,26 @@ def _is_path_editable(file_path: str, editable: list[str]) -> bool:
     - Directory prefix: "src/components/" matches "src/components/Button.tsx"
       (editable entry ends with "/")
     - Glob pattern: fnmatch for entries containing "*" or "?"
+    - Parent directory: "examples/" is allowed if any editable entry starts
+      with "examples/" (git reports untracked directories as a single entry)
     """
+    # Normalize: git status may report directories with trailing /
+    clean_path = file_path.rstrip("/")
+
     for pattern in editable:
-        # Directory prefix match
-        if pattern.endswith("/") and file_path.startswith(pattern):
+        # Directory prefix match (editable is a directory pattern)
+        if pattern.endswith("/") and clean_path.startswith(pattern.rstrip("/")):
             return True
         # Glob pattern match
         if "*" in pattern or "?" in pattern:
-            if fnmatch.fnmatch(file_path, pattern):
+            if fnmatch.fnmatch(clean_path, pattern):
                 return True
         # Exact match
-        if file_path == pattern:
+        if clean_path == pattern:
+            return True
+        # Parent directory match: file_path is a parent dir of an editable entry
+        # (git status reports "?? examples/" when examples/skill-diagram/SKILL.md is new)
+        if clean_path and pattern.startswith(clean_path + "/"):
             return True
     return False
 

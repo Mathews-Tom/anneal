@@ -336,11 +336,19 @@ def _handle_run(args: argparse.Namespace) -> None:
     knowledge.validate_and_repair()
     notifier = NotificationManager(target.notifications)
 
+    # Select search strategy
+    if getattr(args, "search", None) == "annealing":
+        from anneal.engine.search import SimulatedAnnealingSearch  # noqa: F811
+        search_strategy = SimulatedAnnealingSearch()
+        overrides.append("search=annealing")
+    else:
+        search_strategy = GreedySearch()
+
     runner = ExperimentRunner(
         git=git,
         agent_invoker=AgentInvoker(),
         eval_engine=EvalEngine(),
-        search=GreedySearch(),
+        search=search_strategy,
         registry=registry,
         repo_root=repo_root,
         knowledge=knowledge,
@@ -569,6 +577,34 @@ def _handle_configure(args: argparse.Namespace) -> None:
     )
 
 
+def _handle_dashboard(args: argparse.Namespace) -> None:
+    """Handle ``anneal dashboard``."""
+    from anneal.engine.dashboard import DashboardServer, get_event_bus
+
+    event_bus = get_event_bus()
+    server = DashboardServer(event_bus, host=args.host, port=args.port)
+
+    if getattr(args, "open", False):
+        import webbrowser
+        webbrowser.open(f"http://{args.host}:{args.port}")
+
+    console.print(
+        Panel(
+            f"Dashboard running at [bold]http://{args.host}:{args.port}[/bold]\n"
+            f"  Press Ctrl+C to stop",
+            title="anneal dashboard",
+            style="blue",
+        )
+    )
+
+    try:
+        asyncio.run(server.start())
+        # Keep running until interrupted
+        asyncio.get_event_loop().run_forever()
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Dashboard stopped.[/yellow]")
+
+
 def _handle_list(_args: argparse.Namespace) -> None:
     """Handle ``anneal list``."""
     repo_root = _find_repo_root()
@@ -729,6 +765,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--samples", type=int, help="Override sample count (N) for this run")
     run.add_argument("--confidence", type=float, help="Override confidence level for this run")
     run.add_argument("--agent-budget", type=float, help="Override per-invocation agent budget for this run")
+    run.add_argument("--search", choices=["greedy", "annealing"], help="Override search strategy for this run")
 
     # -- stop (stub) --
     stop = subparsers.add_parser("stop", help="Stop optimization loop")
@@ -775,6 +812,12 @@ def _build_parser() -> argparse.ArgumentParser:
     conf.add_argument("--time-budget", type=int, help="Set time budget per experiment (seconds)")
     conf.add_argument("--max-failures", type=int, help="Set max consecutive failures before HALT")
 
+    # -- dashboard --
+    dash = subparsers.add_parser("dashboard", help="Start live SSE dashboard server")
+    dash.add_argument("--port", type=int, default=8080, help="Server port")
+    dash.add_argument("--host", default="127.0.0.1", help="Server host")
+    dash.add_argument("--open", action="store_true", help="Open browser on start")
+
     # -- list --
     subparsers.add_parser("list", help="List all registered targets")
 
@@ -806,6 +849,7 @@ def main(argv: list[str] | None = None) -> None:
         "re-register": lambda: _handle_reregister(args),
         "deregister": lambda: _handle_deregister(args),
         "configure": lambda: _handle_configure(args),
+        "dashboard": lambda: _handle_dashboard(args),
         "list": lambda: _handle_list(args),
     }
 

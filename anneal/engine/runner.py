@@ -25,7 +25,7 @@ from anneal.engine.notifications import NotificationManager
 from anneal.engine.registry import Registry
 from anneal.engine.safety import pre_experiment_check
 from anneal.engine.scope import enforce_scope, load_scope, verify_scope_hash
-from anneal.engine.search import GreedySearch
+from anneal.engine.search import GreedySearch, SearchStrategy
 from anneal.engine.types import (
     ExperimentRecord,
     OptimizationTarget,
@@ -48,7 +48,7 @@ class ExperimentRunner:
         git: GitEnvironment,
         agent_invoker: AgentInvoker,
         eval_engine: EvalEngine,
-        search: GreedySearch,
+        search: GreedySearch | SearchStrategy,
         registry: Registry,
         repo_root: Path | None = None,
         knowledge: KnowledgeStore | None = None,

@@ -356,6 +356,8 @@ def _handle_run(args: argparse.Namespace) -> None:
         else:
             search_strategy = GreedySearch()
 
+        dashboard_url = getattr(args, "dashboard_url", None)
+
         runner = ExperimentRunner(
             git=git,
             agent_invoker=AgentInvoker(),
@@ -365,6 +367,7 @@ def _handle_run(args: argparse.Namespace) -> None:
             repo_root=repo_root,
             knowledge=knowledge,
             notifications=notifier,
+            dashboard_url=dashboard_url,
         )
 
         max_exp = args.experiments or 0
@@ -806,6 +809,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--confidence", type=float, help="Override confidence level for this run")
     run.add_argument("--agent-budget", type=float, help="Override per-invocation agent budget for this run")
     run.add_argument("--search", choices=["greedy", "annealing"], help="Override search strategy for this run")
+    run.add_argument("--dashboard-url", help="Dashboard server URL for live updates (e.g., http://127.0.0.1:8080)")
 
     # -- stop (stub) --
     stop = subparsers.add_parser("stop", help="Stop optimization loop")

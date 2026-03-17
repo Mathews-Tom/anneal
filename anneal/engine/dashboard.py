@@ -295,6 +295,7 @@ class DashboardServer:
         self._app.router.add_get("/", self._handle_index)
         self._app.router.add_get("/events", self._handle_events)
         self._app.router.add_get("/api/status", self._handle_status)
+        self._app.router.add_post("/api/event", self._handle_post_event)
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
 
@@ -338,6 +339,14 @@ class DashboardServer:
     async def _handle_status(self, _request: web.Request) -> web.Response:
         status = self._event_bus.get_status()
         return web.json_response(status)
+
+    async def _handle_post_event(self, request: web.Request) -> web.Response:
+        """Receive events from external processes (e.g., anneal run in another terminal)."""
+        body = await request.json()
+        event_type = body.get("type", "experiment_complete")
+        data = body.get("data", {})
+        self._event_bus.publish(event_type, data)
+        return web.json_response({"ok": True})
 
 
 # ---------------------------------------------------------------------------

@@ -217,4 +217,9 @@ __marimo__/
 
 # Experiments (validation artifacts, not production code)
 experiments/
+
+# Anneal runtime artifacts (created by anneal init/register/run)
+anneal/config.toml
+anneal/targets/
 anneal/worktrees/
+anneal/templates/

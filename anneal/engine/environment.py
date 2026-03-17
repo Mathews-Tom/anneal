@@ -63,22 +63,47 @@ class GitEnvironment:
     ) -> WorktreeInfo:
         """Create ``worktrees/<target-id>`` with branch ``anneal/<target-id>``.
 
-        Raises ``GitError`` if the worktree already exists.
+        If the branch already exists (e.g., from a previous registration),
+        checks it out instead of creating a new one. Prunes stale worktree
+        references before attempting creation.
+
+        Raises ``GitError`` if the worktree path already exists on disk.
         """
         worktree_path = repo_root / "worktrees" / target_id
         branch = f"anneal/{target_id}"
 
         if worktree_path.exists():
             raise GitError(
-                ["worktree", "add", str(worktree_path), "-b", branch],
+                ["worktree", "add", str(worktree_path)],
                 1,
                 f"Worktree path already exists: {worktree_path}",
             )
 
-        await self._run_git(
-            ["worktree", "add", str(worktree_path.resolve()), "-b", branch],
-            cwd=repo_root,
-        )
+        # Prune stale worktree references (e.g., after manual directory removal)
+        await self._run_git(["worktree", "prune"], cwd=repo_root)
+
+        # Check if branch already exists
+        try:
+            await self._run_git(
+                ["rev-parse", "--verify", f"refs/heads/{branch}"],
+                cwd=repo_root,
+            )
+            branch_exists = True
+        except GitError:
+            branch_exists = False
+
+        if branch_exists:
+            # Check out existing branch
+            await self._run_git(
+                ["worktree", "add", str(worktree_path.resolve()), branch],
+                cwd=repo_root,
+            )
+        else:
+            # Create new branch
+            await self._run_git(
+                ["worktree", "add", str(worktree_path.resolve()), "-b", branch],
+                cwd=repo_root,
+            )
 
         head_sha = await self.rev_parse(worktree_path, "HEAD")
 

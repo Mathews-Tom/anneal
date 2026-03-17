@@ -7,9 +7,15 @@ from pathlib import Path
 
 from anneal.engine.types import CostEstimate, EvalMode, OptimizationTarget
 
-# Conservative pricing (Sonnet-class, USD per token)
-_INPUT_PRICE_PER_TOKEN = 3.0 / 1_000_000  # $3/MTok
-_OUTPUT_PRICE_PER_TOKEN = 15.0 / 1_000_000  # $15/MTok
+# Pricing tiers per million tokens (input, output)
+_MODEL_COSTS: dict[str, tuple[float, float]] = {
+    "gemini-2.5-flash": (0.15, 0.60),
+    "gemini-2.5-pro": (1.25, 10.00),
+    "gpt-4.1": (2.00, 8.00),
+    "gpt-4.1-mini": (0.40, 1.60),
+}
+# Fallback for unknown models: moderate pricing
+_DEFAULT_COSTS: tuple[float, float] = (2.00, 8.00)
 
 # Stochastic eval token estimates (conservative)
 _GEN_INPUT_TOKENS = 2000
@@ -18,14 +24,24 @@ _SCORE_INPUT_TOKENS = 500
 _SCORE_OUTPUT_TOKENS = 10
 
 
+def _get_costs(model: str) -> tuple[float, float]:
+    """Return (input_$/MTok, output_$/MTok) for a model."""
+    return _MODEL_COSTS.get(model, _DEFAULT_COSTS)
+
+
 def estimate_experiment_cost(
     target: OptimizationTarget,
     context_tokens: int = 0,
 ) -> CostEstimate:
-    """Conservative cost estimate for one experiment cycle."""
-    context_cost_usd = context_tokens * _INPUT_PRICE_PER_TOKEN
+    """Conservative cost estimate for one experiment cycle.
 
+    Uses model-specific pricing when the model is recognized, falls back
+    to moderate pricing ($2/$8 per MTok) for unknown models.
+    """
     # Mutation cost: use agent's max_budget_usd as ceiling
+    mutation_model = target.agent_config.model
+    mut_inp, mut_out = _get_costs(mutation_model)
+    context_cost_usd = context_tokens * mut_inp / 1_000_000
     mutation_cost_usd = target.agent_config.max_budget_usd
 
     eval_input_tokens = 0.0
@@ -36,13 +52,23 @@ def estimate_experiment_cost(
         n = stochastic.sample_count
         k = len(stochastic.criteria)
 
+        # Generation model: use stochastic config's model or fall back to agent model
+        gen_model = mutation_model  # default
+        if stochastic.generation_agent_config:
+            gen_model = stochastic.generation_agent_config.model
+        gen_inp, gen_out = _get_costs(gen_model)
+
+        # Evaluator model
+        eval_model = target.agent_config.evaluator_model
+        eval_inp, eval_out = _get_costs(eval_model)
+
         gen_cost = (
-            _GEN_INPUT_TOKENS * _INPUT_PRICE_PER_TOKEN
-            + _GEN_OUTPUT_TOKENS * _OUTPUT_PRICE_PER_TOKEN
+            _GEN_INPUT_TOKENS * gen_inp / 1_000_000
+            + _GEN_OUTPUT_TOKENS * gen_out / 1_000_000
         )
         score_cost = (
-            _SCORE_INPUT_TOKENS * _INPUT_PRICE_PER_TOKEN
-            + _SCORE_OUTPUT_TOKENS * _OUTPUT_PRICE_PER_TOKEN
+            _SCORE_INPUT_TOKENS * eval_inp / 1_000_000
+            + _SCORE_OUTPUT_TOKENS * eval_out / 1_000_000
         )
 
         eval_cost_usd = n * (gen_cost + k * score_cost)

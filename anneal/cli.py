@@ -19,6 +19,7 @@ from anneal.engine.registry import Registry, RegistryError, init_project
 from anneal.engine.scope import ScopeError, compute_scope_hash, load_scope, validate_scope
 from anneal.engine.types import (
     AgentConfig,
+    BinaryCriterion,
     BudgetCap,
     DeterministicEval,
     Direction,
@@ -27,6 +28,7 @@ from anneal.engine.types import (
     EvalMode,
     ExperimentRecord,
     OptimizationTarget,
+    StochasticEval,
 )
 
 console = Console(stderr=True)
@@ -123,6 +125,8 @@ def _handle_register(args: argparse.Namespace) -> None:
 
     # Build eval config
     deterministic_eval = None
+    stochastic_eval = None
+
     if eval_mode is EvalMode.DETERMINISTIC:
         deterministic_eval = DeterministicEval(
             run_command=args.run_cmd,
@@ -130,18 +134,58 @@ def _handle_register(args: argparse.Namespace) -> None:
             timeout_seconds=args.time_budget,
         )
 
+    if eval_mode is EvalMode.STOCHASTIC:
+        import tomllib
+        criteria_path = Path(args.criteria)
+        if not criteria_path.is_absolute():
+            criteria_path = repo_root / criteria_path
+        if not criteria_path.exists():
+            console.print(f"[red]Criteria file not found: {criteria_path}[/red]")
+            sys.exit(1)
+        criteria_data = tomllib.loads(criteria_path.read_text(encoding="utf-8"))
+
+        binary_criteria = [
+            BinaryCriterion(name=c["name"], question=c["question"])
+            for c in criteria_data.get("criteria", [])
+        ]
+        test_prompts = [
+            tp["prompt"] for tp in criteria_data.get("test_prompts", [])
+        ]
+        gen = criteria_data.get("generation", {})
+        meta = criteria_data.get("meta", {})
+
+        # Generation agent: use a cheap model for sample generation
+        gen_agent = AgentConfig(
+            mode="api",
+            model=gen.get("agent", {}).get("model", "gemini-2.5-flash"),
+            evaluator_model=args.evaluator_model,
+            max_budget_usd=0.02,
+            temperature=gen.get("agent", {}).get("temperature", 0.7),
+        )
+
+        stochastic_eval = StochasticEval(
+            sample_count=meta.get("sample_count", 10),
+            criteria=binary_criteria,
+            test_prompts=test_prompts,
+            generation_prompt_template=gen.get("prompt_template", ""),
+            output_format=gen.get("output_format", "text"),
+            confidence_level=meta.get("confidence_level", 0.95),
+            generation_agent_config=gen_agent,
+        )
+
     eval_config = EvalConfig(
         metric_name="binary_criteria_score" if eval_mode is EvalMode.STOCHASTIC else "deterministic_score",
         direction=direction,
         deterministic=deterministic_eval,
+        stochastic=stochastic_eval,
     )
 
-    # Build agent config
+    # Build agent config (per-invocation budget is separate from daily cap)
     agent_config = AgentConfig(
         mode="claude_code",
         model=args.agent_model,
         evaluator_model=args.evaluator_model,
-        max_budget_usd=args.max_budget_usd,
+        max_budget_usd=1.00,
     )
 
     # Build budget cap
@@ -187,7 +231,13 @@ def _handle_register(args: argparse.Namespace) -> None:
                 f"  Worktree:     {target.worktree_path}\n"
                 f"  Branch:       {target.git_branch}\n"
                 f"  Time budget:  {target.time_budget_seconds}s\n"
-                f"  Budget cap:   ${target.budget_cap.max_usd_per_day:.2f}/day",
+                f"  Budget cap:   ${target.budget_cap.max_usd_per_day:.2f}/day"
+                + (
+                    f"\n  Criteria:     {len(stochastic_eval.criteria)} binary, "
+                    f"{len(stochastic_eval.test_prompts)} test prompts, "
+                    f"N={stochastic_eval.sample_count}"
+                    if stochastic_eval else ""
+                ),
                 title="anneal register --dry-run",
                 style="yellow",
             )
@@ -215,6 +265,15 @@ def _handle_register(args: argparse.Namespace) -> None:
 
 def _handle_run(args: argparse.Namespace) -> None:
     """Handle ``anneal run``."""
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        TimeElapsedColumn,
+    )
+
     from anneal.engine.agent import AgentInvoker  # noqa: F811
     from anneal.engine.eval import EvalEngine  # noqa: F811
     from anneal.engine.knowledge import KnowledgeStore  # noqa: F811
@@ -232,6 +291,20 @@ def _handle_run(args: argparse.Namespace) -> None:
         console.print(f"[red]{exc}[/red]")
         sys.exit(1)
 
+    # Apply runtime overrides (ephemeral — not persisted to config.toml)
+    overrides: list[str] = []
+    if args.samples is not None and target.eval_config.stochastic:
+        target.eval_config.stochastic.sample_count = args.samples
+        overrides.append(f"samples={args.samples}")
+    if args.confidence is not None and target.eval_config.stochastic:
+        target.eval_config.stochastic.confidence_level = args.confidence
+        overrides.append(f"confidence={args.confidence}")
+    if args.agent_budget is not None:
+        target.agent_config.max_budget_usd = args.agent_budget
+        overrides.append(f"agent_budget=${args.agent_budget:.2f}")
+    if overrides:
+        console.print(f"  [dim]Runtime overrides: {', '.join(overrides)}[/dim]")
+
     knowledge = KnowledgeStore(repo_root / target.knowledge_path)
     knowledge.validate_and_repair()
     notifier = NotificationManager(target.notifications)
@@ -242,19 +315,60 @@ def _handle_run(args: argparse.Namespace) -> None:
         eval_engine=EvalEngine(),
         search=GreedySearch(),
         registry=registry,
+        repo_root=repo_root,
         knowledge=knowledge,
         notifications=notifier,
     )
 
-    def on_experiment(record: "ExperimentRecord") -> None:
-        style = "green" if record.outcome.value == "KEPT" else "red"
-        console.print(
-            f"  [{style}]{record.outcome.value}[/{style}] "
-            f"score={record.score:.3f} (baseline={record.baseline_score:.3f}) "
-            f"${record.cost_usd:.4f} {record.duration_seconds:.1f}s "
-            f"— {record.hypothesis[:80] if record.hypothesis else 'no hypothesis'}"
+    max_exp = args.experiments or 0
+    total_cost = 0.0
+    best_score = target.baseline_score
+    kept_count = 0
+
+    # Progress bar with inline status
+    progress = Progress(
+        SpinnerColumn("dots"),
+        TextColumn(f"[bold cyan]{target.id}[/]"),
+        BarColumn(bar_width=30),
+        MofNCompleteColumn(),
+        TextColumn("{task.fields[status]}"),
+        TimeElapsedColumn(),
+        console=console,
+    )
+    task_id = progress.add_task(
+        target.id,
+        total=max_exp if max_exp > 0 else None,
+        status=f"baseline={target.baseline_score:.3f}",
+    )
+
+    def on_experiment(record: ExperimentRecord) -> None:
+        nonlocal total_cost, best_score, kept_count
+        total_cost += record.cost_usd
+        if record.outcome.value == "KEPT":
+            best_score = record.score
+            kept_count += 1
+
+        outcome = record.outcome.value
+        if outcome == "KEPT":
+            tag = "[green]KEPT[/]"
+        elif outcome == "BLOCKED":
+            tag = "[yellow]BLKD[/]"
+        elif outcome == "CRASHED":
+            tag = "[red]CRASH[/]"
+        else:
+            tag = "[red]DISC[/]"
+
+        failure = ""
+        if record.failure_mode:
+            failure = f"  {record.failure_mode[:60]}"
+
+        progress.update(
+            task_id,
+            advance=1,
+            status=f"{tag} {record.score:.3f}  best={best_score:.3f}  ${total_cost:.3f}{failure}",
         )
 
+    console.print()
     console.print(
         Panel(
             f"Running target [bold]{target.id}[/bold]\n"
@@ -265,25 +379,34 @@ def _handle_run(args: argparse.Namespace) -> None:
             style="blue",
         )
     )
+    console.print()
 
     try:
-        records = asyncio.run(
-            runner.run_loop(
-                target=target,
-                max_experiments=args.experiments,
-                stop_score=args.until,
-                on_experiment=on_experiment,
+        with progress:
+            records = asyncio.run(
+                runner.run_loop(
+                    target=target,
+                    max_experiments=args.experiments,
+                    stop_score=args.until,
+                    on_experiment=on_experiment,
+                )
             )
-        )
     except KeyboardInterrupt:
-        console.print("\n[yellow]Interrupted. Current experiment will complete.[/yellow]")
+        console.print("\n[yellow]Interrupted.[/yellow]")
         runner.request_stop(target.id)
         records = []
 
+    console.print()
     kept = sum(1 for r in records if r.outcome.value == "KEPT")
+    cond_time = sum(r.duration_seconds for r in records)
     console.print(
         Panel(
-            f"Target [bold]{target.id}[/bold] — {len(records)} experiments, {kept} kept",
+            f"Target [bold]{target.id}[/bold]\n"
+            f"  Experiments:  {len(records)}\n"
+            f"  Kept:         {kept}\n"
+            f"  Best score:   {best_score:.3f}\n"
+            f"  Total cost:   ${total_cost:.4f}\n"
+            f"  Total time:   {cond_time / 60:.1f} min",
             title="anneal run — complete",
             style="green",
         )
@@ -334,6 +457,89 @@ def _handle_status(args: argparse.Namespace) -> None:
                 f"experiments={status_data.get('experiment_count', 0)}  "
                 f"state={status_data.get('state', 'UNKNOWN')}"
             )
+
+
+def _handle_deregister(args: argparse.Namespace) -> None:
+    """Handle ``anneal deregister``."""
+    repo_root = _find_repo_root()
+    registry = Registry(repo_root)
+
+    try:
+        asyncio.run(registry.deregister_target(args.target))
+    except RegistryError as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    console.print(
+        Panel(
+            f"Target [bold]{args.target}[/bold] deregistered.\n"
+            f"  Worktree removed. Experiment history preserved in targets/{args.target}/.",
+            title="anneal deregister",
+            style="yellow",
+        )
+    )
+
+
+def _handle_configure(args: argparse.Namespace) -> None:
+    """Handle ``anneal configure``."""
+    repo_root = _find_repo_root()
+    registry = Registry(repo_root)
+
+    try:
+        target = registry.get_target(args.target)
+    except RegistryError as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    changes: list[str] = []
+
+    if args.samples is not None and target.eval_config.stochastic:
+        target.eval_config.stochastic.sample_count = args.samples
+        changes.append(f"  sample_count = {args.samples}")
+
+    if args.confidence is not None and target.eval_config.stochastic:
+        target.eval_config.stochastic.confidence_level = args.confidence
+        changes.append(f"  confidence_level = {args.confidence}")
+
+    if args.agent_budget is not None:
+        target.agent_config.max_budget_usd = args.agent_budget
+        changes.append(f"  agent max_budget_usd = ${args.agent_budget:.2f}")
+
+    if args.daily_budget is not None:
+        if target.budget_cap is None:
+            target.budget_cap = BudgetCap(max_usd_per_day=args.daily_budget)
+        else:
+            target.budget_cap.max_usd_per_day = args.daily_budget
+        changes.append(f"  daily_budget = ${args.daily_budget:.2f}")
+
+    if args.agent_model is not None:
+        target.agent_config.model = args.agent_model
+        changes.append(f"  agent model = {args.agent_model}")
+
+    if args.evaluator_model is not None:
+        target.agent_config.evaluator_model = args.evaluator_model
+        changes.append(f"  evaluator model = {args.evaluator_model}")
+
+    if args.time_budget is not None:
+        target.time_budget_seconds = args.time_budget
+        changes.append(f"  time_budget = {args.time_budget}s")
+
+    if args.max_failures is not None:
+        target.max_consecutive_failures = args.max_failures
+        changes.append(f"  max_consecutive_failures = {args.max_failures}")
+
+    if not changes:
+        console.print("[yellow]No configuration changes specified.[/yellow]")
+        return
+
+    registry.update_target(target)
+    console.print(
+        Panel(
+            f"Target [bold]{target.id}[/bold] updated:\n\n" + "\n".join(changes),
+            title="anneal configure",
+            style="green",
+        )
+    )
 
 
 def _handle_list(_args: argparse.Namespace) -> None:
@@ -492,6 +698,10 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--until", type=float, help="Stop when score reaches threshold")
     run.add_argument("--foreground", action="store_true", help="Block terminal")
     run.add_argument("--dry-run", action="store_true", help="One experiment, print output, do not commit")
+    # Runtime overrides (do not persist — apply to this run only)
+    run.add_argument("--samples", type=int, help="Override sample count (N) for this run")
+    run.add_argument("--confidence", type=float, help="Override confidence level for this run")
+    run.add_argument("--agent-budget", type=float, help="Override per-invocation agent budget for this run")
 
     # -- stop (stub) --
     stop = subparsers.add_parser("stop", help="Stop optimization loop")
@@ -522,6 +732,22 @@ def _build_parser() -> argparse.ArgumentParser:
     rereg = subparsers.add_parser("re-register", help="Re-hash scope after manual edits")
     rereg.add_argument("--target", required=True, help="Target identifier")
 
+    # -- deregister --
+    dereg = subparsers.add_parser("deregister", help="Remove a target and its worktree")
+    dereg.add_argument("--target", required=True, help="Target identifier")
+
+    # -- configure --
+    conf = subparsers.add_parser("configure", help="Update target configuration permanently")
+    conf.add_argument("--target", required=True, help="Target identifier")
+    conf.add_argument("--samples", type=int, help="Set sample count (N)")
+    conf.add_argument("--confidence", type=float, help="Set confidence level (0.0-1.0)")
+    conf.add_argument("--agent-budget", type=float, help="Set per-invocation agent budget (USD)")
+    conf.add_argument("--daily-budget", type=float, help="Set daily budget cap (USD)")
+    conf.add_argument("--agent-model", help="Set agent model")
+    conf.add_argument("--evaluator-model", help="Set evaluator model")
+    conf.add_argument("--time-budget", type=int, help="Set time budget per experiment (seconds)")
+    conf.add_argument("--max-failures", type=int, help="Set max consecutive failures before HALT")
+
     # -- list --
     subparsers.add_parser("list", help="List all registered targets")
 
@@ -551,6 +777,8 @@ def main(argv: list[str] | None = None) -> None:
         "status": lambda: _handle_status(args),
         "history": lambda: _handle_history(args),
         "re-register": lambda: _handle_reregister(args),
+        "deregister": lambda: _handle_deregister(args),
+        "configure": lambda: _handle_configure(args),
         "list": lambda: _handle_list(args),
     }
 

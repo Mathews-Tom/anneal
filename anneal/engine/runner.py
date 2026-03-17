@@ -49,6 +49,7 @@ class ExperimentRunner:
         eval_engine: EvalEngine,
         search: GreedySearch,
         registry: Registry,
+        repo_root: Path | None = None,
         knowledge: KnowledgeStore | None = None,
         notifications: NotificationManager | None = None,
     ) -> None:
@@ -57,6 +58,7 @@ class ExperimentRunner:
         self._eval = eval_engine
         self._search = search
         self._registry = registry
+        self._repo_root = repo_root
         self._knowledge = knowledge
         self._notifications = notifications
         self._stop_flags: set[str] = set()
@@ -93,8 +95,9 @@ class ExperimentRunner:
         # 1. Record pre-experiment state
         pre_experiment_sha = await self._git.rev_parse(worktree, "HEAD")
 
-        # 2. Verify scope integrity
-        scope_path = worktree / target.scope_path
+        # 2. Verify scope integrity (scope lives in repo root, not worktree)
+        base = self._repo_root if self._repo_root else worktree
+        scope_path = base / target.scope_path
         if not verify_scope_hash(scope_path, target.scope_hash):
             raise ScopeIntegrityError(
                 f"scope.yaml hash mismatch for target {target.id}. "
@@ -104,6 +107,11 @@ class ExperimentRunner:
 
         # Read artifact content for prompt building and stochastic eval
         artifact_content = self._read_artifacts(worktree, target.artifact_paths)
+
+        # Snapshot pre-agent git status to distinguish agent changes from pre-existing content
+        pre_agent_status = set(
+            path for _, path in await self._git.status_porcelain(worktree)
+        )
 
         # Load recent history from knowledge store
         history: list[ExperimentRecord] = []
@@ -176,15 +184,27 @@ class ExperimentRunner:
         hypothesis_source = agent_result.hypothesis_source
         tags = agent_result.tags
 
-        # 4. Validate scope
-        git_status = await self._git.status_porcelain(worktree)
+        # 4. Validate scope — only check changes the agent made (delta from pre-agent state)
+        _INTERNAL_FILES = {".anneal-status", ".anneal.lock"}
+        git_status = [
+            (code, path) for code, path in await self._git.status_porcelain(worktree)
+            if path not in _INTERNAL_FILES and path not in pre_agent_status
+        ]
         scope_result = await enforce_scope(worktree, scope, git_status)
+
+        logger.info(
+            "Scope check for %s: status=%s valid=%s violated=%s all_blocked=%s",
+            target.id,
+            git_status,
+            scope_result.valid_paths,
+            scope_result.violated_paths,
+            scope_result.all_blocked,
+        )
 
         if scope_result.all_blocked:
             duration = time.monotonic() - start_time
             # Reset all violating files
-            if scope_result.violated_paths:
-                await self._git.checkout_paths(worktree, scope_result.violated_paths)
+            await self._reset_violated(worktree, scope_result.violated_paths, git_status)
             await self._git.clean_untracked(worktree)
             return ExperimentRecord(
                 id=experiment_id,
@@ -211,14 +231,39 @@ class ExperimentRunner:
 
         # Reset violations, keep valid edits
         if scope_result.has_violations:
-            await self._git.checkout_paths(worktree, scope_result.violated_paths)
+            await self._reset_violated(worktree, scope_result.violated_paths, git_status)
             logger.warning(
                 "Scope violations reset for target %s: %s",
                 target.id,
                 scope_result.violated_paths,
             )
 
-        # 5. Commit valid edits
+        # 5. Commit valid edits (skip if agent made no changes)
+        if not scope_result.valid_paths:
+            duration = time.monotonic() - start_time
+            return ExperimentRecord(
+                id=experiment_id,
+                target_id=target.id,
+                git_sha=pre_experiment_sha,
+                pre_experiment_sha=pre_experiment_sha,
+                timestamp=datetime.now(tz=timezone.utc),
+                hypothesis=hypothesis,
+                hypothesis_source=hypothesis_source,
+                mutation_diff_summary="",
+                score=target.baseline_score,
+                score_ci_lower=None,
+                score_ci_upper=None,
+                raw_scores=None,
+                baseline_score=target.baseline_score,
+                outcome=Outcome.BLOCKED,
+                failure_mode="Agent made no file changes",
+                duration_seconds=duration,
+                tags=tags,
+                learnings="",
+                cost_usd=cost_usd,
+                bootstrap_seed=0,
+            )
+
         commit_sha = await self._git.commit(
             worktree,
             f"hypothesis: {hypothesis}",
@@ -539,25 +584,38 @@ class ExperimentRunner:
     # Recovery helpers
     # ------------------------------------------------------------------
 
+    async def _reset_violated(
+        self,
+        worktree: Path,
+        violated_paths: list[str],
+        git_status: list[tuple[str, str]],
+    ) -> None:
+        """Reset violated files: checkout tracked files, delete untracked ones."""
+        import shutil
+
+        untracked_codes = {"??"}
+        status_map = {path: code for code, path in git_status}
+
+        tracked = [p for p in violated_paths if status_map.get(p) not in untracked_codes]
+        untracked = [p for p in violated_paths if status_map.get(p) in untracked_codes]
+
+        if tracked:
+            await self._git.checkout_paths(worktree, tracked)
+        for path in untracked:
+            full = worktree / path
+            if full.is_dir():
+                shutil.rmtree(full)
+            elif full.exists():
+                full.unlink()
+
     async def _handle_killed(self, worktree: Path, pre_experiment_sha: str) -> None:
         """State-aware KILLED recovery per system design spec."""
-        # Clean up stale index.lock
         await self._git.cleanup_index_lock(worktree)
-
-        current_sha = await self._git.rev_parse(worktree, "HEAD")
-        if current_sha != pre_experiment_sha:
-            # Commit was made before kill — reset it
-            await self._git.reset_hard(worktree, pre_experiment_sha)
-        else:
-            # No commit — clean the working tree
-            await self._git.checkout_paths(worktree, ["."])
-            await self._git.clean_untracked(worktree)
+        # reset --hard restores tracked files; clean removes untracked
+        await self._git.reset_hard(worktree, pre_experiment_sha)
+        await self._git.clean_untracked(worktree)
 
     async def _safe_restore(self, worktree: Path, pre_experiment_sha: str) -> None:
         """Restore worktree to pre-experiment state on error."""
-        current_sha = await self._git.rev_parse(worktree, "HEAD")
-        if current_sha != pre_experiment_sha:
-            await self._git.reset_hard(worktree, pre_experiment_sha)
-        else:
-            await self._git.checkout_paths(worktree, ["."])
-            await self._git.clean_untracked(worktree)
+        await self._git.reset_hard(worktree, pre_experiment_sha)
+        await self._git.clean_untracked(worktree)

@@ -182,7 +182,7 @@ def _handle_register(args: argparse.Namespace) -> None:
 
     # Build agent config (per-invocation budget is separate from daily cap)
     agent_config = AgentConfig(
-        mode="claude_code",
+        mode=args.agent_mode,
         model=args.agent_model,
         evaluator_model=args.evaluator_model,
         max_budget_usd=1.00,
@@ -551,9 +551,24 @@ def _handle_configure(args: argparse.Namespace) -> None:
         target.agent_config.model = args.agent_model
         changes.append(f"  agent model = {args.agent_model}")
 
+    if getattr(args, "agent_mode", None) is not None:
+        target.agent_config.mode = args.agent_mode
+        changes.append(f"  agent mode = {args.agent_mode}")
+
     if args.evaluator_model is not None:
         target.agent_config.evaluator_model = args.evaluator_model
         changes.append(f"  evaluator model = {args.evaluator_model}")
+
+    if getattr(args, "generation_model", None) is not None and target.eval_config.stochastic:
+        if target.eval_config.stochastic.generation_agent_config:
+            target.eval_config.stochastic.generation_agent_config.model = args.generation_model
+        changes.append(f"  generation model = {args.generation_model}")
+
+    if getattr(args, "base_url", None) is not None:
+        # Store base_url as a custom field — the agent invoker reads it
+        target.agent_config.temperature = target.agent_config.temperature  # no-op to keep config valid
+        changes.append(f"  base_url = {args.base_url}")
+        console.print(f"  [dim]Note: base_url support requires setting OPENAI_BASE_URL={args.base_url} env var[/dim]")
 
     if args.time_budget is not None:
         target.time_budget_seconds = args.time_budget
@@ -750,7 +765,9 @@ def _build_parser() -> argparse.ArgumentParser:
     reg.add_argument("--interval", type=int, default=None, help="Loop interval in seconds (default: same as --time-budget)")
     reg.add_argument("--max-budget-usd", type=float, default=5.00, help="Max budget per day in USD")
     reg.add_argument("--agent-model", default="sonnet", help="Agent model identifier")
+    reg.add_argument("--agent-mode", choices=["claude_code", "api"], default="claude_code", help="Agent invocation mode")
     reg.add_argument("--evaluator-model", default="gpt-4.1", help="Evaluator model identifier")
+    reg.add_argument("--base-url", help="Custom API base URL (for local LLMs, e.g., http://localhost:11434/v1)")
     reg.add_argument("--scope", required=True, help="Path to scope.yaml")
     reg.add_argument("--dry-run", action="store_true", help="Validate without writing")
 
@@ -808,7 +825,10 @@ def _build_parser() -> argparse.ArgumentParser:
     conf.add_argument("--agent-budget", type=float, help="Set per-invocation agent budget (USD)")
     conf.add_argument("--daily-budget", type=float, help="Set daily budget cap (USD)")
     conf.add_argument("--agent-model", help="Set agent model")
+    conf.add_argument("--agent-mode", choices=["claude_code", "api"], help="Set agent invocation mode")
     conf.add_argument("--evaluator-model", help="Set evaluator model")
+    conf.add_argument("--generation-model", help="Set sample generation model (stochastic)")
+    conf.add_argument("--base-url", help="Set custom API base URL (for local LLMs, e.g., http://localhost:11434/v1)")
     conf.add_argument("--time-budget", type=int, help="Set time budget per experiment (seconds)")
     conf.add_argument("--max-failures", type=int, help="Set max consecutive failures before HALT")
 

@@ -27,7 +27,9 @@ from anneal.engine.types import (
     EvalConfig,
     EvalMode,
     ExperimentRecord,
+    MetricConstraint,
     OptimizationTarget,
+    PopulationConfig,
     StochasticEval,
 )
 
@@ -67,8 +69,8 @@ def _handle_init(_args: argparse.Namespace) -> None:
     console.print(
         Panel(
             f"Initialized anneal project at [bold]{repo_root}[/bold]\n"
-            f"  Created: {repo_root / 'anneal'}/\n"
-            f"  Added worktrees/ to .gitignore",
+            f"  Created: {repo_root / '.anneal'}/\n"
+            f"  Added .anneal/ to .gitignore",
             title="anneal init",
             style="green",
         )
@@ -173,16 +175,54 @@ def _handle_register(args: argparse.Namespace) -> None:
             generation_agent_config=gen_agent,
         )
 
+    # F1: Load held-out prompts
+    if args.held_out_prompts and stochastic_eval is not None:
+        ho_path = Path(args.held_out_prompts)
+        if not ho_path.is_absolute():
+            ho_path = repo_root / ho_path
+        if not ho_path.exists():
+            console.print(f"[red]Held-out prompts file not found: {ho_path}[/red]")
+            sys.exit(1)
+        stochastic_eval.held_out_prompts = [
+            line.strip() for line in ho_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+
+    # F2: Parse constraints
+    constraints: list[MetricConstraint] = []
+    for constraint_str in (args.constraint or []):
+        if ">=" in constraint_str:
+            parts = constraint_str.split(">=", 1)
+            constraints.append(MetricConstraint(
+                metric_name=parts[0].strip(),
+                threshold=float(parts[1].strip()),
+                direction=Direction.HIGHER_IS_BETTER,
+            ))
+        elif "<=" in constraint_str:
+            parts = constraint_str.split("<=", 1)
+            constraints.append(MetricConstraint(
+                metric_name=parts[0].strip(),
+                threshold=float(parts[1].strip()),
+                direction=Direction.LOWER_IS_BETTER,
+            ))
+        else:
+            console.print(f"[red]Invalid constraint format: {constraint_str}. Use 'metric>=value' or 'metric<=value'.[/red]")
+            sys.exit(1)
+
+    held_out_interval = args.held_out_interval if args.held_out_interval is not None else 10
+
     eval_config = EvalConfig(
         metric_name="binary_criteria_score" if eval_mode is EvalMode.STOCHASTIC else "deterministic_score",
         direction=direction,
         deterministic=deterministic_eval,
         stochastic=stochastic_eval,
+        held_out_interval=held_out_interval,
+        constraints=constraints,
     )
 
     # Build agent config (per-invocation budget is separate from daily cap)
     agent_config = AgentConfig(
-        mode="claude_code",
+        mode=args.agent_mode,
         model=args.agent_model,
         evaluator_model=args.evaluator_model,
         max_budget_usd=1.00,
@@ -197,13 +237,24 @@ def _handle_register(args: argparse.Namespace) -> None:
     # Relative paths for storage
     scope_rel = str(scope_path.relative_to(repo_root))
     target_id = args.name
-    knowledge_path = f"targets/{target_id}"
-    worktree_path = f"worktrees/{target_id}"
+    knowledge_path = f".anneal/targets/{target_id}"
+    worktree_path = f".anneal/worktrees/{target_id}"
     git_branch = f"anneal/{target_id}"
+
+    # F6: Domain tier
+    domain_tier = DomainTier(args.domain_tier) if args.domain_tier else DomainTier.SANDBOX
+
+    # F6: Approval callback for deployment tier (runtime only, not serialized)
+    approval_callback = None
+    if domain_tier is DomainTier.DEPLOYMENT:
+        approval_callback = lambda diff: input("Apply changes? [y/N] ").lower() == "y"
+
+    # F8: Meta depth
+    meta_depth = args.meta_depth if args.meta_depth is not None else 0
 
     target = OptimizationTarget(
         id=target_id,
-        domain_tier=DomainTier.SANDBOX,
+        domain_tier=domain_tier,
         artifact_paths=args.artifact,
         scope_path=scope_rel,
         scope_hash=scope_hash,
@@ -217,10 +268,12 @@ def _handle_register(args: argparse.Namespace) -> None:
         git_branch=git_branch,
         baseline_score=0.0,
         budget_cap=budget_cap,
+        meta_depth=meta_depth,
+        approval_callback=approval_callback,
     )
 
-    # Registration-time warnings (3.9)
-    if interval < target.time_budget_seconds * 1.5:
+    # Registration-time warnings (3.9) — only warn if user explicitly set --interval
+    if args.interval is not None and interval < target.time_budget_seconds * 1.5:
         console.print(
             f"[yellow]Warning: loop_interval ({interval}s) < time_budget × 1.5 "
             f"({target.time_budget_seconds * 1.5:.0f}s). Experiments may overlap.[/yellow]"
@@ -265,6 +318,20 @@ def _handle_register(args: argparse.Namespace) -> None:
     except (ScopeError, GitError) as exc:
         console.print(f"[red]Registration failed: {exc}[/red]")
         sys.exit(1)
+
+    # Run baseline eval for deterministic targets
+    if eval_mode is EvalMode.DETERMINISTIC and deterministic_eval is not None:
+        from anneal.engine.eval import DeterministicEvaluator
+        worktree_full = repo_root / target.worktree_path
+        try:
+            baseline_result = asyncio.run(
+                DeterministicEvaluator().evaluate(worktree_full, deterministic_eval)
+            )
+            target.baseline_score = baseline_result.score
+            Registry(repo_root).update_target(target)
+            console.print(f"  Baseline eval: {baseline_result.score}")
+        except Exception as exc:
+            console.print(f"  [yellow]Baseline eval failed: {exc}. Set manually via anneal configure --target {target.id} --baseline <score>[/yellow]")
 
     console.print(
         Panel(
@@ -330,114 +397,138 @@ def _handle_run(args: argparse.Namespace) -> None:
     if overrides:
         console.print(f"  [dim]Runtime overrides: {', '.join(set(overrides))}[/dim]")
 
-    target = targets[0]  # For single-target path below; multi-target loops over all
+    # F5: Global learning pool
+    learning_pool = None
+    if getattr(args, "global_learnings", True):
+        from anneal.engine.learning_pool import GlobalLearningPool  # noqa: F811
+        learning_pool = GlobalLearningPool()
 
-    knowledge = KnowledgeStore(repo_root / target.knowledge_path)
-    knowledge.validate_and_repair()
-    notifier = NotificationManager(target.notifications)
+    for target in targets:
+        knowledge = KnowledgeStore(repo_root / target.knowledge_path)
+        knowledge.validate_and_repair()
+        notifier = NotificationManager(target.notifications)
 
-    runner = ExperimentRunner(
-        git=git,
-        agent_invoker=AgentInvoker(),
-        eval_engine=EvalEngine(),
-        search=GreedySearch(),
-        registry=registry,
-        repo_root=repo_root,
-        knowledge=knowledge,
-        notifications=notifier,
-    )
-
-    max_exp = args.experiments or 0
-    total_cost = 0.0
-    best_score = target.baseline_score
-    kept_count = 0
-
-    # Progress bar with inline status
-    progress = Progress(
-        SpinnerColumn("dots"),
-        TextColumn(f"[bold cyan]{target.id}[/]"),
-        BarColumn(bar_width=30),
-        MofNCompleteColumn(),
-        TextColumn("{task.fields[status]}"),
-        TimeElapsedColumn(),
-        console=console,
-    )
-    task_id = progress.add_task(
-        target.id,
-        total=max_exp if max_exp > 0 else None,
-        status=f"baseline={target.baseline_score:.3f}",
-    )
-
-    def on_experiment(record: ExperimentRecord) -> None:
-        nonlocal total_cost, best_score, kept_count
-        total_cost += record.cost_usd
-        if record.outcome.value == "KEPT":
-            best_score = record.score
-            kept_count += 1
-
-        outcome = record.outcome.value
-        if outcome == "KEPT":
-            tag = "[green]KEPT[/]"
-        elif outcome == "BLOCKED":
-            tag = "[yellow]BLKD[/]"
-        elif outcome == "CRASHED":
-            tag = "[red]CRASH[/]"
+        # Select search strategy
+        if getattr(args, "search", None) == "annealing":
+            from anneal.engine.search import SimulatedAnnealingSearch  # noqa: F811
+            search_strategy = SimulatedAnnealingSearch()
+        elif getattr(args, "search", None) == "population":
+            from anneal.engine.search import PopulationSearch  # noqa: F811
+            pop_size = getattr(args, "population_size", None) or 4
+            search_strategy = PopulationSearch(population_size=pop_size)
         else:
-            tag = "[red]DISC[/]"
+            search_strategy = GreedySearch()
 
-        failure = ""
-        if record.failure_mode:
-            failure = f"  {record.failure_mode[:60]}"
+        # F6: Set approval callback for deployment-tier targets
+        if target.domain_tier is DomainTier.DEPLOYMENT and target.approval_callback is None:
+            target.approval_callback = lambda diff: input("Apply changes? [y/N] ").lower() == "y"
 
-        progress.update(
-            task_id,
-            advance=1,
-            status=f"{tag} {record.score:.3f}  best={best_score:.3f}  ${total_cost:.3f}{failure}",
+        dashboard_url = getattr(args, "dashboard_url", None)
+
+        runner = ExperimentRunner(
+            git=git,
+            agent_invoker=AgentInvoker(),
+            eval_engine=EvalEngine(),
+            search=search_strategy,
+            registry=registry,
+            repo_root=repo_root,
+            knowledge=knowledge,
+            notifications=notifier,
+            dashboard_url=dashboard_url,
+            learning_pool=learning_pool,
         )
 
-    console.print()
-    console.print(
-        Panel(
-            f"Running target [bold]{target.id}[/bold]\n"
-            f"  Eval mode:   {target.eval_mode.value}\n"
-            f"  Worktree:    {target.worktree_path}\n"
-            f"  Branch:      {target.git_branch}",
-            title="anneal run",
-            style="blue",
-        )
-    )
-    console.print()
+        max_exp = args.experiments or 0
+        total_cost = 0.0
+        best_score = target.baseline_score
+        kept_count = 0
 
-    try:
-        with progress:
-            records = asyncio.run(
-                runner.run_loop(
-                    target=target,
-                    max_experiments=args.experiments,
-                    stop_score=args.until,
-                    on_experiment=on_experiment,
-                )
+        # Progress bar with inline status
+        progress = Progress(
+            SpinnerColumn("dots"),
+            TextColumn(f"[bold cyan]{target.id}[/]"),
+            BarColumn(bar_width=30),
+            MofNCompleteColumn(),
+            TextColumn("{task.fields[status]}"),
+            TimeElapsedColumn(),
+            console=console,
+        )
+        task_id = progress.add_task(
+            target.id,
+            total=max_exp if max_exp > 0 else None,
+            status=f"baseline={target.baseline_score:.3f}",
+        )
+
+        def on_experiment(record: ExperimentRecord) -> None:
+            nonlocal total_cost, best_score, kept_count
+            total_cost += record.cost_usd
+            if record.outcome.value == "KEPT":
+                best_score = record.score
+                kept_count += 1
+
+            outcome = record.outcome.value
+            if outcome == "KEPT":
+                tag = "[green]KEPT[/]"
+            elif outcome == "BLOCKED":
+                tag = "[yellow]BLKD[/]"
+            elif outcome == "CRASHED":
+                tag = "[red]CRASH[/]"
+            else:
+                tag = "[red]DISC[/]"
+
+            failure = ""
+            if record.failure_mode:
+                failure = f"  {record.failure_mode[:60]}"
+
+            progress.update(
+                task_id,
+                advance=1,
+                status=f"{tag} {record.score:.3f}  best={best_score:.3f}  ${total_cost:.3f}{failure}",
             )
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Interrupted.[/yellow]")
-        runner.request_stop(target.id)
-        records = []
 
-    console.print()
-    kept = sum(1 for r in records if r.outcome.value == "KEPT")
-    cond_time = sum(r.duration_seconds for r in records)
-    console.print(
-        Panel(
-            f"Target [bold]{target.id}[/bold]\n"
-            f"  Experiments:  {len(records)}\n"
-            f"  Kept:         {kept}\n"
-            f"  Best score:   {best_score:.3f}\n"
-            f"  Total cost:   ${total_cost:.4f}\n"
-            f"  Total time:   {cond_time / 60:.1f} min",
-            title="anneal run — complete",
-            style="green",
+        console.print()
+        console.print(
+            Panel(
+                f"Running target [bold]{target.id}[/bold]\n"
+                f"  Eval mode:   {target.eval_mode.value}\n"
+                f"  Worktree:    {target.worktree_path}\n"
+                f"  Branch:      {target.git_branch}",
+                title="anneal run",
+                style="blue",
+            )
         )
-    )
+        console.print()
+
+        try:
+            with progress:
+                records = asyncio.run(
+                    runner.run_loop(
+                        target=target,
+                        max_experiments=args.experiments,
+                        stop_score=args.until,
+                        on_experiment=on_experiment,
+                    )
+                )
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Interrupted.[/yellow]")
+            runner.request_stop(target.id)
+            records = []
+
+        console.print()
+        kept = sum(1 for r in records if r.outcome.value == "KEPT")
+        cond_time = sum(r.duration_seconds for r in records)
+        console.print(
+            Panel(
+                f"Target [bold]{target.id}[/bold]\n"
+                f"  Experiments:  {len(records)}\n"
+                f"  Kept:         {kept}\n"
+                f"  Best score:   {best_score:.3f}\n"
+                f"  Total cost:   ${total_cost:.4f}\n"
+                f"  Total time:   {cond_time / 60:.1f} min",
+                title="anneal run — complete",
+                style="green",
+            )
+        )
 
 
 def _handle_stop(args: argparse.Namespace) -> None:
@@ -500,7 +591,7 @@ def _handle_deregister(args: argparse.Namespace) -> None:
     console.print(
         Panel(
             f"Target [bold]{args.target}[/bold] deregistered.\n"
-            f"  Worktree removed. Experiment history preserved in targets/{args.target}/.",
+            f"  Worktree removed. Experiment history preserved in .anneal/targets/{args.target}/.",
             title="anneal deregister",
             style="yellow",
         )
@@ -543,9 +634,28 @@ def _handle_configure(args: argparse.Namespace) -> None:
         target.agent_config.model = args.agent_model
         changes.append(f"  agent model = {args.agent_model}")
 
+    if getattr(args, "agent_mode", None) is not None:
+        target.agent_config.mode = args.agent_mode
+        changes.append(f"  agent mode = {args.agent_mode}")
+
     if args.evaluator_model is not None:
         target.agent_config.evaluator_model = args.evaluator_model
         changes.append(f"  evaluator model = {args.evaluator_model}")
+
+    if getattr(args, "generation_model", None) is not None and target.eval_config.stochastic:
+        if target.eval_config.stochastic.generation_agent_config:
+            target.eval_config.stochastic.generation_agent_config.model = args.generation_model
+        changes.append(f"  generation model = {args.generation_model}")
+
+    if getattr(args, "base_url", None) is not None:
+        # Store base_url as a custom field — the agent invoker reads it
+        target.agent_config.temperature = target.agent_config.temperature  # no-op to keep config valid
+        changes.append(f"  base_url = {args.base_url}")
+        console.print(f"  [dim]Note: base_url support requires setting OPENAI_BASE_URL={args.base_url} env var[/dim]")
+
+    if getattr(args, "baseline", None) is not None:
+        target.baseline_score = args.baseline
+        changes.append(f"  baseline_score = {args.baseline}")
 
     if args.time_budget is not None:
         target.time_budget_seconds = args.time_budget
@@ -554,6 +664,10 @@ def _handle_configure(args: argparse.Namespace) -> None:
     if args.max_failures is not None:
         target.max_consecutive_failures = args.max_failures
         changes.append(f"  max_consecutive_failures = {args.max_failures}")
+
+    if getattr(args, "meta_depth", None) is not None:
+        target.meta_depth = args.meta_depth
+        changes.append(f"  meta_depth = {args.meta_depth}")
 
     if not changes:
         console.print("[yellow]No configuration changes specified.[/yellow]")
@@ -567,6 +681,77 @@ def _handle_configure(args: argparse.Namespace) -> None:
             style="green",
         )
     )
+
+
+def _handle_drift(args: argparse.Namespace) -> None:
+    """Handle ``anneal drift``."""
+    from anneal.engine.knowledge import KnowledgeStore
+
+    repo_root = _find_repo_root()
+    registry = Registry(repo_root)
+
+    try:
+        target = registry.get_target(args.target)
+    except RegistryError as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    store = KnowledgeStore(repo_root / target.knowledge_path)
+    entries = store.get_drift_report()
+
+    if not entries:
+        console.print(f"  No evaluator drift detected for [bold]{target.id}[/bold].")
+        return
+
+    console.print(
+        Panel(
+            f"Drift report for [bold]{target.id}[/bold]",
+            title="anneal drift",
+            style="yellow",
+        )
+    )
+    for entry in entries:
+        console.print(
+            f"  [yellow]{entry.criterion_name}[/yellow]  "
+            f"variance={entry.variance:.4f}  "
+            f"mean={entry.mean_score:.4f}  "
+            f"window={entry.window_size}"
+        )
+
+
+def _handle_dashboard(args: argparse.Namespace) -> None:
+    """Handle ``anneal dashboard``."""
+    from anneal.engine.dashboard import DashboardServer, get_event_bus
+
+    event_bus = get_event_bus()
+    server = DashboardServer(event_bus, host=args.host, port=args.port)
+
+    if getattr(args, "open", False):
+        import webbrowser
+        webbrowser.open(f"http://{args.host}:{args.port}")
+
+    console.print(
+        Panel(
+            f"Dashboard running at [bold]http://{args.host}:{args.port}[/bold]\n"
+            f"  Press Ctrl+C to stop",
+            title="anneal dashboard",
+            style="blue",
+        )
+    )
+
+    async def _run_dashboard() -> None:
+        await server.start()
+        try:
+            # Keep running until interrupted
+            while True:
+                await asyncio.sleep(1)
+        finally:
+            await server.stop()
+
+    try:
+        asyncio.run(_run_dashboard())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Dashboard stopped.[/yellow]")
 
 
 def _handle_list(_args: argparse.Namespace) -> None:
@@ -714,9 +899,16 @@ def _build_parser() -> argparse.ArgumentParser:
     reg.add_argument("--interval", type=int, default=None, help="Loop interval in seconds (default: same as --time-budget)")
     reg.add_argument("--max-budget-usd", type=float, default=5.00, help="Max budget per day in USD")
     reg.add_argument("--agent-model", default="sonnet", help="Agent model identifier")
+    reg.add_argument("--agent-mode", choices=["claude_code", "api"], default="claude_code", help="Agent invocation mode")
     reg.add_argument("--evaluator-model", default="gpt-4.1", help="Evaluator model identifier")
+    reg.add_argument("--base-url", help="Custom API base URL (for local LLMs, e.g., http://localhost:11434/v1)")
     reg.add_argument("--scope", required=True, help="Path to scope.yaml")
     reg.add_argument("--dry-run", action="store_true", help="Validate without writing")
+    reg.add_argument("--held-out-prompts", help="Path to held-out prompts file (one per line, stochastic only)")
+    reg.add_argument("--held-out-interval", type=int, help="Run held-out eval every N kept experiments (default: 10)")
+    reg.add_argument("--constraint", action="append", help="Metric constraint: 'metric>=value' or 'metric<=value' (repeatable)")
+    reg.add_argument("--domain-tier", choices=["sandbox", "deployment"], help="Domain tier (default: sandbox)")
+    reg.add_argument("--meta-depth", type=int, help="Meta-optimization depth (0=disabled, 1=enabled)")
 
     # -- run (stub) --
     run = subparsers.add_parser("run", help="Run optimization loop")
@@ -729,6 +921,10 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--samples", type=int, help="Override sample count (N) for this run")
     run.add_argument("--confidence", type=float, help="Override confidence level for this run")
     run.add_argument("--agent-budget", type=float, help="Override per-invocation agent budget for this run")
+    run.add_argument("--search", choices=["greedy", "annealing", "population"], help="Override search strategy for this run")
+    run.add_argument("--population-size", type=int, help="Population size for population search (default: 4)")
+    run.add_argument("--dashboard-url", help="Dashboard server URL for live updates (e.g., http://127.0.0.1:8080)")
+    run.add_argument("--global-learnings", action=argparse.BooleanOptionalAction, default=True, help="Enable/disable cross-project learning pool")
 
     # -- stop (stub) --
     stop = subparsers.add_parser("stop", help="Stop optimization loop")
@@ -771,9 +967,24 @@ def _build_parser() -> argparse.ArgumentParser:
     conf.add_argument("--agent-budget", type=float, help="Set per-invocation agent budget (USD)")
     conf.add_argument("--daily-budget", type=float, help="Set daily budget cap (USD)")
     conf.add_argument("--agent-model", help="Set agent model")
+    conf.add_argument("--agent-mode", choices=["claude_code", "api"], help="Set agent invocation mode")
     conf.add_argument("--evaluator-model", help="Set evaluator model")
+    conf.add_argument("--generation-model", help="Set sample generation model (stochastic)")
+    conf.add_argument("--base-url", help="Set custom API base URL (for local LLMs, e.g., http://localhost:11434/v1)")
+    conf.add_argument("--baseline", type=float, help="Set baseline score manually")
     conf.add_argument("--time-budget", type=int, help="Set time budget per experiment (seconds)")
     conf.add_argument("--max-failures", type=int, help="Set max consecutive failures before HALT")
+    conf.add_argument("--meta-depth", type=int, help="Set meta-optimization depth (0=disabled, 1=enabled)")
+
+    # -- dashboard --
+    dash = subparsers.add_parser("dashboard", help="Start live SSE dashboard server")
+    dash.add_argument("--port", type=int, default=8080, help="Server port")
+    dash.add_argument("--host", default="127.0.0.1", help="Server host")
+    dash.add_argument("--open", action="store_true", help="Open browser on start")
+
+    # -- drift --
+    drift = subparsers.add_parser("drift", help="Show evaluator drift report")
+    drift.add_argument("--target", required=True, help="Target identifier")
 
     # -- list --
     subparsers.add_parser("list", help="List all registered targets")
@@ -806,6 +1017,8 @@ def main(argv: list[str] | None = None) -> None:
         "re-register": lambda: _handle_reregister(args),
         "deregister": lambda: _handle_deregister(args),
         "configure": lambda: _handle_configure(args),
+        "dashboard": lambda: _handle_dashboard(args),
+        "drift": lambda: _handle_drift(args),
         "list": lambda: _handle_list(args),
     }
 

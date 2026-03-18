@@ -8,7 +8,9 @@ from ExperimentRecord fields — no LLM summarization.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+import math
+from dataclasses import asdict, dataclass, field, replace
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 
@@ -56,6 +58,8 @@ class Learning:
     criterion_deltas: dict[str, float]
     confidence: float
     tags: list[str]
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    project_id: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +132,7 @@ def extract_learning(
         criterion_deltas=criterion_deltas,
         confidence=1.0,
         tags=list(record.tags),
+        created_at=datetime.now(UTC),
     )
 
 
@@ -140,11 +145,19 @@ def _learning_to_dict(learning: Learning) -> dict[str, object]:
     """Convert a Learning to a JSON-serializable dict."""
     d = asdict(learning)
     d["signal"] = learning.signal.value
+    d["created_at"] = learning.created_at.isoformat()
     return d
 
 
 def _dict_to_learning(d: dict[str, object]) -> Learning:
     """Reconstruct a Learning from a deserialized dict."""
+    # Handle missing created_at for backward compatibility
+    raw_created_at = d.get("created_at")
+    if raw_created_at is not None:
+        created_at = datetime.fromisoformat(str(raw_created_at))
+    else:
+        created_at = datetime.now(UTC)
+
     return Learning(
         observation=str(d["observation"]),
         signal=LearningSignal(d["signal"]),
@@ -155,6 +168,8 @@ def _dict_to_learning(d: dict[str, object]) -> Learning:
         criterion_deltas={str(k): float(v) for k, v in d["criterion_deltas"].items()},  # type: ignore[union-attr]
         confidence=float(d["confidence"]),  # type: ignore[arg-type]
         tags=[str(t) for t in d["tags"]],  # type: ignore[union-attr]
+        created_at=created_at,
+        project_id=str(d.get("project_id", "")),
     )
 
 
@@ -166,12 +181,26 @@ def _dict_to_learning(d: dict[str, object]) -> Learning:
 class LearningPool:
     """In-memory pool of cross-experiment learnings with scope-based retrieval."""
 
-    def __init__(self) -> None:
+    def __init__(self, decay_rate: float = 0.05) -> None:
         self._learnings: list[Learning] = []
+        self._decay_rate = decay_rate
 
     def add(self, learning: Learning) -> None:
         """Add a learning to the pool."""
         self._learnings.append(learning)
+
+    def _effective_score(self, learning: Learning) -> float:
+        """Compute decay-adjusted effective score for ranking."""
+        now = datetime.now(UTC)
+        age_days = (now - learning.created_at).total_seconds() / 86400.0
+        return abs(learning.score_delta) * math.exp(-self._decay_rate * age_days)
+
+    def _decay_confidence(self, learning: Learning) -> Learning:
+        """Return a new Learning with decay-adjusted confidence."""
+        now = datetime.now(UTC)
+        age_days = (now - learning.created_at).total_seconds() / 86400.0
+        decayed = learning.confidence * math.exp(-self._decay_rate * age_days)
+        return replace(learning, confidence=decayed)
 
     def retrieve(
         self,
@@ -181,14 +210,16 @@ class LearningPool:
         signal: LearningSignal | None = None,
         source_condition: str | None = None,
         source_target: str | None = None,
+        project_id: str | None = None,
     ) -> list[Learning]:
-        """Retrieve top-K learnings by |score_delta| descending.
+        """Retrieve top-K learnings by decay-adjusted |score_delta| descending.
 
         Filtering:
             - exclude_condition: omit learnings from this condition
             - signal: keep only POSITIVE or NEGATIVE
             - source_condition: keep only learnings from this condition
             - source_target: keep only learnings from this target
+            - project_id: keep only learnings from this project
         """
         candidates = self._learnings
 
@@ -204,15 +235,19 @@ class LearningPool:
         if source_target is not None:
             candidates = [l for l in candidates if l.source_target == source_target]
 
+        if project_id is not None:
+            candidates = [l for l in candidates if l.project_id == project_id]
+
         # Scope filtering: narrow by scope semantics
         # CONDITION scope requires source_condition filter (caller must provide)
         # TARGET scope requires source_target filter (caller must provide)
         # PROJECT and GLOBAL return everything matching other filters
 
-        # Sort by |score_delta| descending
-        candidates = sorted(candidates, key=lambda l: abs(l.score_delta), reverse=True)
+        # Sort by decay-adjusted |score_delta| descending
+        candidates = sorted(candidates, key=self._effective_score, reverse=True)
 
-        return candidates[:k]
+        # Return with decayed confidence values
+        return [self._decay_confidence(l) for l in candidates[:k]]
 
     def summarize(
         self,
@@ -264,8 +299,8 @@ class PersistentLearningPool(LearningPool):
     init and appends on each ``add`` call. Uses filelock for concurrent safety.
     """
 
-    def __init__(self, path: Path) -> None:
-        super().__init__()
+    def __init__(self, path: Path, decay_rate: float = 0.05) -> None:
+        super().__init__(decay_rate=decay_rate)
         self._dir = path
         self._file = path / "learnings-pool.jsonl"
         self._lock = FileLock(str(self._file) + ".lock")
@@ -291,3 +326,36 @@ class PersistentLearningPool(LearningPool):
         with self._lock:
             with self._file.open("a") as f:
                 f.write(serialized + "\n")
+
+
+# ---------------------------------------------------------------------------
+# Global (cross-project) pool
+# ---------------------------------------------------------------------------
+
+
+def get_global_pool_path() -> Path:
+    """Return the path to the global cross-project learnings file."""
+    return Path.home() / ".anneal" / "global-learnings.jsonl"
+
+
+class GlobalLearningPool(PersistentLearningPool):
+    """Cross-project learning pool stored at ``~/.anneal/global-learnings.jsonl``."""
+
+    def __init__(self, decay_rate: float = 0.05) -> None:
+        pool_path = get_global_pool_path()
+        pool_path.parent.mkdir(parents=True, exist_ok=True)
+        super().__init__(path=pool_path.parent, decay_rate=decay_rate)
+        # Override the file path to use the global-specific filename
+        self._file = pool_path
+        self._lock = FileLock(str(self._file) + ".lock")
+        # Reload from the correct file
+        self._learnings.clear()
+        if self._file.exists():
+            with self._lock:
+                with self._file.open("r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        d = json.loads(line)
+                        self._learnings.append(_dict_to_learning(d))

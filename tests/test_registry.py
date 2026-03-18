@@ -97,17 +97,17 @@ class TestInitProject:
     async def test_creates_directory_structure(self, git_repo: Path) -> None:
         await init_project(git_repo)
 
-        assert (git_repo / "anneal").is_dir()
-        assert (git_repo / "anneal" / "config.toml").is_file()
-        assert (git_repo / "anneal" / "targets").is_dir()
-        assert (git_repo / "anneal" / "worktrees").is_dir()
-        assert (git_repo / "anneal" / "templates").is_dir()
+        assert (git_repo / ".anneal").is_dir()
+        assert (git_repo / ".anneal" / "config.toml").is_file()
+        assert (git_repo / ".anneal" / "targets").is_dir()
+        assert (git_repo / ".anneal" / "templates").is_dir()
+        assert (git_repo / ".anneal" / "worktrees").is_dir()
 
     @pytest.mark.asyncio
     async def test_default_config_has_anneal_section(self, git_repo: Path) -> None:
         await init_project(git_repo)
 
-        config_text = (git_repo / "anneal" / "config.toml").read_text(encoding="utf-8")
+        config_text = (git_repo / ".anneal" / "config.toml").read_text(encoding="utf-8")
         data = tomllib.loads(config_text)
         assert "anneal" in data
         assert "version" in data["anneal"]
@@ -117,7 +117,7 @@ class TestInitProject:
         await init_project(git_repo)
 
         gitignore = (git_repo / ".gitignore").read_text(encoding="utf-8")
-        assert "anneal/worktrees/" in gitignore
+        assert ".anneal/" in gitignore
 
     @pytest.mark.asyncio
     async def test_appends_to_existing_gitignore(self, git_repo: Path) -> None:
@@ -128,7 +128,7 @@ class TestInitProject:
 
         gitignore = gitignore_path.read_text(encoding="utf-8")
         assert "*.pyc" in gitignore
-        assert "anneal/worktrees/" in gitignore
+        assert ".anneal/" in gitignore
 
     @pytest.mark.asyncio
     async def test_raises_on_reinit(self, initialized_repo: Path) -> None:
@@ -245,7 +245,7 @@ class TestConfigPersistence:
         target = _make_target()
         await registry.register_target(target)
 
-        raw = (initialized_repo / "anneal" / "config.toml").read_bytes()
+        raw = (initialized_repo / ".anneal" / "config.toml").read_bytes()
         data = tomllib.loads(raw.decode("utf-8"))
 
         assert "targets" in data
@@ -285,7 +285,7 @@ class TestConfigPersistence:
         registry = Registry(initialized_repo)
         await registry.register_target(_make_target())
 
-        raw = (initialized_repo / "anneal" / "config.toml").read_bytes()
+        raw = (initialized_repo / ".anneal" / "config.toml").read_bytes()
         # Must not raise
         data = tomllib.loads(raw.decode("utf-8"))
         assert isinstance(data, dict)

@@ -240,6 +240,7 @@ def build_target_context(
     repo_root: Path,
     history: list[ExperimentRecord],
     knowledge_context: str = "",
+    global_learnings: str = "",
 ) -> tuple[str, int]:
     """Build the complete agent context for a target.
 
@@ -303,6 +304,12 @@ def build_target_context(
     if knowledge_context:
         budget.add_slot(
             "knowledge_context", knowledge_context, priority=4, required=False
+        )
+
+    # Slot 5: Global cross-project learnings (F5)
+    if global_learnings:
+        budget.add_slot(
+            "global_learnings", global_learnings, priority=5, required=False
         )
 
     assembled = budget.assemble()

@@ -22,13 +22,16 @@ from anneal.engine.types import (
     AgentConfig,
     BinaryCriterion,
     BudgetCap,
+    ConstraintCommand,
     DeterministicEval,
     Direction,
     DomainTier,
     EvalConfig,
     EvalMode,
+    MetricConstraint,
     NotificationConfig,
     OptimizationTarget,
+    PopulationConfig,
     StochasticEval,
 )
 
@@ -100,6 +103,29 @@ def _serialize_target_toml(target: OptimizationTarget) -> str:
     lines.append(f"metric_name = {_toml_value(ec.metric_name)}")
     lines.append(f"direction = {_toml_value(ec.direction.value)}")
     lines.append(f"min_improvement_threshold = {_toml_value(ec.min_improvement_threshold)}")
+    lines.append(f"held_out_interval = {_toml_value(ec.held_out_interval)}")
+
+    # F2: Serialize constraints
+    if ec.constraints:
+        constraint_items: list[str] = []
+        for c in ec.constraints:
+            constraint_items.append(
+                f"{{metric_name = {_toml_value(c.metric_name)}, "
+                f"threshold = {_toml_value(c.threshold)}, "
+                f"direction = {_toml_value(c.direction.value)}}}"
+            )
+        lines.append(f"constraints = [{', '.join(constraint_items)}]")
+
+    if ec.constraint_commands:
+        for cc in ec.constraint_commands:
+            lines.append("")
+            lines.append(f"[[targets.{tid}.eval_config.constraint_commands]]")
+            lines.append(f"name = {_toml_value(cc.name)}")
+            lines.append(f"run_command = {_toml_value(cc.run_command)}")
+            lines.append(f"parse_command = {_toml_value(cc.parse_command)}")
+            lines.append(f"timeout_seconds = {_toml_value(cc.timeout_seconds)}")
+            lines.append(f"threshold = {_toml_value(cc.threshold)}")
+            lines.append(f"direction = {_toml_value(cc.direction.value)}")
 
     if ec.deterministic is not None:
         det = ec.deterministic
@@ -118,6 +144,15 @@ def _serialize_target_toml(target: OptimizationTarget) -> str:
         lines.append(f"generation_prompt_template = {_toml_value(sto.generation_prompt_template)}")
         lines.append(f"output_format = {_toml_value(sto.output_format)}")
         lines.append(f"confidence_level = {_toml_value(sto.confidence_level)}")
+
+        # F1: held_out_prompts
+        if sto.held_out_prompts:
+            lines.append(f"held_out_prompts = {_toml_value(sto.held_out_prompts)}")
+
+        # F2: min_criterion_scores as inline table
+        if sto.min_criterion_scores:
+            mcs_parts = [f"{_toml_value(k)} = {_toml_value(v)}" for k, v in sto.min_criterion_scores.items()]
+            lines.append(f"min_criterion_scores = {{{', '.join(mcs_parts)}}}")
 
         # criteria as array of inline tables
         criteria_items: list[str] = []
@@ -144,6 +179,14 @@ def _serialize_target_toml(target: OptimizationTarget) -> str:
         lines.append(f"[targets.{tid}.budget_cap]")
         lines.append(f"max_usd_per_day = {_toml_value(bc.max_usd_per_day)}")
         lines.append(f"cumulative_usd_spent = {_toml_value(bc.cumulative_usd_spent)}")
+
+    # population_config sub-table
+    if target.population_config is not None:
+        pc = target.population_config
+        lines.append("")
+        lines.append(f"[targets.{tid}.population_config]")
+        lines.append(f"population_size = {_toml_value(pc.population_size)}")
+        lines.append(f"tournament_size = {_toml_value(pc.tournament_size)}")
 
     # notifications sub-table
     notif = target.notifications
@@ -215,6 +258,13 @@ def _parse_eval_config(data: dict[str, object]) -> EvalConfig:
         if isinstance(gen_ac_data, dict):
             gen_ac = _parse_agent_config(gen_ac_data)
 
+        # F1: held_out_prompts
+        held_out_prompts = [str(p) for p in sto_data.get("held_out_prompts", [])]  # type: ignore[union-attr]
+        # F2: min_criterion_scores
+        min_criterion_scores = {
+            str(k): float(v) for k, v in (sto_data.get("min_criterion_scores") or {}).items()  # type: ignore[union-attr]
+        }
+
         sto = StochasticEval(
             sample_count=int(sto_data["sample_count"]),
             criteria=criteria,
@@ -223,7 +273,29 @@ def _parse_eval_config(data: dict[str, object]) -> EvalConfig:
             output_format=str(sto_data["output_format"]),
             confidence_level=float(sto_data.get("confidence_level", 0.95)),  # type: ignore[arg-type]
             generation_agent_config=gen_ac,
+            held_out_prompts=held_out_prompts,
+            min_criterion_scores=min_criterion_scores,
         )
+
+    # F2: Parse constraints
+    constraints: list[MetricConstraint] = []
+    for c in data.get("constraints", []):  # type: ignore[union-attr]
+        constraints.append(MetricConstraint(
+            metric_name=str(c["metric_name"]),  # type: ignore[index]
+            threshold=float(c["threshold"]),  # type: ignore[index]
+            direction=Direction(str(c["direction"])),  # type: ignore[index]
+        ))
+
+    constraint_commands: list[ConstraintCommand] = []
+    for cc in data.get("constraint_commands", []):  # type: ignore[union-attr]
+        constraint_commands.append(ConstraintCommand(
+            name=str(cc["name"]),  # type: ignore[index]
+            run_command=str(cc["run_command"]),  # type: ignore[index]
+            parse_command=str(cc["parse_command"]),  # type: ignore[index]
+            timeout_seconds=int(cc["timeout_seconds"]),  # type: ignore[index]
+            threshold=float(cc["threshold"]),  # type: ignore[index]
+            direction=Direction(str(cc["direction"])),  # type: ignore[index]
+        ))
 
     return EvalConfig(
         metric_name=str(data["metric_name"]),
@@ -231,6 +303,9 @@ def _parse_eval_config(data: dict[str, object]) -> EvalConfig:
         min_improvement_threshold=float(data.get("min_improvement_threshold", 0.0)),  # type: ignore[arg-type]
         deterministic=det,
         stochastic=sto,
+        held_out_interval=int(data.get("held_out_interval", 10)),  # type: ignore[arg-type]
+        constraints=constraints,
+        constraint_commands=constraint_commands,
     )
 
 
@@ -264,6 +339,15 @@ def _parse_target(data: dict[str, object]) -> OptimizationTarget:
         else NotificationConfig()
     )
 
+    # Population config
+    pc_data = data.get("population_config")
+    population_config: PopulationConfig | None = None
+    if isinstance(pc_data, dict):
+        population_config = PopulationConfig(
+            population_size=int(pc_data.get("population_size", 4)),  # type: ignore[arg-type]
+            tournament_size=int(pc_data.get("tournament_size", 2)),  # type: ignore[arg-type]
+        )
+
     return OptimizationTarget(
         id=str(data["id"]),
         domain_tier=DomainTier(str(data["domain_tier"])),
@@ -284,6 +368,7 @@ def _parse_target(data: dict[str, object]) -> OptimizationTarget:
         budget_cap=budget_cap,
         meta_depth=int(data.get("meta_depth", 0)),  # type: ignore[arg-type]
         notifications=notifications,
+        population_config=population_config,
     )
 
 
@@ -305,7 +390,7 @@ class Registry:
 
     @property
     def config_path(self) -> Path:
-        return self._repo_root / "anneal" / "config.toml"
+        return self._repo_root / ".anneal" / "config.toml"
 
     # ------------------------------------------------------------------
     # Persistence
@@ -372,7 +457,7 @@ class Registry:
 
         # Create git worktree
         worktree_info = await self._git.create_worktree(self._repo_root, target.id)
-        target.worktree_path = str(worktree_info.path)
+        target.worktree_path = str(worktree_info.path.relative_to(self._repo_root))
         target.git_branch = worktree_info.branch
 
         # Configure gc to preserve experiment history
@@ -392,7 +477,7 @@ class Registry:
         if target_id not in self._targets:
             raise RegistryError(f"Target not found: {target_id}")
 
-        # Remove worktree (experiment history in targets/<id>/ is preserved)
+        # Remove worktree (experiment history in .anneal/targets/<id>/ is preserved)
         await self._git.remove_worktree(self._repo_root, target_id)
 
         del self._targets[target_id]
@@ -427,8 +512,8 @@ async def init_project(repo_root: Path) -> None:
     """One-time project setup.
 
     1. Verify repo_root is a git repository (has .git)
-    2. Create anneal/ directory structure
-    3. Add 'anneal/worktrees/' to .gitignore if not already present
+    2. Create .anneal/ directory structure (config, targets, templates, worktrees)
+    3. Add '.anneal/' to .gitignore if not already present
     4. Raise RegistryError if not a git repo or already initialized
     """
     repo_root = repo_root.resolve()
@@ -439,15 +524,15 @@ async def init_project(repo_root: Path) -> None:
         raise RegistryError(f"Not a git repository: {repo_root}")
 
     # Check not already initialized
-    anneal_dir = repo_root / "anneal"
+    anneal_dir = repo_root / ".anneal"
     config_path = anneal_dir / "config.toml"
     if config_path.exists():
         raise RegistryError(f"Project already initialized: {config_path} exists")
 
-    # Create directory structure
+    # Create directory structure under .anneal/
     (anneal_dir / "targets").mkdir(parents=True, exist_ok=True)
-    (anneal_dir / "worktrees").mkdir(parents=True, exist_ok=True)
     (anneal_dir / "templates").mkdir(parents=True, exist_ok=True)
+    (anneal_dir / "worktrees").mkdir(parents=True, exist_ok=True)
 
     # Write default config.toml
     config_path.write_text(
@@ -455,18 +540,18 @@ async def init_project(repo_root: Path) -> None:
         encoding="utf-8",
     )
 
-    # Ensure worktrees directory is in .gitignore
+    # Ensure .anneal/ is in .gitignore
     gitignore_path = repo_root / ".gitignore"
-    worktree_ignore_entry = "anneal/worktrees/"
+    ignore_entry = ".anneal/"
 
     if gitignore_path.exists():
         existing = gitignore_path.read_text(encoding="utf-8")
-        if worktree_ignore_entry not in existing.splitlines():
+        if ignore_entry not in existing.splitlines():
             with gitignore_path.open("a", encoding="utf-8") as f:
                 if not existing.endswith("\n"):
                     f.write("\n")
-                f.write(f"{worktree_ignore_entry}\n")
+                f.write(f"{ignore_entry}\n")
     else:
-        gitignore_path.write_text(f"{worktree_ignore_entry}\n", encoding="utf-8")
+        gitignore_path.write_text(f"{ignore_entry}\n", encoding="utf-8")
 
     logger.info("Initialized anneal project at %s", repo_root)

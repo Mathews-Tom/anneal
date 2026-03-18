@@ -76,7 +76,7 @@ async def test_create_worktree_returns_valid_info(
     assert info.branch == "anneal/t1"
     assert len(info.head_sha) == 40
     assert info.path.exists()
-    assert info.path == (git_repo / "worktrees" / "t1").resolve()
+    assert info.path == (git_repo / ".anneal" / "worktrees" / "t1").resolve()
 
 
 @pytest.mark.asyncio
@@ -94,7 +94,7 @@ async def test_remove_worktree_deletes_directory(
     git_repo: Path, env: GitEnvironment
 ) -> None:
     await env.create_worktree(git_repo, "rm-me")
-    wt_path = git_repo / "worktrees" / "rm-me"
+    wt_path = git_repo / ".anneal" / "worktrees" / "rm-me"
     assert wt_path.exists()
 
     await env.remove_worktree(git_repo, "rm-me")

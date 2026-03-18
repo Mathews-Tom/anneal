@@ -128,8 +128,8 @@ def validate_scope(
         for sibling in sibling_targets:
             protected_files = [
                 sibling.scope_path,
-                f"targets/{sibling.id}/program.md",
-                f"targets/{sibling.id}/eval_criteria.toml",
+                f".anneal/targets/{sibling.id}/program.md",
+                f".anneal/targets/{sibling.id}/eval_criteria.toml",
             ]
             for config_file in protected_files:
                 if config_file in scope.editable:

@@ -7,6 +7,7 @@ hypotheses.jsonl, learnings-structured.jsonl, and learnings.md.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections import Counter
 from dataclasses import asdict
@@ -16,7 +17,9 @@ from pathlib import Path
 
 from filelock import FileLock
 
-from anneal.engine.types import ConsolidationRecord, ExperimentRecord, Outcome
+from anneal.engine.types import ConsolidationRecord, DriftEntry, ExperimentRecord, Outcome
+
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeError(Exception):
@@ -59,6 +62,8 @@ def _json_to_consolidation(line: str) -> ConsolidationRecord:
     data = json.loads(line)
     data["timestamp"] = datetime.fromisoformat(data["timestamp"])
     data["experiment_range"] = tuple(data["experiment_range"])
+    data.setdefault("criterion_variances", {})
+    data.setdefault("score_variance", 0.0)
     return ConsolidationRecord(**data)
 
 
@@ -71,6 +76,14 @@ def _jaccard_similarity(a: str, b: str) -> float:
     intersection = words_a & words_b
     union = words_a | words_b
     return len(intersection) / len(union)
+
+
+def _variance(xs: list[float]) -> float:
+    """Population variance of a list of floats. Returns 0.0 for empty/single."""
+    if len(xs) < 2:
+        return 0.0
+    mean = sum(xs) / len(xs)
+    return sum((x - mean) ** 2 for x in xs) / len(xs)
 
 
 class KnowledgeStore:
@@ -306,6 +319,24 @@ class KnowledgeStore:
         for r in window:
             tag_counter.update(r.tags)
 
+        # Score variance across the consolidation window
+        scores = [r.score for r in window]
+        score_variance = _variance(scores)
+
+        # Per-criterion variance from raw_scores across experiments
+        criterion_variances: dict[str, float] = {}
+        records_with_raw = [r for r in window if r.raw_scores]
+        if records_with_raw:
+            max_len = max(len(r.raw_scores) for r in records_with_raw)  # type: ignore[arg-type]
+            for i in range(max_len):
+                values = [
+                    r.raw_scores[i]  # type: ignore[index]
+                    for r in records_with_raw
+                    if r.raw_scores is not None and len(r.raw_scores) > i
+                ]
+                if len(values) >= 2:
+                    criterion_variances[f"criterion_{i}"] = _variance(values)
+
         record = ConsolidationRecord(
             experiment_range=(start_idx, total),
             timestamp=datetime.now(),
@@ -318,13 +349,62 @@ class KnowledgeStore:
             top_improvements=top_improvements,
             failed_approaches=failed_approaches,
             tags_frequency=dict(tag_counter),
+            criterion_variances=criterion_variances,
+            score_variance=score_variance,
         )
+
+        drifting = [name for name, var in criterion_variances.items() if var > 0.1]
+        if drifting:
+            logger.warning("Evaluator drift detected in criteria: %s", drifting)
 
         # Append to learnings-structured.jsonl
         with open(self._consolidations_file, "a") as f:
             f.write(_consolidation_to_json(record) + "\n")
 
         return record
+
+    def get_drift_report(self, variance_threshold: float = 0.1) -> list[DriftEntry]:
+        """Return criteria with variance above threshold from recent consolidations.
+
+        Analyzes the most recent consolidation record's criterion_variances
+        and returns entries where variance exceeds the threshold.
+        """
+        consolidations = self.load_consolidations()
+        if not consolidations:
+            return []
+
+        latest = consolidations[-1]
+        if not latest.criterion_variances:
+            return []
+
+        # Collect raw_scores from the latest consolidation window to compute means
+        all_records = self.load_records()
+        start_idx, end_idx = latest.experiment_range
+        window = all_records[start_idx:end_idx]
+        records_with_raw = [r for r in window if r.raw_scores]
+
+        entries: list[DriftEntry] = []
+        for name, var in latest.criterion_variances.items():
+            if var <= variance_threshold:
+                continue
+            # Extract criterion index from name
+            idx = int(name.split("_")[1])
+            values = [
+                r.raw_scores[idx]  # type: ignore[index]
+                for r in records_with_raw
+                if r.raw_scores is not None and len(r.raw_scores) > idx
+            ]
+            mean_score = sum(values) / len(values) if values else 0.0
+            entries.append(
+                DriftEntry(
+                    criterion_name=name,
+                    variance=var,
+                    mean_score=mean_score,
+                    window_size=len(values),
+                )
+            )
+
+        return entries
 
     def load_consolidations(self) -> list[ConsolidationRecord]:
         """Load all consolidation records from learnings-structured.jsonl."""

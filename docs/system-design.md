@@ -227,9 +227,9 @@ Each target runs in its own git worktree. Worktrees share the same `.git` direct
 
 ```mermaid
 flowchart TD
-    REPO[".git directory<br/>(shared)"] --> WT1["worktrees/skill-diagram/<br/>branch: anneal/skill-diagram"]
-    REPO --> WT2["worktrees/cold-email/<br/>branch: anneal/cold-email"]
-    REPO --> WT3["worktrees/website-perf/<br/>branch: anneal/website-perf"]
+    REPO[".git directory<br/>(shared)"] --> WT1[".anneal/worktrees/skill-diagram/<br/>branch: anneal/skill-diagram"]
+    REPO --> WT2[".anneal/worktrees/cold-email/<br/>branch: anneal/cold-email"]
+    REPO --> WT3[".anneal/worktrees/website-perf/<br/>branch: anneal/website-perf"]
 
     WT1 --> R1[Runner instance 1]
     WT2 --> R2[Runner instance 2]
@@ -239,12 +239,12 @@ flowchart TD
 At target registration, the engine creates a worktree:
 
 ```bash
-git worktree add worktrees/<target-id> -b anneal/<target-id>
+git worktree add .anneal/worktrees/<target-id> -b anneal/<target-id>
 ```
 
-All file operations for that target happen within `worktrees/<target-id>/`. The runner's working directory is set to the worktree path.
+All file operations for that target happen within `.anneal/worktrees/<target-id>/`. The runner's working directory is set to the worktree path.
 
-**Deregistration:** on target deregistration, the runner first acquires the target's lock (to prevent deregistering a running target). The worktree is removed but `targets/<target-id>/` (containing experiments.jsonl, learnings, and the vector index) is preserved. Deregistration does not destroy experiment history.
+**Deregistration:** on target deregistration, the runner first acquires the target's lock (to prevent deregistering a running target). The worktree is removed but `.anneal/targets/<target-id>/` (containing experiments.jsonl, learnings, and the vector index) is preserved. Deregistration does not destroy experiment history.
 
 ### Git GC Under Multi-Target Load
 
@@ -347,38 +347,41 @@ graph TD
 ### File Layout
 
 ```
-anneal/
-├── config.toml                    # target registry + scope hashes
+anneal/                              # Python package (source code only)
 ├── engine/
-│   ├── runner.py                  # experiment loop orchestrator (state machine)
-│   ├── agent.py                   # agent invocation (Claude Code + API modes)
-│   ├── eval.py                    # deterministic + stochastic eval with bootstrap CI
-│   ├── metrics.py                 # CompositeMetric (weighted sum + constraint mode)
-│   ├── search.py                  # pluggable search strategies
-│   ├── knowledge.py               # experiment records, consolidation, vector retrieval
-│   ├── embeddings.py              # embedding model wrapper + index management
-│   ├── environment.py             # git environment implementation
-│   ├── scope.py                   # scope.yaml parser + schema validation + post-write enforcement
-│   ├── safety.py                  # time-boxing, budget, failure tracking, terminal states
-│   ├── notifications.py           # webhook with retry, stdout, status file notification hooks
-│   ├── scheduler.py               # interval scheduling + per-target locking
-│   └── cost.py                    # cost tracking + pre-experiment estimation
+│   ├── runner.py                    # experiment loop orchestrator (state machine)
+│   ├── agent.py                     # agent invocation (Claude Code + API modes)
+│   ├── eval.py                      # deterministic + stochastic eval with bootstrap CI
+│   ├── metrics.py                   # CompositeMetric (weighted sum + constraint mode)
+│   ├── search.py                    # pluggable search strategies
+│   ├── knowledge.py                 # experiment records, consolidation, vector retrieval
+│   ├── embeddings.py                # embedding model wrapper + index management
+│   ├── environment.py               # git environment implementation
+│   ├── scope.py                     # scope.yaml parser + schema validation + post-write enforcement
+│   ├── safety.py                    # time-boxing, budget, failure tracking, terminal states
+│   ├── notifications.py             # webhook with retry, stdout, status file notification hooks
+│   ├── scheduler.py                 # interval scheduling + per-target locking
+│   └── cost.py                      # cost tracking + pre-experiment estimation
+└── cli.py                           # CLI entry point
+
+.anneal/                             # runtime artifacts (gitignored)
+├── config.toml                      # target registry + scope hashes
 ├── targets/
 │   └── <target-id>/
-│       ├── program.md             # agent instructions
-│       ├── scope.yaml             # editable/immutable boundaries
-│       ├── metrics.yaml           # metric definitions (if composite)
-│       ├── eval_criteria.toml     # binary criteria + test prompts (if stochastic)
-│       ├── experiments.jsonl      # experiment records (append-only, authoritative)
-│       ├── learnings.md           # narrative summary (reading aid, not authoritative)
+│       ├── program.md               # agent instructions
+│       ├── scope.yaml               # editable/immutable boundaries
+│       ├── metrics.yaml             # metric definitions (if composite)
+│       ├── eval_criteria.toml       # binary criteria + test prompts (if stochastic)
+│       ├── experiments.jsonl        # experiment records (append-only, authoritative)
+│       ├── learnings.md             # narrative summary (reading aid, not authoritative)
 │       ├── learnings-structured.jsonl  # structured consolidation records (authoritative)
-│       └── embeddings.npy         # hypothesis embedding vectors for similarity search
+│       └── embeddings.npy           # hypothesis embedding vectors for similarity search
 ├── worktrees/
-│   └── <target-id>/              # git worktree (created at registration)
+│   └── <target-id>/                 # git worktree (created at registration)
 └── templates/
-    ├── program-code.md            # template for code optimization targets
-    ├── program-prompt.md          # template for prompt/skill optimization targets
-    └── scope-default.yaml         # default scope with required immutable entries
+    ├── program-code.md              # template for code optimization targets
+    ├── program-prompt.md            # template for prompt/skill optimization targets
+    └── scope-default.yaml           # default scope with required immutable entries
 ```
 
 ### program.md Template Schema
@@ -1110,11 +1113,11 @@ Per-sample scores are the unit of analysis. The aggregate score is `mean(per_sam
 ```mermaid
 flowchart TD
     SCHED["Scheduler<br/>checks due targets<br/>sequential dispatch"] --> LOCK1{Lock<br/>skill-diagram?}
-    LOCK1 -->|acquired| R1["Runner<br/>worktrees/skill-diagram/<br/>branch: anneal/skill-diagram"]
+    LOCK1 -->|acquired| R1["Runner<br/>.anneal/worktrees/skill-diagram/<br/>branch: anneal/skill-diagram"]
     LOCK1 -->|held| SKIP1["Skip + log WARNING<br/>increment skip counter"]
 
     SCHED --> LOCK2{Lock<br/>website-perf?}
-    LOCK2 -->|acquired| R2["Runner<br/>worktrees/website-perf/<br/>branch: anneal/website-perf"]
+    LOCK2 -->|acquired| R2["Runner<br/>.anneal/worktrees/website-perf/<br/>branch: anneal/website-perf"]
     LOCK2 -->|held| SKIP2["Skip + log WARNING<br/>increment skip counter"]
 
     R1 --> STATUS[Status files + notifications]
@@ -1157,8 +1160,8 @@ Git reflog entries expire at 90 days by default. Discarded experiments are only 
 
 ```bash
 # Set per-worktree at registration time
-git -C worktrees/<target-id> config gc.reflogExpire never
-git -C worktrees/<target-id> config gc.reflogExpireUnreachable never
+git -C .anneal/worktrees/<target-id> config gc.reflogExpire never
+git -C .anneal/worktrees/<target-id> config gc.reflogExpireUnreachable never
 ```
 
 This prevents git gc from pruning unreachable commits (discarded experiments). Disk usage grows linearly with experiment count — for text-based artifacts this is negligible (each commit is a small diff). For targets with large generated outputs, the runner should `.gitignore` generated artifacts and only commit the mutation diff.

@@ -1,0 +1,6 @@
+editable:
+  - examples/code-minify/app.py
+
+immutable:
+  - scope.yaml
+  - metrics.yaml

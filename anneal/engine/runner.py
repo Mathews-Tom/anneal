@@ -55,7 +55,6 @@ class ExperimentRunner:
         repo_root: Path | None = None,
         knowledge: KnowledgeStore | None = None,
         notifications: NotificationManager | None = None,
-        dashboard_url: str | None = None,
         learning_pool: LearningPool | None = None,
     ) -> None:
         self._git = git
@@ -63,7 +62,6 @@ class ExperimentRunner:
         self._eval = eval_engine
         self._search = search
         self._registry = registry
-        self._dashboard_url = dashboard_url
         self._repo_root = repo_root
         self._knowledge = knowledge
         self._notifications = notifications
@@ -593,10 +591,6 @@ class ExperimentRunner:
             if on_experiment is not None:
                 on_experiment(record)
 
-            # Publish to dashboard via HTTP POST
-            if self._dashboard_url is not None:
-                await self._publish_dashboard_event(record, target)
-
             # Milestone notification
             if self._notifications and record.outcome is Outcome.KEPT:
                 await self._notifications.notify_milestone(
@@ -731,30 +725,6 @@ class ExperimentRunner:
                 f"| hypothesis: {rec.hypothesis}"
             )
         return "\n".join(lines)
-
-    # ------------------------------------------------------------------
-    # Dashboard event publishing
-    # ------------------------------------------------------------------
-
-    async def _publish_dashboard_event(
-        self, record: ExperimentRecord, target: OptimizationTarget
-    ) -> None:
-        """POST experiment event to the dashboard HTTP server."""
-        import httpx
-        payload = {
-            "type": "experiment_complete",
-            "data": {
-                "target_id": target.id,
-                "score": record.score,
-                "baseline": record.baseline_score,
-                "outcome": record.outcome.value,
-                "hypothesis": record.hypothesis[:200] if record.hypothesis else "",
-                "cost": record.cost_usd,
-                "duration": record.duration_seconds,
-            },
-        }
-        async with httpx.AsyncClient() as client:
-            await client.post(f"{self._dashboard_url}/api/event", json=payload, timeout=2.0)
 
     # ------------------------------------------------------------------
     # Recovery helpers

@@ -1,0 +1,26 @@
+[experiment]
+name = "gate1-guided-search"
+checkpoint = "gate1"
+description = "LLM-guided mutation vs random vs Bayesian search"
+max_experiments_per_condition = 50
+seed = 42
+artifact_paths = ["examples/skill-diagram/SKILL.md"]
+eval_criteria_path = "examples/skill-diagram/eval_criteria.toml"
+
+# Midpoint early-warning: if guided is within CI of random at this experiment
+midpoint_check = 25
+
+[conditions.guided]
+description = "Agent reads artifact + history + cross-condition insights"
+knowledge_enabled = true
+search_strategy = "greedy"
+
+[conditions.random]
+description = "Agent generates random mutation with no context"
+knowledge_enabled = false
+search_strategy = "random"
+
+[conditions.bayesian]
+description = "Classic Bayesian optimization over parameterized search space"
+knowledge_enabled = false
+search_strategy = "bayesian"

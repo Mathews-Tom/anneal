@@ -21,12 +21,14 @@ from anneal.engine.context import build_target_context
 from anneal.engine.environment import GitEnvironment
 from anneal.engine.eval import EvalEngine, EvalError
 from anneal.engine.knowledge import KnowledgeStore
+from anneal.engine.learning_pool import LearningPool, extract_learning
 from anneal.engine.notifications import NotificationManager
 from anneal.engine.registry import Registry
 from anneal.engine.safety import pre_experiment_check
 from anneal.engine.scope import enforce_scope, load_scope, verify_scope_hash
 from anneal.engine.search import GreedySearch, SearchStrategy
 from anneal.engine.types import (
+    DomainTier,
     ExperimentRecord,
     OptimizationTarget,
     Outcome,
@@ -54,6 +56,7 @@ class ExperimentRunner:
         knowledge: KnowledgeStore | None = None,
         notifications: NotificationManager | None = None,
         dashboard_url: str | None = None,
+        learning_pool: LearningPool | None = None,
     ) -> None:
         self._git = git
         self._agent = agent_invoker
@@ -64,6 +67,7 @@ class ExperimentRunner:
         self._repo_root = repo_root
         self._knowledge = knowledge
         self._notifications = notifications
+        self._learning_pool = learning_pool
         self._stop_flags: set[str] = set()
         self._stop_lock = threading.Lock()
 
@@ -133,13 +137,48 @@ class ExperimentRunner:
             history=history,
             knowledge_context=knowledge_context,
         )
+        # F6: Use deployment-mode invocation for DEPLOYMENT-tier targets
         try:
-            agent_result = await self._agent.invoke(
-                target.agent_config,
-                prompt,
-                worktree,
-                target.time_budget_seconds,
-            )
+            if target.domain_tier is DomainTier.DEPLOYMENT:
+                agent_result = await self._agent.invoke_deployment(
+                    target.agent_config,
+                    prompt,
+                    worktree,
+                    target.time_budget_seconds,
+                )
+                # Approval gate: present raw output to callback
+                if target.approval_callback is not None:
+                    if not target.approval_callback(agent_result.raw_output):
+                        duration = time.monotonic() - start_time
+                        return ExperimentRecord(
+                            id=experiment_id,
+                            target_id=target.id,
+                            git_sha=pre_experiment_sha,
+                            pre_experiment_sha=pre_experiment_sha,
+                            timestamp=datetime.now(tz=timezone.utc),
+                            hypothesis=agent_result.hypothesis or "Deployment change rejected",
+                            hypothesis_source=agent_result.hypothesis_source,
+                            mutation_diff_summary="",
+                            score=target.baseline_score,
+                            score_ci_lower=None,
+                            score_ci_upper=None,
+                            raw_scores=None,
+                            baseline_score=target.baseline_score,
+                            outcome=Outcome.DISCARDED,
+                            failure_mode="approval_rejected",
+                            duration_seconds=duration,
+                            tags=agent_result.tags,
+                            learnings="",
+                            cost_usd=agent_result.cost_usd,
+                            bootstrap_seed=0,
+                        )
+            else:
+                agent_result = await self._agent.invoke(
+                    target.agent_config,
+                    prompt,
+                    worktree,
+                    target.time_budget_seconds,
+                )
         except AgentTimeoutError as exc:
             duration = time.monotonic() - start_time
             # KILLED recovery: clean up index.lock, restore worktree
@@ -334,7 +373,22 @@ class ExperimentRunner:
             confidence,
         )
 
+        # F2: Check constraints before finalizing KEEP
+        constraint_failure: str | None = None
         if keep:
+            constraint_results = await self._eval.check_constraints(
+                worktree, target.eval_config, artifact_content,
+            )
+            for name, passed, actual in constraint_results:
+                if not passed:
+                    constraint_failure = f"constraint_violated:{name}"
+                    logger.warning(
+                        "Constraint %s failed for target %s: actual=%.4f",
+                        name, target.id, actual,
+                    )
+                    break
+
+        if keep and constraint_failure is None:
             outcome = Outcome.KEPT
             # Update baseline in target and persist
             target.baseline_score = eval_result.score
@@ -365,7 +419,7 @@ class ExperimentRunner:
             raw_scores=eval_result.raw_scores,
             baseline_score=target.baseline_score,
             outcome=outcome,
-            failure_mode=None,
+            failure_mode=constraint_failure,
             duration_seconds=duration,
             tags=tags,
             learnings="",
@@ -380,6 +434,13 @@ class ExperimentRunner:
             if self._knowledge.should_consolidate():
                 self._knowledge.consolidate()
                 self._knowledge.regenerate_learnings()
+
+        # F5: Extract and store cross-project learning
+        if self._learning_pool is not None:
+            learning = extract_learning(
+                record, source_target=target.id,
+            )
+            self._learning_pool.add(learning)
 
         return record
 
@@ -398,6 +459,8 @@ class ExperimentRunner:
         self._clear_stop(target.id)
         records: list[ExperimentRecord] = []
         consecutive_failures = 0
+        kept_count = 0
+        consecutive_no_kept = 0
 
         while True:
             # Check stop conditions
@@ -453,6 +516,79 @@ class ExperimentRunner:
             else:
                 consecutive_failures = 0
 
+            # Track kept count for held-out eval and plateau detection
+            if record.outcome is Outcome.KEPT:
+                kept_count += 1
+                consecutive_no_kept = 0
+            else:
+                consecutive_no_kept += 1
+
+            # F1: Held-out evaluation at regular intervals
+            held_out_interval = target.eval_config.held_out_interval
+            stochastic_conf = target.eval_config.stochastic
+            if (
+                record.outcome is Outcome.KEPT
+                and stochastic_conf is not None
+                and stochastic_conf.held_out_prompts
+                and kept_count % held_out_interval == 0
+            ):
+                worktree = Path(target.worktree_path)
+                artifact_content = self._read_artifacts(worktree, target.artifact_paths)
+                try:
+                    held_out_result = await self._eval.evaluate_held_out(
+                        worktree, target.eval_config, artifact_content,
+                    )
+                    record.held_out_score = held_out_result.score
+                    logger.info(
+                        "Held-out eval for %s: score=%.4f (main=%.4f)",
+                        target.id, held_out_result.score, record.score,
+                    )
+                    # Warn on divergence >20%
+                    if record.score > 0 and abs(held_out_result.score - record.score) / record.score > 0.20:
+                        logger.warning(
+                            "Held-out score diverges >20%% from main score for %s: "
+                            "held_out=%.4f main=%.4f",
+                            target.id, held_out_result.score, record.score,
+                        )
+                except EvalError as exc:
+                    logger.warning("Held-out eval failed for %s: %s", target.id, exc)
+
+            # F8: Meta-optimization on plateau
+            meta_m = min(target.max_consecutive_failures, 10)
+            if (
+                target.meta_depth > 0
+                and consecutive_no_kept >= meta_m
+                and len(records) >= meta_m
+            ):
+                logger.info(
+                    "Plateau detected for %s (%d consecutive non-KEPT). Triggering meta-optimization.",
+                    target.id, consecutive_no_kept,
+                )
+                recent_scores = [r.score for r in records[-meta_m:]]
+                trajectory = ", ".join(f"{s:.4f}" for s in recent_scores)
+                meta_prompt = (
+                    f"The optimization for target '{target.id}' has plateaued. "
+                    f"No improvements in the last {consecutive_no_kept} experiments. "
+                    f"Recent score trajectory: [{trajectory}]. "
+                    f"Current baseline: {target.baseline_score:.4f}. "
+                    f"Revise the optimization strategy in program.md to break through."
+                )
+                base = self._repo_root if self._repo_root else Path(target.worktree_path)
+                program_md = base / target.knowledge_path / "program.md"
+                if program_md.exists():
+                    try:
+                        await self._agent.invoke_meta(
+                            target.agent_config,
+                            meta_prompt,
+                            Path(target.worktree_path),
+                            target.time_budget_seconds,
+                            program_md,
+                        )
+                        logger.info("Meta-optimization completed for %s", target.id)
+                        consecutive_no_kept = 0  # Reset plateau counter
+                    except (AgentTimeoutError, AgentInvocationError) as exc:
+                        logger.warning("Meta-optimization failed for %s: %s", target.id, exc)
+
             # Callback
             if on_experiment is not None:
                 on_experiment(record)
@@ -463,7 +599,6 @@ class ExperimentRunner:
 
             # Milestone notification
             if self._notifications and record.outcome is Outcome.KEPT:
-                kept_count = sum(1 for r in records if r.outcome is Outcome.KEPT)
                 await self._notifications.notify_milestone(
                     target.id, kept_count, record.score,
                 )

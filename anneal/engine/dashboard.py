@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from aiohttp import web
+from aiohttp.client_exceptions import ClientConnectionResetError
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +27,13 @@ logger = logging.getLogger(__name__)
 class EventBus:
     """Publish-subscribe event bus for experiment updates."""
 
+    MAX_SCORE_HISTORY = 20
+
     def __init__(self) -> None:
         self._subscribers: list[asyncio.Queue[tuple[str, dict[str, Any]]]] = []
         self._lock = asyncio.Lock()
         self._latest_status: dict[str, dict[str, Any]] = {}
+        self._score_history: dict[str, list[float]] = {}
 
     def publish(self, event_type: str, data: dict[str, Any]) -> None:
         """Publish an event to all subscribers."""
@@ -45,6 +49,12 @@ class EventBus:
                 status["cost"] = data.get("cost")
                 status["duration"] = data.get("duration")
                 status["experiment_count"] = status.get("experiment_count", 0) + 1
+                score = data.get("score")
+                if score is not None:
+                    history = self._score_history.setdefault(str(target_id), [])
+                    history.append(score)
+                    if len(history) > self.MAX_SCORE_HISTORY:
+                        history.pop(0)
             elif event_type == "state_change":
                 status["state"] = data.get("state")
                 status["reason"] = data.get("reason")
@@ -69,9 +79,12 @@ class EventBus:
         finally:
             self._subscribers.remove(queue)
 
-    def get_status(self) -> dict[str, dict[str, Any]]:
+    def get_status(self) -> dict[str, Any]:
         """Return current status snapshot for all known targets."""
-        return dict(self._latest_status)
+        return {
+            "targets": dict(self._latest_status),
+            "score_history": dict(self._score_history),
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +158,18 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
 
   es.onopen = function(){ connEl.textContent = 'Connected'; connEl.style.color = '#3fb950'; };
   es.onerror = function(){ connEl.textContent = 'Disconnected'; connEl.style.color = '#f85149'; };
+
+  fetch('/api/status').then(function(r){ return r.json(); }).then(function(status){
+    const st = status.targets || {};
+    const sh = status.score_history || {};
+    Object.keys(st).forEach(function(tid){
+      targets[tid] = st[tid];
+    });
+    Object.keys(sh).forEach(function(tid){
+      scoreHistory[tid] = sh[tid].slice(-MAX_HISTORY);
+    });
+    if(Object.keys(targets).length > 0) render();
+  });
 
   es.addEventListener('experiment_complete', function(e){
     const d = JSON.parse(e.data);
@@ -332,7 +357,15 @@ class DashboardServer:
 
         async for event_type, data in self._event_bus.subscribe():
             payload = f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
-            await response.write(payload.encode())
+            try:
+                await response.write(payload.encode())
+            except (
+                ConnectionResetError,
+                ConnectionAbortedError,
+                BrokenPipeError,
+                ClientConnectionResetError,
+            ):
+                break
 
         return response
 

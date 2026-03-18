@@ -69,8 +69,8 @@ def _handle_init(_args: argparse.Namespace) -> None:
     console.print(
         Panel(
             f"Initialized anneal project at [bold]{repo_root}[/bold]\n"
-            f"  Created: {repo_root / 'anneal'}/\n"
-            f"  Added worktrees/ to .gitignore",
+            f"  Created: {repo_root / '.anneal'}/\n"
+            f"  Added .anneal/ to .gitignore",
             title="anneal init",
             style="green",
         )
@@ -237,8 +237,8 @@ def _handle_register(args: argparse.Namespace) -> None:
     # Relative paths for storage
     scope_rel = str(scope_path.relative_to(repo_root))
     target_id = args.name
-    knowledge_path = f"targets/{target_id}"
-    worktree_path = f"worktrees/{target_id}"
+    knowledge_path = f".anneal/targets/{target_id}"
+    worktree_path = f".anneal/worktrees/{target_id}"
     git_branch = f"anneal/{target_id}"
 
     # F6: Domain tier
@@ -591,7 +591,7 @@ def _handle_deregister(args: argparse.Namespace) -> None:
     console.print(
         Panel(
             f"Target [bold]{args.target}[/bold] deregistered.\n"
-            f"  Worktree removed. Experiment history preserved in targets/{args.target}/.",
+            f"  Worktree removed. Experiment history preserved in .anneal/targets/{args.target}/.",
             title="anneal deregister",
             style="yellow",
         )

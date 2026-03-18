@@ -16,7 +16,7 @@ from pathlib import Path
 
 import openai
 
-from anneal.engine.types import AgentConfig, AgentInvocationResult
+from anneal.engine.types import AgentConfig, AgentInvocationResult, DomainTier
 
 logger = logging.getLogger(__name__)
 
@@ -95,11 +95,64 @@ class AgentInvoker:
         prompt: str,
         worktree_path: Path,
         time_budget_seconds: int,
+        deployment_mode: bool = False,
     ) -> AgentInvocationResult:
         if config.mode == "claude_code":
-            return await self._invoke_claude_code(config, prompt, worktree_path, time_budget_seconds)
+            return await self._invoke_claude_code(
+                config, prompt, worktree_path, time_budget_seconds,
+                deployment_mode=deployment_mode,
+            )
         elif config.mode == "api":
             return await self._invoke_api(config, prompt, worktree_path, time_budget_seconds)
+        else:
+            raise AgentInvocationError(f"Unknown agent mode: {config.mode}")
+
+    async def invoke_deployment(
+        self,
+        config: AgentConfig,
+        prompt: str,
+        worktree_path: Path,
+        time_budget_seconds: int,
+    ) -> AgentInvocationResult:
+        """Invoke agent in deployment mode — read-only, no file modifications.
+
+        The agent outputs proposed changes as text only.
+        """
+        return await self.invoke(
+            config, prompt, worktree_path, time_budget_seconds,
+            deployment_mode=True,
+        )
+
+    async def invoke_meta(
+        self,
+        config: AgentConfig,
+        meta_prompt: str,
+        worktree_path: Path,
+        time_budget_seconds: int,
+        program_md_path: Path,
+    ) -> AgentInvocationResult:
+        """Invoke agent to mutate program.md instead of the artifact.
+
+        Uses a special prompt that instructs the agent to modify program.md.
+        Only Edit tool is allowed, scoped to the program.md file.
+        """
+        content = program_md_path.read_text()
+        full_prompt = (
+            "You are meta-optimizing. Instead of modifying the artifact, "
+            f"modify the program.md file at {program_md_path} to improve "
+            f"the optimization strategy. Current program.md:\n{content}"
+            f"\n\n{meta_prompt}"
+        )
+
+        if config.mode == "claude_code":
+            return await self._invoke_claude_code(
+                config, full_prompt, worktree_path, time_budget_seconds,
+                meta_mode=True,
+            )
+        elif config.mode == "api":
+            return await self._invoke_api(
+                config, full_prompt, worktree_path, time_budget_seconds,
+            )
         else:
             raise AgentInvocationError(f"Unknown agent mode: {config.mode}")
 
@@ -109,8 +162,15 @@ class AgentInvoker:
         prompt: str,
         worktree_path: Path,
         time_budget_seconds: int,
+        deployment_mode: bool = False,
+        meta_mode: bool = False,
     ) -> AgentInvocationResult:
-        allowed_tools = "Edit,Write"
+        if meta_mode:
+            allowed_tools = "Edit"
+        elif deployment_mode:
+            allowed_tools = "Read"
+        else:
+            allowed_tools = "Edit,Write"
         assert "Bash" not in allowed_tools, (
             "Bash must never appear in --allowedTools"
         )

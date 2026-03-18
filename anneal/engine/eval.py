@@ -15,9 +15,12 @@ import openai
 from anneal.engine.types import (
     AgentConfig,
     BinaryCriterion,
+    ConstraintCommand,
     DeterministicEval,
+    Direction,
     EvalConfig,
     EvalResult,
+    MetricConstraint,
     StochasticEval,
 )
 
@@ -142,6 +145,35 @@ class StochasticEvaluator:
         config: StochasticEval,
         artifact_content: str,
     ) -> EvalResult:
+        return await self._evaluate_with_prompts(
+            worktree_path, config, artifact_content, config.test_prompts,
+        )
+
+    async def evaluate_held_out(
+        self,
+        worktree_path: Path,
+        config: StochasticEval,
+        artifact_content: str,
+    ) -> EvalResult:
+        """Evaluate using held_out_prompts instead of test_prompts.
+
+        Same logic as evaluate() but uses config.held_out_prompts.
+        Raises EvalError if held_out_prompts is empty.
+        """
+        if not config.held_out_prompts:
+            raise EvalError("No held_out_prompts configured for held-out evaluation")
+        return await self._evaluate_with_prompts(
+            worktree_path, config, artifact_content, config.held_out_prompts,
+        )
+
+    async def _evaluate_with_prompts(
+        self,
+        worktree_path: Path,
+        config: StochasticEval,
+        artifact_content: str,
+        prompts: list[str],
+    ) -> EvalResult:
+        """Core evaluation logic shared between regular and held-out eval."""
         gen_agent_config = config.generation_agent_config
         if gen_agent_config is None:
             raise EvalError("StochasticEval requires generation_agent_config")
@@ -151,7 +183,7 @@ class StochasticEvaluator:
 
         total_cost = 0.0
 
-        # 1. Generate N samples from fixed test prompts
+        # 1. Generate N samples from fixed prompts
         samples: list[str] = []
         gen_tasks = [
             self._generate_sample(
@@ -163,7 +195,7 @@ class StochasticEvaluator:
                 ),
                 config.output_format,
             )
-            for prompt in config.test_prompts
+            for prompt in prompts
         ]
         gen_results = await asyncio.gather(*gen_tasks)
         for text, cost in gen_results:
@@ -310,3 +342,60 @@ class EvalEngine:
             )
 
         raise EvalError("EvalConfig has neither deterministic nor stochastic configuration")
+
+    async def evaluate_held_out(
+        self,
+        worktree_path: Path,
+        eval_config: EvalConfig,
+        artifact_content: str,
+    ) -> EvalResult:
+        """Run held-out evaluation. Only for stochastic targets."""
+        if eval_config.stochastic is None:
+            raise EvalError("Held-out evaluation requires stochastic config")
+        if not eval_config.stochastic.held_out_prompts:
+            raise EvalError("No held_out_prompts configured")
+        return await self._stochastic.evaluate_held_out(
+            worktree_path, eval_config.stochastic, artifact_content,
+        )
+
+    async def check_constraints(
+        self,
+        worktree_path: Path,
+        eval_config: EvalConfig,
+        artifact_content: str | None = None,
+        per_criterion_scores: dict[str, float] | None = None,
+    ) -> list[tuple[str, bool, float]]:
+        """Check all constraints. Returns list of (name, passed, actual_value).
+
+        Checks two types of constraints:
+        1. Stochastic min_criterion_scores: per-criterion floor values
+        2. Deterministic constraint_commands: secondary eval commands with thresholds
+        """
+        results: list[tuple[str, bool, float]] = []
+
+        # 1. Stochastic min_criterion_scores
+        if (
+            eval_config.stochastic is not None
+            and eval_config.stochastic.min_criterion_scores
+            and per_criterion_scores is not None
+        ):
+            for criterion_name, threshold in eval_config.stochastic.min_criterion_scores.items():
+                actual = per_criterion_scores.get(criterion_name, 0.0)
+                passed = actual >= threshold
+                results.append((criterion_name, passed, actual))
+
+        # 2. Deterministic constraint_commands
+        for cmd in eval_config.constraint_commands:
+            det_eval = DeterministicEval(
+                run_command=cmd.run_command,
+                parse_command=cmd.parse_command,
+                timeout_seconds=cmd.timeout_seconds,
+            )
+            eval_result = await self._deterministic.evaluate(worktree_path, det_eval)
+            if cmd.direction is Direction.HIGHER_IS_BETTER:
+                passed = eval_result.score >= cmd.threshold
+            else:
+                passed = eval_result.score <= cmd.threshold
+            results.append((cmd.name, passed, eval_result.score))
+
+        return results

@@ -118,7 +118,7 @@ def _make_target(
         ),
         time_budget_seconds=60,
         loop_interval_seconds=10,
-        knowledge_path="targets/test-target",
+        knowledge_path=".anneal/targets/test-target",
         worktree_path=worktree_path,
         git_branch="anneal/test-target",
         baseline_score=0.75,

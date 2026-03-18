@@ -194,7 +194,7 @@ def _make_sibling(
         agent_config=AgentConfig(mode="api", model="gpt-4.1", evaluator_model="gpt-4.1-mini"),
         time_budget_seconds=300,
         loop_interval_seconds=10,
-        knowledge_path="targets/sibling/knowledge/",
+        knowledge_path=".anneal/targets/sibling/knowledge/",
         worktree_path="/tmp/wt",
         git_branch="anneal/sibling",
         baseline_score=0.5,

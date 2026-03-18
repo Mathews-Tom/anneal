@@ -97,7 +97,7 @@ def _make_target(
         ),
         time_budget_seconds=300,
         loop_interval_seconds=60,
-        knowledge_path="targets/val-target",
+        knowledge_path=".anneal/targets/val-target",
         worktree_path="/tmp/worktree",
         git_branch="anneal/val-target",
         baseline_score=0.75,

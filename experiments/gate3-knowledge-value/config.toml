@@ -1,0 +1,25 @@
+[experiment]
+name = "gate3-knowledge-value"
+checkpoint = "gate3"
+description = "Experiment memory improves search efficiency"
+max_experiments_per_condition = 50
+seed = 42
+artifact_paths = ["examples/skill-diagram/SKILL.md"]
+eval_criteria_path = "examples/skill-diagram/eval_criteria.toml"
+
+[conditions.history-informed]
+description = "Agent has full experiment history + consolidated learnings"
+knowledge_enabled = true
+search_strategy = "greedy"
+
+[conditions.memoryless]
+description = "Agent has no history (cold start every experiment)"
+knowledge_enabled = false
+search_strategy = "greedy"
+
+# Analysis thresholds
+[thresholds]
+# History-informed must converge faster by experiment 30
+convergence_experiment = 30
+# Minimum score advantage of informed over memoryless at convergence
+min_score_advantage = 0.05

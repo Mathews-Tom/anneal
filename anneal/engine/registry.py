@@ -390,7 +390,7 @@ class Registry:
 
     @property
     def config_path(self) -> Path:
-        return self._repo_root / "anneal" / "config.toml"
+        return self._repo_root / ".anneal" / "config.toml"
 
     # ------------------------------------------------------------------
     # Persistence
@@ -457,7 +457,7 @@ class Registry:
 
         # Create git worktree
         worktree_info = await self._git.create_worktree(self._repo_root, target.id)
-        target.worktree_path = str(worktree_info.path)
+        target.worktree_path = str(worktree_info.path.relative_to(self._repo_root))
         target.git_branch = worktree_info.branch
 
         # Configure gc to preserve experiment history
@@ -477,7 +477,7 @@ class Registry:
         if target_id not in self._targets:
             raise RegistryError(f"Target not found: {target_id}")
 
-        # Remove worktree (experiment history in targets/<id>/ is preserved)
+        # Remove worktree (experiment history in .anneal/targets/<id>/ is preserved)
         await self._git.remove_worktree(self._repo_root, target_id)
 
         del self._targets[target_id]
@@ -512,8 +512,8 @@ async def init_project(repo_root: Path) -> None:
     """One-time project setup.
 
     1. Verify repo_root is a git repository (has .git)
-    2. Create anneal/ directory structure
-    3. Add 'anneal/worktrees/' to .gitignore if not already present
+    2. Create .anneal/ directory structure (config, targets, templates, worktrees)
+    3. Add '.anneal/' to .gitignore if not already present
     4. Raise RegistryError if not a git repo or already initialized
     """
     repo_root = repo_root.resolve()
@@ -524,16 +524,15 @@ async def init_project(repo_root: Path) -> None:
         raise RegistryError(f"Not a git repository: {repo_root}")
 
     # Check not already initialized
-    anneal_dir = repo_root / "anneal"
+    anneal_dir = repo_root / ".anneal"
     config_path = anneal_dir / "config.toml"
     if config_path.exists():
         raise RegistryError(f"Project already initialized: {config_path} exists")
 
-    # Create directory structure
+    # Create directory structure under .anneal/
     (anneal_dir / "targets").mkdir(parents=True, exist_ok=True)
     (anneal_dir / "templates").mkdir(parents=True, exist_ok=True)
-    (repo_root / "worktrees").mkdir(parents=True, exist_ok=True)
-    (repo_root / "targets").mkdir(parents=True, exist_ok=True)
+    (anneal_dir / "worktrees").mkdir(parents=True, exist_ok=True)
 
     # Write default config.toml
     config_path.write_text(
@@ -541,23 +540,18 @@ async def init_project(repo_root: Path) -> None:
         encoding="utf-8",
     )
 
-    # Ensure runtime directories are in .gitignore
+    # Ensure .anneal/ is in .gitignore
     gitignore_path = repo_root / ".gitignore"
-    ignore_entries = ["worktrees/", "targets/"]
+    ignore_entry = ".anneal/"
 
     if gitignore_path.exists():
         existing = gitignore_path.read_text(encoding="utf-8")
-        existing_lines = existing.splitlines()
-        missing = [e for e in ignore_entries if e not in existing_lines]
-        if missing:
+        if ignore_entry not in existing.splitlines():
             with gitignore_path.open("a", encoding="utf-8") as f:
                 if not existing.endswith("\n"):
                     f.write("\n")
-                for entry in missing:
-                    f.write(f"{entry}\n")
+                f.write(f"{ignore_entry}\n")
     else:
-        gitignore_path.write_text(
-            "\n".join(ignore_entries) + "\n", encoding="utf-8"
-        )
+        gitignore_path.write_text(f"{ignore_entry}\n", encoding="utf-8")
 
     logger.info("Initialized anneal project at %s", repo_root)

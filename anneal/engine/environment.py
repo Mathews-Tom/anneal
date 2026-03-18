@@ -61,7 +61,7 @@ class GitEnvironment:
     async def create_worktree(
         self, repo_root: Path, target_id: str
     ) -> WorktreeInfo:
-        """Create ``worktrees/<target-id>`` with branch ``anneal/<target-id>``.
+        """Create ``.anneal/worktrees/<target-id>`` with branch ``anneal/<target-id>``.
 
         If the branch already exists (e.g., from a previous registration),
         checks it out instead of creating a new one. Prunes stale worktree
@@ -69,7 +69,7 @@ class GitEnvironment:
 
         Raises ``GitError`` if the worktree path already exists on disk.
         """
-        worktree_path = repo_root / "worktrees" / target_id
+        worktree_path = repo_root / ".anneal" / "worktrees" / target_id
         branch = f"anneal/{target_id}"
 
         if worktree_path.exists():
@@ -116,8 +116,8 @@ class GitEnvironment:
     async def remove_worktree(
         self, repo_root: Path, target_id: str
     ) -> None:
-        """Remove worktree but preserve ``targets/<target-id>/`` config directory."""
-        worktree_path = repo_root / "worktrees" / target_id
+        """Remove worktree but preserve ``.anneal/targets/<target-id>/`` experiment data."""
+        worktree_path = repo_root / ".anneal" / "worktrees" / target_id
 
         await self._run_git(
             ["worktree", "remove", str(worktree_path.resolve()), "--force"],

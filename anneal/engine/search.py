@@ -174,3 +174,71 @@ class SimulatedAnnealingSearch:
     def reset(self) -> None:
         """Reset temperature to initial value."""
         self._temperature = self._initial_temperature
+
+
+class PopulationSearch:
+    """Population-based search with tournament selection.
+
+    Maintains a population of candidates. Uses tournament selection
+    (random pairs, keep higher-scoring member). No crossover.
+    """
+
+    def __init__(
+        self,
+        population_size: int = 4,
+        tournament_size: int = 2,
+    ) -> None:
+        self._population_size = population_size
+        self._tournament_size = tournament_size
+        self._population: list[tuple[str, float]] = []
+
+    def should_keep(
+        self,
+        challenger_result: EvalResult,
+        baseline_score: float,
+        baseline_raw_scores: list[float] | None,
+        direction: Direction,
+        min_improvement_threshold: float = 0.0,
+        confidence: float = 0.95,
+    ) -> bool:
+        """Compare challenger against baseline per direction.
+
+        Returns True if the challenger beats the baseline score.
+        The runner manages multi-branch logic; this handles per-experiment decisions.
+        """
+        challenger_score = challenger_result.score
+        if direction is Direction.HIGHER_IS_BETTER:
+            return challenger_score > baseline_score
+        return challenger_score < baseline_score
+
+    def add_candidate(self, branch: str, score: float) -> None:
+        """Add a candidate to the population. Cull via tournament if oversized."""
+        self._population.append((branch, score))
+        if len(self._population) > self._population_size:
+            self._population = self.tournament_select(Direction.HIGHER_IS_BETTER)
+
+    def tournament_select(self, direction: Direction) -> list[tuple[str, float]]:
+        """Run tournament selection. Returns surviving candidates.
+
+        Repeatedly samples ``tournament_size`` candidates, keeps the best,
+        until the population is reduced to ``population_size``.
+        """
+        survivors: list[tuple[str, float]] = list(self._population)
+        while len(survivors) > self._population_size:
+            pool_size = min(self._tournament_size, len(survivors))
+            contestants = random.sample(survivors, pool_size)
+            if direction is Direction.HIGHER_IS_BETTER:
+                loser = min(contestants, key=lambda c: c[1])
+            else:
+                loser = max(contestants, key=lambda c: c[1])
+            survivors.remove(loser)
+        return survivors
+
+    def is_population_full(self) -> bool:
+        """Check if population has reached target size."""
+        return len(self._population) >= self._population_size
+
+    @property
+    def population(self) -> list[tuple[str, float]]:
+        """Current population."""
+        return list(self._population)

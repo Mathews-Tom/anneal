@@ -100,8 +100,9 @@ class TestInitProject:
         assert (git_repo / "anneal").is_dir()
         assert (git_repo / "anneal" / "config.toml").is_file()
         assert (git_repo / "anneal" / "targets").is_dir()
-        assert (git_repo / "anneal" / "worktrees").is_dir()
         assert (git_repo / "anneal" / "templates").is_dir()
+        assert (git_repo / "worktrees").is_dir()
+        assert (git_repo / "targets").is_dir()
 
     @pytest.mark.asyncio
     async def test_default_config_has_anneal_section(self, git_repo: Path) -> None:
@@ -117,7 +118,8 @@ class TestInitProject:
         await init_project(git_repo)
 
         gitignore = (git_repo / ".gitignore").read_text(encoding="utf-8")
-        assert "anneal/worktrees/" in gitignore
+        assert "worktrees/" in gitignore
+        assert "targets/" in gitignore
 
     @pytest.mark.asyncio
     async def test_appends_to_existing_gitignore(self, git_repo: Path) -> None:
@@ -128,7 +130,8 @@ class TestInitProject:
 
         gitignore = gitignore_path.read_text(encoding="utf-8")
         assert "*.pyc" in gitignore
-        assert "anneal/worktrees/" in gitignore
+        assert "worktrees/" in gitignore
+        assert "targets/" in gitignore
 
     @pytest.mark.asyncio
     async def test_raises_on_reinit(self, initialized_repo: Path) -> None:

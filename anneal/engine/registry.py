@@ -117,7 +117,7 @@ def _serialize_target_toml(target: OptimizationTarget) -> str:
         lines.append(f"constraints = [{', '.join(constraint_items)}]")
 
     if ec.constraint_commands:
-        for i, cc in enumerate(ec.constraint_commands):
+        for cc in ec.constraint_commands:
             lines.append("")
             lines.append(f"[[targets.{tid}.eval_config.constraint_commands]]")
             lines.append(f"name = {_toml_value(cc.name)}")
@@ -531,8 +531,9 @@ async def init_project(repo_root: Path) -> None:
 
     # Create directory structure
     (anneal_dir / "targets").mkdir(parents=True, exist_ok=True)
-    (anneal_dir / "worktrees").mkdir(parents=True, exist_ok=True)
     (anneal_dir / "templates").mkdir(parents=True, exist_ok=True)
+    (repo_root / "worktrees").mkdir(parents=True, exist_ok=True)
+    (repo_root / "targets").mkdir(parents=True, exist_ok=True)
 
     # Write default config.toml
     config_path.write_text(
@@ -540,18 +541,23 @@ async def init_project(repo_root: Path) -> None:
         encoding="utf-8",
     )
 
-    # Ensure worktrees directory is in .gitignore
+    # Ensure runtime directories are in .gitignore
     gitignore_path = repo_root / ".gitignore"
-    worktree_ignore_entry = "anneal/worktrees/"
+    ignore_entries = ["worktrees/", "targets/"]
 
     if gitignore_path.exists():
         existing = gitignore_path.read_text(encoding="utf-8")
-        if worktree_ignore_entry not in existing.splitlines():
+        existing_lines = existing.splitlines()
+        missing = [e for e in ignore_entries if e not in existing_lines]
+        if missing:
             with gitignore_path.open("a", encoding="utf-8") as f:
                 if not existing.endswith("\n"):
                     f.write("\n")
-                f.write(f"{worktree_ignore_entry}\n")
+                for entry in missing:
+                    f.write(f"{entry}\n")
     else:
-        gitignore_path.write_text(f"{worktree_ignore_entry}\n", encoding="utf-8")
+        gitignore_path.write_text(
+            "\n".join(ignore_entries) + "\n", encoding="utf-8"
+        )
 
     logger.info("Initialized anneal project at %s", repo_root)

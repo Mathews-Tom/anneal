@@ -215,8 +215,8 @@ __marimo__/
 # Developer workspace
 .docs/
 
-# Experiments (validation artifacts, not production code)
-experiments/
+# Experiment results (generated data, not source)
+experiments/*/results/
 
 # Anneal runtime artifacts (created by anneal init/register/run)
 .anneal/

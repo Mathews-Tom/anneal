@@ -7,6 +7,7 @@ coordinated updates across all consumers.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -106,6 +107,29 @@ class StochasticEval:
     output_format: str
     confidence_level: float = 0.95
     generation_agent_config: AgentConfig | None = None
+    held_out_prompts: list[str] = field(default_factory=list)
+    min_criterion_scores: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass
+class MetricConstraint:
+    """A constraint that must be satisfied for an experiment to be KEPT."""
+
+    metric_name: str
+    threshold: float
+    direction: Direction
+
+
+@dataclass
+class ConstraintCommand:
+    """A secondary deterministic eval command used as a constraint."""
+
+    name: str
+    run_command: str
+    parse_command: str
+    timeout_seconds: int
+    threshold: float
+    direction: Direction
 
 
 @dataclass
@@ -117,6 +141,9 @@ class EvalConfig:
     min_improvement_threshold: float = 0.0
     deterministic: DeterministicEval | None = None
     stochastic: StochasticEval | None = None
+    held_out_interval: int = 10
+    constraints: list[MetricConstraint] = field(default_factory=list)
+    constraint_commands: list[ConstraintCommand] = field(default_factory=list)
 
 
 @dataclass
@@ -179,6 +206,8 @@ class OptimizationTarget:
     budget_cap: BudgetCap | None = None
     meta_depth: int = 0
     notifications: NotificationConfig = field(default_factory=NotificationConfig)
+    approval_callback: Callable[[str], bool] | None = None
+    population_config: PopulationConfig | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +274,7 @@ class ExperimentRecord:
     learnings: str
     cost_usd: float
     bootstrap_seed: int
+    held_out_score: float | None = None
 
 
 @dataclass
@@ -272,6 +302,36 @@ class ConsolidationRecord:
     top_improvements: list[dict[str, str | float]]
     failed_approaches: list[dict[str, str | float]]
     tags_frequency: dict[str, int]
+    criterion_variances: dict[str, float] = field(default_factory=dict)
+    score_variance: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Drift monitoring
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DriftEntry:
+    """A single criterion exhibiting evaluator drift."""
+
+    criterion_name: str
+    variance: float
+    mean_score: float
+    window_size: int
+
+
+# ---------------------------------------------------------------------------
+# Population-based search
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PopulationConfig:
+    """Configuration for population-based search strategy."""
+
+    population_size: int = 4
+    tournament_size: int = 2
 
 
 # ---------------------------------------------------------------------------

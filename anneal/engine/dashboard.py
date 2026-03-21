@@ -53,31 +53,84 @@ class AnnealStateReader:
         return self._root
 
     def discover_targets(self) -> dict[str, dict[str, Any]]:
-        """Read config.toml and return target metadata keyed by target id."""
+        """Read config.toml and return target metadata keyed by target id.
+
+        Falls back to flat directory layout: if experiments.jsonl exists at
+        root (gate experiment results), synthesize a target from the directory
+        name and JSONL content.
+        """
         config_path = self._root / "config.toml"
-        if not config_path.exists():
-            return {}
-        data = tomllib.loads(config_path.read_text(encoding="utf-8"))
-        targets_raw = data.get("targets", {})
-        result: dict[str, dict[str, Any]] = {}
-        for tid, tdata in targets_raw.items():
-            result[tid] = {
-                "target_id": tid,
-                "eval_mode": tdata.get("eval_mode", "unknown"),
-                "baseline": tdata.get("baseline_score", 0.0),
-                "baseline_raw_scores": tdata.get("baseline_raw_scores"),
-                "git_branch": tdata.get("git_branch", ""),
-                "artifact_paths": tdata.get("artifact_paths", []),
-                "knowledge_path": tdata.get("knowledge_path", ""),
-                "worktree_path": tdata.get("worktree_path", ""),
+        if config_path.exists():
+            data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+            targets_raw = data.get("targets", {})
+            result: dict[str, dict[str, Any]] = {}
+            for tid, tdata in targets_raw.items():
+                result[tid] = {
+                    "target_id": tid,
+                    "eval_mode": tdata.get("eval_mode", "unknown"),
+                    "baseline": tdata.get("baseline_score", 0.0),
+                    "baseline_raw_scores": tdata.get("baseline_raw_scores"),
+                    "git_branch": tdata.get("git_branch", ""),
+                    "artifact_paths": tdata.get("artifact_paths", []),
+                    "knowledge_path": tdata.get("knowledge_path", ""),
+                    "worktree_path": tdata.get("worktree_path", ""),
+                }
+            return result
+
+        # Flat layout: experiments.jsonl at root (gate results, anneal compare)
+        jsonl_at_root = self._root / "experiments.jsonl"
+        if jsonl_at_root.exists():
+            target_id = self._root.name or "experiment"
+            return {
+                target_id: {
+                    "target_id": target_id,
+                    "eval_mode": "unknown",
+                    "baseline": 0.0,
+                    "baseline_raw_scores": None,
+                    "git_branch": "",
+                    "artifact_paths": [],
+                    "knowledge_path": "",
+                    "worktree_path": "",
+                }
             }
+
+        # Scan subdirectories for experiments.jsonl (multiple runs in one dir)
+        result = {}
+        for subdir in sorted(self._root.iterdir()):
+            if subdir.is_dir() and (subdir / "experiments.jsonl").exists():
+                tid = subdir.name
+                result[tid] = {
+                    "target_id": tid,
+                    "eval_mode": "unknown",
+                    "baseline": 0.0,
+                    "baseline_raw_scores": None,
+                    "git_branch": "",
+                    "artifact_paths": [],
+                    "knowledge_path": "",
+                    "worktree_path": "",
+                }
         return result
 
     def read_experiments(self, target_id: str) -> list[dict[str, Any]]:
-        """Read all experiment records for a target from experiments.jsonl."""
-        jsonl_path = self._root / "targets" / target_id / "experiments.jsonl"
-        if not jsonl_path.exists():
+        """Read all experiment records for a target from experiments.jsonl.
+
+        Searches in order: targets/<id>/experiments.jsonl (production layout),
+        <id>/experiments.jsonl (subdirectory), experiments.jsonl (flat root).
+        """
+        candidates = [
+            self._root / "targets" / target_id / "experiments.jsonl",
+            self._root / target_id / "experiments.jsonl",
+            self._root / "experiments.jsonl",
+        ]
+        jsonl_path = None
+        for candidate in candidates:
+            if candidate.exists():
+                jsonl_path = candidate
+                break
+
+        if jsonl_path is None:
             return []
+
         records: list[dict[str, Any]] = []
         for line in jsonl_path.read_text(encoding="utf-8").splitlines():
             stripped = line.strip()

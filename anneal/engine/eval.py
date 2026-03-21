@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import openai
 
-from anneal.engine.client import make_client, strip_provider_prefix
+from anneal.engine.client import compute_cost, make_client, strip_provider_prefix
 from anneal.engine.types import (
     AgentConfig,
     BinaryCriterion,
@@ -264,7 +264,7 @@ class StochasticEvaluator:
                 ],
             )
         text = response.choices[0].message.content or ""
-        cost = _extract_cost(response)
+        cost = _extract_cost(response, model)
         return text, cost
 
     async def _score_criterion_once(
@@ -299,7 +299,7 @@ class StochasticEvaluator:
             )
         answer = (response.choices[0].message.content or "").strip().upper()
         binary = 1.0 if answer.startswith("YES") else 0.0
-        cost = _extract_cost(response)
+        cost = _extract_cost(response, model)
         return binary, cost
 
     async def _score_criterion(
@@ -332,15 +332,18 @@ class StochasticEvaluator:
         return majority, total_cost
 
 
-def _extract_cost(response: object) -> float:  # openai.types.chat.ChatCompletion
-    """Extract cost from response usage. Returns 0.0 if unavailable."""
-    usage = response.usage
+def _extract_cost(response: object, model: str = "") -> float:
+    """Compute cost from response token usage and model pricing.
+
+    Uses the unified compute_cost() from client.py which has per-model
+    token pricing. Returns 0.0 for local models or if usage is unavailable.
+    """
+    usage = getattr(response, "usage", None)
     if usage is None:
         return 0.0
-    # OpenAI responses don't expose cost directly; approximate from tokens.
-    # The runner accumulates actual costs from billing. Return 0.0 here
-    # when the API doesn't provide cost metadata.
-    return 0.0
+    input_tokens = getattr(usage, "prompt_tokens", 0) or 0
+    output_tokens = getattr(usage, "completion_tokens", 0) or 0
+    return compute_cost(model, input_tokens, output_tokens)
 
 
 class EvalEngine:

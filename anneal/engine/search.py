@@ -6,9 +6,12 @@ and paired Wilcoxon signed-rank test for stochastic evals.
 
 from __future__ import annotations
 
+import logging
 import math
 import random
 from typing import Protocol
+
+logger = logging.getLogger(__name__)
 
 from scipy.stats import wilcoxon
 
@@ -49,6 +52,12 @@ class GreedySearch:
             or challenger_raw is None
             or len(baseline_raw_scores) != len(challenger_raw)
         ):
+            logger.warning(
+                "Falling back to deterministic comparison: "
+                "baseline_raw=%s, challenger_raw=%s",
+                len(baseline_raw_scores) if baseline_raw_scores else None,
+                len(challenger_raw) if challenger_raw else None,
+            )
             return self._deterministic_compare(
                 challenger_result.score,
                 baseline_score,

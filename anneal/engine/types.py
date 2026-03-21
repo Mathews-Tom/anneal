@@ -276,6 +276,7 @@ class ExperimentRecord:
     learnings: str
     cost_usd: float
     bootstrap_seed: int
+    agent_model: str = ""
     held_out_score: float | None = None
 
 

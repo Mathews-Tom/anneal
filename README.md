@@ -39,7 +39,7 @@ anneal dashboard
 eval: pytest --cov=src | grep TOTAL | awk '{print $4}' → 72.3
 ```
 
-**Stochastic** — an LLM judges N samples against K binary criteria. Bootstrap CI ensures statistical rigor.
+**Stochastic** — an LLM judges N samples against K binary criteria. Majority voting (3 votes per judgment) reduces noise. Bootstrap CI provides variance estimates, though statistical power depends on sample count — higher N gives more reliable comparisons.
 
 ```text
 criteria:
@@ -102,9 +102,9 @@ anneal/engine/
 ## Key Features
 
 - **Scope enforcement** — declare what the agent can and cannot modify. Violations are reverted automatically.
-- **Knowledge compounding** — experiment history + consolidated learnings + cross-condition insights feed into each hypothesis.
-- **Statistical rigor** — Wilcoxon signed-rank tests for stochastic eval. Bootstrap confidence intervals. Held-out evaluation for overfitting detection.
-- **Cost control** — per-experiment and daily budget caps. Cost tracked per invocation.
+- **Knowledge compounding** — experiment history + consolidated learnings + cross-condition insights available for agent context (opt-in per target).
+- **Statistical comparison** — Wilcoxon signed-rank tests for stochastic eval, bootstrap confidence intervals, majority voting. Statistical power scales with sample count; small N (10) provides directional signal, not high-confidence decisions.
+- **Cost control** — per-experiment and daily budget caps. Cost estimated from token counts and model pricing. Local models tracked at $0.
 - **Safety** — process group time-boxing (SIGKILL), consecutive failure halting, disk space checks, JSONL corruption recovery.
 - **Search strategies** — greedy (default), simulated annealing (escape local optima), population-based (tournament selection).
 - **Meta-optimization** — on plateau, the agent revises its own optimization strategy (program.md).

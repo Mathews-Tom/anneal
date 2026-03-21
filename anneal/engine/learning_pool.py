@@ -181,13 +181,23 @@ def _dict_to_learning(d: dict[str, object]) -> Learning:
 class LearningPool:
     """In-memory pool of cross-experiment learnings with scope-based retrieval."""
 
-    def __init__(self, decay_rate: float = 0.05) -> None:
+    DEFAULT_MAX_SIZE = 1000
+
+    def __init__(self, decay_rate: float = 0.05, max_size: int = DEFAULT_MAX_SIZE) -> None:
         self._learnings: list[Learning] = []
         self._decay_rate = decay_rate
+        self._max_size = max_size
 
     def add(self, learning: Learning) -> None:
-        """Add a learning to the pool."""
+        """Add a learning to the pool. Evicts lowest-impact learnings when full."""
         self._learnings.append(learning)
+        if len(self._learnings) > self._max_size:
+            self._evict()
+
+    def _evict(self) -> None:
+        """Remove lowest-impact learnings to stay within max_size."""
+        scored = sorted(self._learnings, key=self._effective_score, reverse=True)
+        self._learnings = scored[: self._max_size]
 
     def _effective_score(self, learning: Learning) -> float:
         """Compute decay-adjusted effective score for ranking."""

@@ -42,3 +42,18 @@ def test_eval_result_backward_compat_all_optional_fields_default() -> None:
     assert result.raw_scores is None
     assert result.cost_usd == 0.0
     assert result.criterion_names is None
+
+
+def test_eval_result_per_criterion_scores_computed() -> None:
+    """EvalResult carries per_criterion_scores dict."""
+    result = EvalResult(
+        score=0.8,
+        per_criterion_scores={"clarity": 0.9, "accuracy": 0.7},
+    )
+    assert result.per_criterion_scores == {"clarity": 0.9, "accuracy": 0.7}
+
+
+def test_eval_result_per_criterion_scores_defaults_none() -> None:
+    """Backward compat: per_criterion_scores defaults to None."""
+    result = EvalResult(score=0.8)
+    assert result.per_criterion_scores is None

@@ -449,6 +449,8 @@ class ExperimentRunner:
             cost_usd=cost_usd,
             bootstrap_seed=0,
             agent_model=target.agent_config.model,
+            criterion_names=eval_result.criterion_names,
+            per_criterion_scores=eval_result.per_criterion_scores,
         )
 
         # 9. Persist to knowledge store + check consolidation

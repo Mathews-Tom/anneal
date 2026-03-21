@@ -334,3 +334,57 @@ def test_consolidation_criterion_names_variance_values_correct(tmp_path: Path) -
     cr = store.consolidate()
     assert cr.criterion_variances["fluency"] == 0.0
     assert cr.criterion_variances["tone"] > 0.0
+
+
+# ---------------------------------------------------------------------------
+# TF-IDF similarity index (Step 5.1)
+# ---------------------------------------------------------------------------
+
+
+class TestTFIDFIndex:
+    """Tests for TF-IDF similarity index."""
+
+    def test_tfidf_semantic_overlap_shared_terms_high_score(self) -> None:
+        """Documents sharing important terms have high similarity."""
+        from anneal.engine.knowledge import TFIDFIndex
+        index = TFIDFIndex()
+        index.add("doc1", "increase batch size for training")
+        index.add("doc2", "fix CSS color styling")
+        index.add("doc3", "increase the batch size parameter")
+
+        results = index.query("larger batch size", k=3)
+        # doc1 and doc3 share "batch" and "size" with the query
+        doc_ids = [r[0] for r in results]
+        assert "doc1" in doc_ids
+        assert "doc3" in doc_ids
+        # Top result should have similarity > 0.3
+        assert results[0][1] > 0.3
+
+    def test_tfidf_unrelated_low_score(self) -> None:
+        """Unrelated documents have near-zero similarity."""
+        from anneal.engine.knowledge import TFIDFIndex
+        index = TFIDFIndex()
+        index.add("doc1", "increase batch size for training")
+        index.add("doc2", "fix CSS color styling issues")
+
+        results = index.query("fix CSS color styling issues", k=2)
+        # doc2 should match, doc1 should have very low score
+        scores = {r[0]: r[1] for r in results}
+        if "doc1" in scores:
+            assert scores["doc1"] < 0.1
+
+    def test_tfidf_empty_query_returns_empty(self) -> None:
+        """Query with no matching terms returns empty list."""
+        from anneal.engine.knowledge import TFIDFIndex
+        index = TFIDFIndex()
+        index.add("doc1", "increase batch size")
+
+        results = index.query("completely unrelated xyz abc", k=5)
+        assert results == []
+
+    def test_tfidf_empty_index_returns_empty(self) -> None:
+        """Query on empty index returns empty list."""
+        from anneal.engine.knowledge import TFIDFIndex
+        index = TFIDFIndex()
+        results = index.query("anything", k=5)
+        assert results == []

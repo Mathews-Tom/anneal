@@ -61,6 +61,7 @@ class Learning:
     tags: list[str]
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     project_id: str = ""
+    domain: str = ""  # e.g., "code-optimization", "prompt-tuning", "config-tuning"
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +172,7 @@ def _dict_to_learning(d: dict[str, object]) -> Learning:
         tags=[str(t) for t in d["tags"]],  # type: ignore[union-attr]
         created_at=created_at,
         project_id=str(d.get("project_id", "")),
+        domain=str(d.get("domain", "")),
     )
 
 
@@ -226,6 +228,8 @@ class LearningPool:
         source_condition: str | None = None,
         source_target: str | None = None,
         project_id: str | None = None,
+        domain: str | None = None,
+        domain_penalty: float = 0.5,
     ) -> list[Learning]:
         """Retrieve top-K learnings by decay-adjusted |score_delta| descending.
 
@@ -235,6 +239,8 @@ class LearningPool:
             - source_condition: keep only learnings from this condition
             - source_target: keep only learnings from this target
             - project_id: keep only learnings from this project
+            - domain: penalize cross-domain learnings by domain_penalty factor
+            - domain_penalty: multiplier applied to cross-domain learning scores
         """
         candidates = self._learnings
 
@@ -258,8 +264,14 @@ class LearningPool:
         # TARGET scope requires source_target filter (caller must provide)
         # PROJECT and GLOBAL return everything matching other filters
 
-        # Sort by decay-adjusted |score_delta| descending
-        candidates = sorted(candidates, key=self._effective_score, reverse=True)
+        # Domain-aware scoring: penalize cross-domain learnings
+        def _domain_adjusted_score(learning: Learning) -> float:
+            base = self._effective_score(learning)
+            if domain and learning.domain and learning.domain != domain:
+                base *= domain_penalty
+            return base
+
+        candidates = sorted(candidates, key=_domain_adjusted_score, reverse=True)
 
         # Return with decayed confidence values
         return [self._decay_confidence(l) for l in candidates[:k]]
@@ -288,10 +300,19 @@ class LearningPool:
 
         for i, learning in enumerate(learnings, 1):
             signal_marker = "+" if learning.signal is LearningSignal.POSITIVE else "-"
-            lines.append(
+            line = (
                 f"{i}. [{signal_marker}] (from {learning.source_condition}/{learning.source_target}, "
                 f"delta={learning.score_delta:+.4f}) {learning.observation}"
             )
+            if learning.criterion_deltas:
+                top_criteria = sorted(
+                    learning.criterion_deltas.items(),
+                    key=lambda x: abs(x[1]),
+                    reverse=True,
+                )[:3]
+                criterion_str = ", ".join(f"{name}: {d:+.2f}" for name, d in top_criteria)
+                line += f"\n   Criteria: {criterion_str}"
+            lines.append(line)
 
         lines.append("")
         return "\n".join(lines)

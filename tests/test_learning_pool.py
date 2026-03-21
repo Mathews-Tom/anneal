@@ -297,3 +297,204 @@ def test_eviction_breaks_ties_randomly_varies_across_runs(tmp_path: Path) -> Non
 
     # With random tiebreaking, not all 10 runs can produce the same survivor set
     assert len(set(surviving_sets)) > 1
+
+
+# ---------------------------------------------------------------------------
+# Domain-aware retrieval (Step 5.2)
+# ---------------------------------------------------------------------------
+
+
+class TestDomainAwareRetrieval:
+    """Tests for domain-aware filtering in retrieve."""
+
+    def test_same_domain_preferred_over_cross_domain(self, tmp_path: Path) -> None:
+        """Same-domain learning ranked above equal-score cross-domain."""
+        pool = LearningPool(max_size=100)
+        same_domain = Learning(
+            observation="improve prompt clarity",
+            signal=LearningSignal.POSITIVE,
+            source_condition="cond1",
+            source_target="target1",
+            source_experiment_ids=[1],
+            score_delta=0.1,
+            criterion_deltas={},
+            confidence=0.9,
+            tags=["prompt"],
+            domain="prompt-tuning",
+        )
+        cross_domain = Learning(
+            observation="optimize batch size",
+            signal=LearningSignal.POSITIVE,
+            source_condition="cond2",
+            source_target="target2",
+            source_experiment_ids=[2],
+            score_delta=0.1,
+            criterion_deltas={},
+            confidence=0.9,
+            tags=["code"],
+            domain="code-optimization",
+        )
+        pool.add(same_domain)
+        pool.add(cross_domain)
+
+        results = pool.retrieve(LearningScope.GLOBAL, k=2, domain="prompt-tuning")
+        assert results[0].observation == "improve prompt clarity"
+
+    def test_cross_domain_high_score_still_ranked_above_weak_same_domain(
+        self, tmp_path: Path
+    ) -> None:
+        """Cross-domain with 10x score beats weak same-domain even after penalty."""
+        pool = LearningPool(max_size=100)
+        weak_same = Learning(
+            observation="minor tweak",
+            signal=LearningSignal.POSITIVE,
+            source_condition="cond1",
+            source_target="target1",
+            source_experiment_ids=[1],
+            score_delta=0.05,
+            criterion_deltas={},
+            confidence=0.9,
+            tags=[],
+            domain="prompt-tuning",
+        )
+        strong_cross = Learning(
+            observation="major optimization",
+            signal=LearningSignal.POSITIVE,
+            source_condition="cond2",
+            source_target="target2",
+            source_experiment_ids=[2],
+            score_delta=0.5,  # 10x stronger; 0.5 * 0.5 = 0.25 > 0.05
+            criterion_deltas={},
+            confidence=0.9,
+            tags=[],
+            domain="code-optimization",
+        )
+        pool.add(weak_same)
+        pool.add(strong_cross)
+
+        results = pool.retrieve(LearningScope.GLOBAL, k=2, domain="prompt-tuning")
+        assert results[0].observation == "major optimization"
+
+    def test_no_domain_filter_preserves_original_score_order(self) -> None:
+        """Without domain param, ordering is unchanged (no penalty applied)."""
+        pool = LearningPool(max_size=100)
+        pool.add(
+            Learning(
+                observation="high score",
+                signal=LearningSignal.POSITIVE,
+                source_condition="cond1",
+                source_target="t1",
+                source_experiment_ids=[1],
+                score_delta=0.8,
+                criterion_deltas={},
+                confidence=1.0,
+                tags=[],
+                domain="code-optimization",
+            )
+        )
+        pool.add(
+            Learning(
+                observation="low score",
+                signal=LearningSignal.POSITIVE,
+                source_condition="cond2",
+                source_target="t2",
+                source_experiment_ids=[2],
+                score_delta=0.1,
+                criterion_deltas={},
+                confidence=1.0,
+                tags=[],
+                domain="prompt-tuning",
+            )
+        )
+
+        results = pool.retrieve(LearningScope.GLOBAL, k=2)
+        assert results[0].observation == "high score"
+
+    def test_domain_field_defaults_to_empty_string(self) -> None:
+        """Learning without explicit domain defaults to empty string."""
+        learning = _make_learning()
+        assert learning.domain == ""
+
+    def test_empty_domain_on_learning_not_penalized(self) -> None:
+        """Learning with no domain set is not penalized even when domain filter active."""
+        pool = LearningPool(max_size=100)
+        no_domain = Learning(
+            observation="no domain learning",
+            signal=LearningSignal.POSITIVE,
+            source_condition="cond1",
+            source_target="t1",
+            source_experiment_ids=[1],
+            score_delta=0.1,
+            criterion_deltas={},
+            confidence=1.0,
+            tags=[],
+            domain="",
+        )
+        pool.add(no_domain)
+
+        results = pool.retrieve(LearningScope.GLOBAL, k=1, domain="prompt-tuning")
+        assert len(results) == 1
+        assert results[0].observation == "no domain learning"
+
+
+# ---------------------------------------------------------------------------
+# Criterion delta exposure in summarize (Step 5.3)
+# ---------------------------------------------------------------------------
+
+
+class TestSummarizeCriterionDeltas:
+    def test_summarize_includes_criterion_deltas_in_output(self) -> None:
+        """Summarize output includes top criterion deltas when available."""
+        pool = LearningPool(max_size=100)
+        learning = Learning(
+            observation="improved clarity",
+            signal=LearningSignal.POSITIVE,
+            source_condition="cond1",
+            source_target="target1",
+            source_experiment_ids=[1],
+            score_delta=0.1,
+            criterion_deltas={"clarity": 0.15, "accuracy": -0.05, "tone": 0.02},
+            confidence=0.9,
+            tags=[],
+        )
+        pool.add(learning)
+
+        output = pool.summarize(scope=LearningScope.GLOBAL)
+        assert "Criteria:" in output
+        assert "clarity: +0.15" in output
+        assert "accuracy: -0.05" in output
+
+    def test_summarize_omits_criteria_line_when_no_criterion_deltas(self) -> None:
+        """Summarize does not append Criteria line when criterion_deltas is empty."""
+        pool = LearningPool(max_size=100)
+        pool.add(_make_learning(score_delta=0.3))
+
+        output = pool.summarize(scope=LearningScope.GLOBAL)
+        assert "Criteria:" not in output
+
+    def test_summarize_top_three_criteria_by_abs_value(self) -> None:
+        """Only the top 3 criteria by absolute delta are included."""
+        pool = LearningPool(max_size=100)
+        learning = Learning(
+            observation="multi-criteria",
+            signal=LearningSignal.POSITIVE,
+            source_condition="cond1",
+            source_target="t1",
+            source_experiment_ids=[1],
+            score_delta=0.2,
+            criterion_deltas={
+                "a": 0.01,
+                "b": 0.5,
+                "c": -0.4,
+                "d": 0.3,
+            },
+            confidence=1.0,
+            tags=[],
+        )
+        pool.add(learning)
+
+        output = pool.summarize(scope=LearningScope.GLOBAL)
+        assert "b: +0.50" in output
+        assert "c: -0.40" in output
+        assert "d: +0.30" in output
+        assert "a: +0.01" not in output

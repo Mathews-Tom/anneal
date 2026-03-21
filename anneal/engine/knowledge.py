@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from collections import Counter
 from dataclasses import asdict
@@ -76,6 +77,56 @@ def _jaccard_similarity(a: str, b: str) -> float:
     intersection = words_a & words_b
     union = words_a | words_b
     return len(intersection) / len(union)
+
+
+class TFIDFIndex:
+    """Lightweight TF-IDF index for hypothesis similarity. No external deps."""
+
+    def __init__(self) -> None:
+        self._docs: list[tuple[str, Counter[str]]] = []  # (id, term_counts)
+        self._df: Counter[str] = Counter()  # Document frequency
+
+    def add(self, doc_id: str, text: str) -> None:
+        terms = Counter(text.lower().split())
+        self._docs.append((doc_id, terms))
+        self._df.update(terms.keys())
+
+    def query(self, text: str, k: int = 5) -> list[tuple[str, float]]:
+        """Return top-k (doc_id, cosine_similarity) pairs."""
+        query_terms = Counter(text.lower().split())
+        n_docs = len(self._docs)
+        if n_docs == 0:
+            return []
+
+        # Compute query TF-IDF vector
+        query_tfidf: dict[str, float] = {}
+        for term, count in query_terms.items():
+            df = self._df.get(term, 0)
+            if df > 0:
+                query_tfidf[term] = count * math.log(n_docs / df)
+
+        if not query_tfidf:
+            return []
+
+        query_norm = math.sqrt(sum(v ** 2 for v in query_tfidf.values()))
+
+        results: list[tuple[str, float]] = []
+        for doc_id, doc_terms in self._docs:
+            dot_product = 0.0
+            doc_norm_sq = 0.0
+            for term, count in doc_terms.items():
+                df = self._df.get(term, 1)
+                tfidf = count * math.log(n_docs / df)
+                doc_norm_sq += tfidf ** 2
+                if term in query_tfidf:
+                    dot_product += query_tfidf[term] * tfidf
+            doc_norm = math.sqrt(doc_norm_sq) if doc_norm_sq > 0 else 0.0
+            if doc_norm > 0 and query_norm > 0:
+                cosine = dot_product / (query_norm * doc_norm)
+                results.append((doc_id, cosine))
+
+        results.sort(key=lambda x: x[1], reverse=True)
+        return results[:k]
 
 
 def _variance(xs: list[float]) -> float:
@@ -218,15 +269,13 @@ class KnowledgeStore:
         if not entries:
             return []
 
-        # Score by Jaccard similarity
-        scored: list[tuple[float, str]] = []
+        # Score by TF-IDF cosine similarity
+        index = TFIDFIndex()
         for entry in entries:
-            sim = _jaccard_similarity(query, entry["hypothesis"])
-            scored.append((sim, entry["id"]))
+            index.add(entry["id"], entry["hypothesis"])
 
-        # Sort descending by similarity, take top K
-        scored.sort(key=lambda x: x[0], reverse=True)
-        top_ids = [sid for _, sid in scored[:k]]
+        scored_pairs = index.query(query, k=k)
+        top_ids = [doc_id for doc_id, _ in scored_pairs]
 
         # Load matching records
         all_records = self.load_records()

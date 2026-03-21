@@ -423,6 +423,7 @@ class ExperimentRunner:
             learnings="",
             cost_usd=cost_usd,
             bootstrap_seed=0,
+            agent_model=target.agent_config.model,
         )
 
         # 9. Persist to knowledge store + check consolidation

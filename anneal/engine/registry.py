@@ -22,6 +22,7 @@ from anneal.engine.types import (
     AgentConfig,
     BinaryCriterion,
     BudgetCap,
+    ColabConfig,
     ConstraintCommand,
     DeterministicEval,
     Direction,
@@ -169,6 +170,18 @@ def _serialize_target_toml(target: OptimizationTarget) -> str:
             lines.append(f"[targets.{tid}.eval_config.stochastic.generation_agent_config]")
             _append_agent_config_lines(lines, sto.generation_agent_config)
 
+    # colab sub-table
+    if ec.colab is not None and ec.colab.enabled:
+        cb = ec.colab
+        lines.append("")
+        lines.append(f"[targets.{tid}.eval_config.colab]")
+        lines.append(f"enabled = {_toml_value(cb.enabled)}")
+        lines.append(f"accelerator = {_toml_value(cb.accelerator)}")
+        lines.append(f"setup_script = {_toml_value(cb.setup_script)}")
+        lines.append(f"credentials_path = {_toml_value(cb.credentials_path)}")
+        lines.append(f"max_ccu_per_day = {_toml_value(cb.max_ccu_per_day)}")
+        lines.append(f"timeout_seconds = {_toml_value(cb.timeout_seconds)}")
+
     # agent_config sub-table
     lines.append("")
     lines.append(f"[targets.{tid}.agent_config]")
@@ -300,6 +313,19 @@ def _parse_eval_config(data: dict[str, object]) -> EvalConfig:
             direction=Direction(str(cc["direction"])),  # type: ignore[index]
         ))
 
+    # Parse colab config
+    colab_config: ColabConfig | None = None
+    colab_data = data.get("colab")
+    if colab_data is not None and isinstance(colab_data, dict):
+        colab_config = ColabConfig(
+            enabled=bool(colab_data.get("enabled", False)),
+            accelerator=str(colab_data.get("accelerator", "T4")),
+            setup_script=str(colab_data.get("setup_script", "")),
+            credentials_path=str(colab_data.get("credentials_path", ".anneal/colab-credentials.json")),
+            max_ccu_per_day=float(colab_data.get("max_ccu_per_day", 10.0)),  # type: ignore[arg-type]
+            timeout_seconds=int(colab_data.get("timeout_seconds", 600)),  # type: ignore[arg-type]
+        )
+
     return EvalConfig(
         metric_name=str(data["metric_name"]),
         direction=Direction(str(data["direction"])),
@@ -309,6 +335,7 @@ def _parse_eval_config(data: dict[str, object]) -> EvalConfig:
         held_out_interval=int(data.get("held_out_interval", 10)),  # type: ignore[arg-type]
         constraints=constraints,
         constraint_commands=constraint_commands,
+        colab=colab_config,
     )
 
 

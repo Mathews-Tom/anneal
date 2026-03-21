@@ -134,6 +134,23 @@ class ConstraintCommand:
 
 
 @dataclass
+class ColabConfig:
+    """Configuration for remote GPU evaluation via Google Colab.
+
+    When enabled, the EvalEngine dispatches to a ColabEvaluator that
+    runs eval commands on a Colab VM instead of locally. The mutation
+    agent, scope enforcement, and git operations remain local.
+    """
+
+    enabled: bool = False
+    accelerator: str = "T4"
+    setup_script: str = ""
+    credentials_path: str = ".anneal/colab-credentials.json"
+    max_ccu_per_day: float = 10.0
+    timeout_seconds: int = 600
+
+
+@dataclass
 class EvalConfig:
     """Evaluation configuration for a target."""
 
@@ -145,6 +162,7 @@ class EvalConfig:
     held_out_interval: int = 10
     constraints: list[MetricConstraint] = field(default_factory=list)
     constraint_commands: list[ConstraintCommand] = field(default_factory=list)
+    colab: ColabConfig | None = None
 
 
 @dataclass

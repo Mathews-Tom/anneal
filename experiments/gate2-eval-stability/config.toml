@@ -1,0 +1,26 @@
+[experiment]
+name = "gate2-eval-stability"
+checkpoint = "gate2"
+description = "Stochastic eval produces stable rankings across repeated runs"
+max_experiments_per_condition = 5
+seed = 42
+artifact_paths = ["examples/skill-diagram/SKILL.md"]
+eval_criteria_path = "examples/skill-diagram/eval_criteria.toml"
+
+# V2 uses a single "baseline" condition — 5 repeated evals on the same
+# artifact with different seeds. No mutation, no agent.
+[conditions.baseline]
+description = "Repeated baseline eval on identical artifact, different seeds"
+knowledge_enabled = false
+
+# Pass/fail thresholds
+[thresholds]
+# Score variance across runs must be below this for the eval to be "stable"
+max_score_variance = 0.1
+# Per-sample variance threshold (informational — not a gate blocker)
+# Binary criteria on regenerated outputs have inherent Bernoulli variance
+# of ~p(1-p) per criterion. With 4 criteria summed, expected variance is
+# ~0.84 even for a perfectly stable evaluator. Threshold flags outliers only.
+max_sample_variance = 1.5
+# Coefficient of variation threshold (stddev / mean)
+max_coefficient_of_variation = 0.20

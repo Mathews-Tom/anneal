@@ -1,0 +1,29 @@
+[experiment]
+name = "gate4-multi-domain-stress"
+checkpoint = "gate4"
+description = "Multi-domain stress test — where does the pattern break?"
+max_experiments_per_condition = 20
+seed = 42
+
+# Each condition is a different domain
+[conditions.skill-diagram]
+description = "Stochastic eval, SKILL.md optimization (~2-5 min loops)"
+domain = "stochastic"
+artifact_paths = ["examples/skill-diagram/SKILL.md"]
+eval_criteria_path = "examples/skill-diagram/eval_criteria.toml"
+scope_path = "examples/skill-diagram/scope.yaml"
+
+[conditions.code-minify]
+description = "Deterministic eval, code size optimization (~5-10 min loops)"
+domain = "deterministic"
+artifact_paths = ["examples/code-minify/app.py"]
+run_cmd = "bash examples/code-minify/eval.sh"
+parse_cmd = "cat"
+scope_path = "examples/code-minify/scope.yaml"
+
+# Analysis targets
+[thresholds]
+# Minimum domains that must show improvement
+min_improving_domains = 2
+# Maximum crash rate per domain
+max_crash_rate = 0.30

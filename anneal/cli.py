@@ -423,8 +423,6 @@ def _handle_run(args: argparse.Namespace) -> None:
         if target.domain_tier is DomainTier.DEPLOYMENT and target.approval_callback is None:
             target.approval_callback = lambda diff: input("Apply changes? [y/N] ").lower() == "y"
 
-        dashboard_url = getattr(args, "dashboard_url", None)
-
         runner = ExperimentRunner(
             git=git,
             agent_invoker=AgentInvoker(),
@@ -434,7 +432,6 @@ def _handle_run(args: argparse.Namespace) -> None:
             repo_root=repo_root,
             knowledge=knowledge,
             notifications=notifier,
-            dashboard_url=dashboard_url,
             learning_pool=learning_pool,
         )
 
@@ -669,6 +666,10 @@ def _handle_configure(args: argparse.Namespace) -> None:
         target.meta_depth = args.meta_depth
         changes.append(f"  meta_depth = {args.meta_depth}")
 
+    if getattr(args, "knowledge_context", None) is not None:
+        target.inject_knowledge_context = args.knowledge_context
+        changes.append(f"  inject_knowledge_context = {args.knowledge_context}")
+
     if not changes:
         console.print("[yellow]No configuration changes specified.[/yellow]")
         return
@@ -721,10 +722,21 @@ def _handle_drift(args: argparse.Namespace) -> None:
 
 def _handle_dashboard(args: argparse.Namespace) -> None:
     """Handle ``anneal dashboard``."""
-    from anneal.engine.dashboard import DashboardServer, get_event_bus
+    from anneal.engine.dashboard import DashboardServer
 
-    event_bus = get_event_bus()
-    server = DashboardServer(event_bus, host=args.host, port=args.port)
+    # Resolve .anneal root directory
+    if args.root:
+        anneal_root = Path(args.root).resolve()
+    else:
+        repo_root = _find_repo_root()
+        anneal_root = repo_root / ".anneal"
+
+    if not anneal_root.exists():
+        console.print(f"[red].anneal directory not found at {anneal_root}[/red]")
+        console.print("[dim]Run 'anneal init' first, or specify --root <path>[/dim]")
+        sys.exit(1)
+
+    server = DashboardServer(anneal_root, host=args.host, port=args.port)
 
     if getattr(args, "open", False):
         import webbrowser
@@ -732,7 +744,8 @@ def _handle_dashboard(args: argparse.Namespace) -> None:
 
     console.print(
         Panel(
-            f"Dashboard running at [bold]http://{args.host}:{args.port}[/bold]\n"
+            f"Dashboard reading from [bold]{anneal_root}[/bold]\n"
+            f"  Serving at [bold]http://{args.host}:{args.port}[/bold]\n"
             f"  Press Ctrl+C to stop",
             title="anneal dashboard",
             style="blue",
@@ -742,7 +755,6 @@ def _handle_dashboard(args: argparse.Namespace) -> None:
     async def _run_dashboard() -> None:
         await server.start()
         try:
-            # Keep running until interrupted
             while True:
                 await asyncio.sleep(1)
         finally:
@@ -923,7 +935,6 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--agent-budget", type=float, help="Override per-invocation agent budget for this run")
     run.add_argument("--search", choices=["greedy", "annealing", "population"], help="Override search strategy for this run")
     run.add_argument("--population-size", type=int, help="Population size for population search (default: 4)")
-    run.add_argument("--dashboard-url", help="Dashboard server URL for live updates (e.g., http://127.0.0.1:8080)")
     run.add_argument("--global-learnings", action=argparse.BooleanOptionalAction, default=True, help="Enable/disable cross-project learning pool")
 
     # -- stop (stub) --
@@ -975,9 +986,11 @@ def _build_parser() -> argparse.ArgumentParser:
     conf.add_argument("--time-budget", type=int, help="Set time budget per experiment (seconds)")
     conf.add_argument("--max-failures", type=int, help="Set max consecutive failures before HALT")
     conf.add_argument("--meta-depth", type=int, help="Set meta-optimization depth (0=disabled, 1=enabled)")
+    conf.add_argument("--knowledge-context", action=argparse.BooleanOptionalAction, help="Enable/disable knowledge context injection into agent prompt")
 
     # -- dashboard --
-    dash = subparsers.add_parser("dashboard", help="Start live SSE dashboard server")
+    dash = subparsers.add_parser("dashboard", help="Start live dashboard reading from .anneal/ directory")
+    dash.add_argument("--root", help="Path to .anneal directory (default: .anneal/ in repo root)")
     dash.add_argument("--port", type=int, default=8080, help="Server port")
     dash.add_argument("--host", default="127.0.0.1", help="Server host")
     dash.add_argument("--open", action="store_true", help="Open browser on start")

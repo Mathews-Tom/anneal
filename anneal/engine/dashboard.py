@@ -1,8 +1,11 @@
-"""SSE-based live dashboard server for experiment monitoring.
+"""File-based live dashboard server for experiment monitoring.
 
-Provides a lightweight HTTP server with Server-Sent Events for real-time
-experiment updates. The runner publishes events to a shared EventBus;
-connected browsers receive them via EventSource and render live charts.
+Reads experiment data from the .anneal/ directory structure on disk.
+The runner writes experiments.jsonl and .anneal-status files; the dashboard
+polls those files and pushes updates to connected browsers via SSE.
+
+No coupling to the runner process — the dashboard can start before, during,
+or after experiment runs.
 """
 
 from __future__ import annotations
@@ -11,7 +14,8 @@ import asyncio
 import json
 import logging
 import textwrap
-from collections.abc import AsyncIterator
+import tomllib
+from pathlib import Path
 from typing import Any
 
 from aiohttp import web
@@ -19,72 +23,183 @@ from aiohttp.client_exceptions import ClientConnectionResetError
 
 logger = logging.getLogger(__name__)
 
+MAX_SCORE_HISTORY = 50
+POLL_INTERVAL_SECONDS = 2.0
+
+
 # ---------------------------------------------------------------------------
-# Event Bus
+# File-based state reader
 # ---------------------------------------------------------------------------
 
 
-class EventBus:
-    """Publish-subscribe event bus for experiment updates."""
+class AnnealStateReader:
+    """Reads experiment state from the .anneal/ directory structure.
 
-    MAX_SCORE_HISTORY = 20
+    Expected layout:
+        <root>/
+            config.toml              # target registry
+            targets/<id>/
+                experiments.jsonl    # one ExperimentRecord per line
+            worktrees/<id>/
+                .anneal-status       # runner state snapshot
+    """
 
-    def __init__(self) -> None:
+    def __init__(self, root: Path) -> None:
+        self._root = root
+        self._record_cursors: dict[str, int] = {}
+
+    @property
+    def root(self) -> Path:
+        return self._root
+
+    def discover_targets(self) -> dict[str, dict[str, Any]]:
+        """Read config.toml and return target metadata keyed by target id."""
+        config_path = self._root / "config.toml"
+        if not config_path.exists():
+            return {}
+        data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        targets_raw = data.get("targets", {})
+        result: dict[str, dict[str, Any]] = {}
+        for tid, tdata in targets_raw.items():
+            result[tid] = {
+                "target_id": tid,
+                "eval_mode": tdata.get("eval_mode", "unknown"),
+                "baseline": tdata.get("baseline_score", 0.0),
+                "baseline_raw_scores": tdata.get("baseline_raw_scores"),
+                "git_branch": tdata.get("git_branch", ""),
+                "artifact_paths": tdata.get("artifact_paths", []),
+                "knowledge_path": tdata.get("knowledge_path", ""),
+                "worktree_path": tdata.get("worktree_path", ""),
+            }
+        return result
+
+    def read_experiments(self, target_id: str) -> list[dict[str, Any]]:
+        """Read all experiment records for a target from experiments.jsonl."""
+        jsonl_path = self._root / "targets" / target_id / "experiments.jsonl"
+        if not jsonl_path.exists():
+            return []
+        records: list[dict[str, Any]] = []
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                records.append(json.loads(stripped))
+            except json.JSONDecodeError:
+                continue
+        return records
+
+    def read_new_experiments(self, target_id: str) -> list[dict[str, Any]]:
+        """Read only experiments added since the last call for this target."""
+        all_records = self.read_experiments(target_id)
+        cursor = self._record_cursors.get(target_id, 0)
+        new_records = all_records[cursor:]
+        self._record_cursors[target_id] = len(all_records)
+        return new_records
+
+    def read_status(self, target_id: str) -> dict[str, Any] | None:
+        """Read .anneal-status from the target's worktree directory."""
+        status_path = self._root / "worktrees" / target_id / ".anneal-status"
+        if not status_path.exists():
+            return None
+        try:
+            return json.loads(status_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+
+    def build_snapshot(self) -> dict[str, Any]:
+        """Build a complete status snapshot from all file sources."""
+        targets_meta = self.discover_targets()
+        targets: dict[str, dict[str, Any]] = {}
+        score_history: dict[str, list[float]] = {}
+
+        for tid, meta in targets_meta.items():
+            records = self.read_experiments(tid)
+            # Update cursor to current position
+            self._record_cursors[tid] = len(records)
+
+            status = self.read_status(tid) or {}
+
+            experiment_count = len(records)
+            scores = [r["score"] for r in records if "score" in r]
+            last_record = records[-1] if records else None
+
+            target_info: dict[str, Any] = {
+                "target_id": tid,
+                "baseline": meta.get("baseline", 0.0),
+                "eval_mode": meta.get("eval_mode", "unknown"),
+                "git_branch": meta.get("git_branch", ""),
+                "experiment_count": experiment_count,
+                "score": last_record["score"] if last_record else meta.get("baseline", 0.0),
+                "outcome": last_record.get("outcome") if last_record else None,
+                "hypothesis": last_record.get("hypothesis") if last_record else None,
+                "cost": last_record.get("cost_usd", 0.0) if last_record else 0.0,
+                "total_cost": sum(r.get("cost_usd", 0.0) for r in records),
+                "state": status.get("state", "UNKNOWN"),
+            }
+            targets[tid] = target_info
+            score_history[tid] = scores[-MAX_SCORE_HISTORY:]
+
+        return {
+            "targets": targets,
+            "score_history": score_history,
+        }
+
+
+# ---------------------------------------------------------------------------
+# SSE publisher backed by file polling
+# ---------------------------------------------------------------------------
+
+
+class FilePollingBus:
+    """Polls .anneal/ files and publishes new experiments as SSE events."""
+
+    def __init__(self, reader: AnnealStateReader) -> None:
+        self._reader = reader
         self._subscribers: list[asyncio.Queue[tuple[str, dict[str, Any]]]] = []
-        self._lock = asyncio.Lock()
-        self._latest_status: dict[str, dict[str, Any]] = {}
-        self._score_history: dict[str, list[float]] = {}
+        self._polling = False
 
     def publish(self, event_type: str, data: dict[str, Any]) -> None:
-        """Publish an event to all subscribers."""
-        target_id = data.get("target_id")
-        if target_id is not None:
-            status = self._latest_status.setdefault(str(target_id), {})
-            status["target_id"] = target_id
-            if event_type == "experiment_complete":
-                status["score"] = data.get("score")
-                status["baseline"] = data.get("baseline")
-                status["outcome"] = data.get("outcome")
-                status["hypothesis"] = data.get("hypothesis")
-                status["cost"] = data.get("cost")
-                status["duration"] = data.get("duration")
-                status["experiment_count"] = status.get("experiment_count", 0) + 1
-                score = data.get("score")
-                if score is not None:
-                    history = self._score_history.setdefault(str(target_id), [])
-                    history.append(score)
-                    if len(history) > self.MAX_SCORE_HISTORY:
-                        history.pop(0)
-            elif event_type == "state_change":
-                status["state"] = data.get("state")
-                status["reason"] = data.get("reason")
-            elif event_type == "milestone":
-                status["kept_count"] = data.get("kept_count")
-                status["score"] = data.get("score")
-
         for queue in self._subscribers:
             try:
                 queue.put_nowait((event_type, data))
             except asyncio.QueueFull:
-                logger.warning("Subscriber queue full, dropping event: %s", event_type)
+                logger.warning("Subscriber queue full, dropping event")
 
-    async def subscribe(self) -> AsyncIterator[tuple[str, dict[str, Any]]]:
-        """Yield events as they arrive. Async generator."""
+    async def subscribe(self) -> asyncio.Queue[tuple[str, dict[str, Any]]]:
         queue: asyncio.Queue[tuple[str, dict[str, Any]]] = asyncio.Queue(maxsize=256)
         self._subscribers.append(queue)
-        try:
-            while True:
-                event = await queue.get()
-                yield event
-        finally:
+        return queue
+
+    def unsubscribe(self, queue: asyncio.Queue[tuple[str, dict[str, Any]]]) -> None:
+        if queue in self._subscribers:
             self._subscribers.remove(queue)
 
-    def get_status(self) -> dict[str, Any]:
-        """Return current status snapshot for all known targets."""
-        return {
-            "targets": dict(self._latest_status),
-            "score_history": dict(self._score_history),
-        }
+    async def poll_loop(self) -> None:
+        """Continuously poll for new experiment records and publish as events."""
+        self._polling = True
+        # Initialize cursors with existing data
+        self._reader.build_snapshot()
+
+        while self._polling:
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+            targets_meta = self._reader.discover_targets()
+
+            for tid in targets_meta:
+                new_records = self._reader.read_new_experiments(tid)
+                for record in new_records:
+                    self.publish("experiment_complete", {
+                        "target_id": tid,
+                        "score": record.get("score", 0.0),
+                        "baseline": record.get("baseline_score", 0.0),
+                        "outcome": record.get("outcome", "UNKNOWN"),
+                        "hypothesis": (record.get("hypothesis") or "")[:200],
+                        "cost": record.get("cost_usd", 0.0),
+                        "duration": record.get("duration_seconds", 0.0),
+                    })
+
+    def stop(self) -> None:
+        self._polling = False
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +237,7 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
 .chart-title{font-size:0.9rem;color:#8b949e;margin-bottom:8px}
 .hyp{max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .no-data{color:#484f58;font-style:italic;padding:24px;text-align:center}
+.cost{color:#8b949e;font-size:0.85rem}
 </style>
 </head>
 <body>
@@ -132,33 +248,30 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
   <span id="last-update">Last update: --</span>
 </div>
 <div class="chart-section">
-  <div class="chart-title">Score Trajectory (last 20 per target)</div>
+  <div class="chart-title">Score Trajectory (last 50 per target)</div>
   <canvas id="chart" width="900" height="260"></canvas>
 </div>
 <table>
 <thead>
-<tr><th>Target</th><th>Score</th><th>Baseline</th><th>Experiments</th><th>State</th><th>Last Outcome</th><th>Last Hypothesis</th></tr>
+<tr><th>Target</th><th>Score</th><th>Baseline</th><th>Experiments</th><th>Cost</th><th>State</th><th>Last Outcome</th><th>Last Hypothesis</th></tr>
 </thead>
-<tbody id="targets"><tr><td colspan="7" class="no-data">Waiting for events...</td></tr></tbody>
+<tbody id="targets"><tr><td colspan="8" class="no-data">Loading...</td></tr></tbody>
 </table>
 <script>
 (function(){
   const targets = {};
   const scoreHistory = {};
   let eventCount = 0;
-  const MAX_HISTORY = 20;
+  const MAX_HISTORY = 50;
   const COLORS = ['#58a6ff','#3fb950','#d29922','#f778ba','#bc8cff','#79c0ff','#56d364','#e3b341'];
 
   function colorFor(idx){ return COLORS[idx % COLORS.length]; }
 
-  const es = new EventSource('/events');
   const connEl = document.getElementById('conn-status');
   const evtEl = document.getElementById('event-count');
   const updEl = document.getElementById('last-update');
 
-  es.onopen = function(){ connEl.textContent = 'Connected'; connEl.style.color = '#3fb950'; };
-  es.onerror = function(){ connEl.textContent = 'Disconnected'; connEl.style.color = '#f85149'; };
-
+  // Load initial snapshot from files
   fetch('/api/status').then(function(r){ return r.json(); }).then(function(status){
     const st = status.targets || {};
     const sh = status.score_history || {};
@@ -168,8 +281,13 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
     Object.keys(sh).forEach(function(tid){
       scoreHistory[tid] = sh[tid].slice(-MAX_HISTORY);
     });
-    if(Object.keys(targets).length > 0) render();
+    render();
   });
+
+  // SSE for live updates from file polling
+  const es = new EventSource('/events');
+  es.onopen = function(){ connEl.textContent = 'Connected'; connEl.style.color = '#3fb950'; };
+  es.onerror = function(){ connEl.textContent = 'Reconnecting...'; connEl.style.color = '#d29922'; };
 
   es.addEventListener('experiment_complete', function(e){
     const d = JSON.parse(e.data);
@@ -181,36 +299,31 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
     t.baseline = d.baseline;
     t.outcome = d.outcome;
     t.hypothesis = d.hypothesis;
+    t.cost = d.cost;
     t.experiment_count = (t.experiment_count || 0) + 1;
+    t.total_cost = (t.total_cost || 0) + (d.cost || 0);
     if(!scoreHistory[tid]) scoreHistory[tid] = [];
     scoreHistory[tid].push(d.score);
     if(scoreHistory[tid].length > MAX_HISTORY) scoreHistory[tid].shift();
     eventCount++; render();
   });
 
-  es.addEventListener('state_change', function(e){
-    const d = JSON.parse(e.data);
-    const tid = d.target_id;
-    if(!targets[tid]) targets[tid] = {};
-    targets[tid].target_id = tid;
-    targets[tid].state = d.state;
-    targets[tid].reason = d.reason;
-    eventCount++; render();
-  });
-
-  es.addEventListener('milestone', function(e){
-    const d = JSON.parse(e.data);
-    const tid = d.target_id;
-    if(!targets[tid]) targets[tid] = {};
-    targets[tid].target_id = tid;
-    targets[tid].kept_count = d.kept_count;
-    targets[tid].score = d.score;
-    eventCount++; render();
+  es.addEventListener('status_refresh', function(e){
+    const status = JSON.parse(e.data);
+    const st = status.targets || {};
+    const sh = status.score_history || {};
+    Object.keys(st).forEach(function(tid){
+      targets[tid] = st[tid];
+    });
+    Object.keys(sh).forEach(function(tid){
+      scoreHistory[tid] = sh[tid].slice(-MAX_HISTORY);
+    });
+    render();
   });
 
   function render(){
-    evtEl.textContent = 'Events: ' + eventCount;
     updEl.textContent = 'Last update: ' + new Date().toLocaleTimeString();
+    evtEl.textContent = 'Events: ' + eventCount;
     renderTable();
     renderChart();
   }
@@ -218,7 +331,7 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
   function renderTable(){
     const tbody = document.getElementById('targets');
     const ids = Object.keys(targets).sort();
-    if(ids.length === 0){ tbody.innerHTML = '<tr><td colspan="7" class="no-data">Waiting for events...</td></tr>'; return; }
+    if(ids.length === 0){ tbody.innerHTML = '<tr><td colspan="8" class="no-data">No targets found</td></tr>'; return; }
     let html = '';
     ids.forEach(function(tid){
       const t = targets[tid];
@@ -229,6 +342,7 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
         + '<td>' + fmt(t.score) + '</td>'
         + '<td>' + fmt(t.baseline) + '</td>'
         + '<td>' + (t.experiment_count || 0) + '</td>'
+        + '<td class="cost">$' + (t.total_cost || 0).toFixed(4) + '</td>'
         + '<td class="' + stateClass + '">' + esc(t.state || '--') + '</td>'
         + '<td class="' + outcomeClass + '">' + esc(t.outcome || '--') + '</td>'
         + '<td class="hyp" title="' + esc(t.hypothesis || '') + '">' + esc(t.hypothesis || '--') + '</td>'
@@ -258,7 +372,6 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
     const plotW = W - pad.l - pad.r;
     const plotH = H - pad.t - pad.b;
 
-    // grid
     ctx.strokeStyle = '#21262d'; ctx.lineWidth = 1;
     for(let i = 0; i <= 4; i++){
       const y = pad.t + plotH * (i / 4);
@@ -281,7 +394,6 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
       });
       ctx.stroke();
 
-      // dot at latest
       const lastX = pad.l + ((pts.length - 1) / (MAX_HISTORY - 1)) * plotW;
       const lastY = pad.t + plotH * (1 - (pts[pts.length - 1] - allMin) / (allMax - allMin));
       ctx.beginPath(); ctx.arc(lastX, lastY, 3, 0, Math.PI * 2); ctx.fillStyle = colorFor(idx); ctx.fill();
@@ -305,35 +417,42 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
 
 
 class DashboardServer:
-    """Lightweight HTTP server with SSE endpoint for live experiment updates."""
+    """HTTP server that reads .anneal/ files and serves a live dashboard."""
 
     def __init__(
         self,
-        event_bus: EventBus,
+        anneal_root: Path,
         host: str = "127.0.0.1",
         port: int = 8080,
     ) -> None:
-        self._event_bus = event_bus
+        self._reader = AnnealStateReader(anneal_root)
+        self._bus = FilePollingBus(self._reader)
         self._host = host
         self._port = port
         self._app = web.Application()
         self._app.router.add_get("/", self._handle_index)
         self._app.router.add_get("/events", self._handle_events)
         self._app.router.add_get("/api/status", self._handle_status)
-        self._app.router.add_post("/api/event", self._handle_post_event)
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
+        self._poll_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
-        """Start the HTTP server."""
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
         self._site = web.TCPSite(self._runner, self._host, self._port)
         await self._site.start()
-        logger.info("Dashboard server started at http://%s:%d", self._host, self._port)
+        self._poll_task = asyncio.create_task(self._bus.poll_loop())
+        logger.info(
+            "Dashboard serving .anneal/ at %s — http://%s:%d",
+            self._reader.root, self._host, self._port,
+        )
 
     async def stop(self) -> None:
-        """Stop the HTTP server."""
+        self._bus.stop()
+        if self._poll_task is not None:
+            self._poll_task.cancel()
+            self._poll_task = None
         if self._runner is not None:
             await self._runner.cleanup()
             self._runner = None
@@ -355,43 +474,25 @@ class DashboardServer:
         )
         await response.prepare(request)
 
-        async for event_type, data in self._event_bus.subscribe():
-            payload = f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
-            try:
-                await response.write(payload.encode())
-            except (
-                ConnectionResetError,
-                ConnectionAbortedError,
-                BrokenPipeError,
-                ClientConnectionResetError,
-            ):
-                break
+        queue = await self._bus.subscribe()
+        try:
+            while True:
+                event_type, data = await queue.get()
+                payload = f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+                try:
+                    await response.write(payload.encode())
+                except (
+                    ConnectionResetError,
+                    ConnectionAbortedError,
+                    BrokenPipeError,
+                    ClientConnectionResetError,
+                ):
+                    break
+        finally:
+            self._bus.unsubscribe(queue)
 
         return response
 
     async def _handle_status(self, _request: web.Request) -> web.Response:
-        status = self._event_bus.get_status()
-        return web.json_response(status)
-
-    async def _handle_post_event(self, request: web.Request) -> web.Response:
-        """Receive events from external processes (e.g., anneal run in another terminal)."""
-        body = await request.json()
-        event_type = body.get("type", "experiment_complete")
-        data = body.get("data", {})
-        self._event_bus.publish(event_type, data)
-        return web.json_response({"ok": True})
-
-
-# ---------------------------------------------------------------------------
-# Global singleton
-# ---------------------------------------------------------------------------
-
-_event_bus: EventBus | None = None
-
-
-def get_event_bus() -> EventBus:
-    """Get or create the global event bus."""
-    global _event_bus  # noqa: PLW0603
-    if _event_bus is None:
-        _event_bus = EventBus()
-    return _event_bus
+        snapshot = self._reader.build_snapshot()
+        return web.json_response(snapshot)

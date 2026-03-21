@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-import os
 import random
 from pathlib import Path
 
 import numpy as np
 import openai
 
+from anneal.engine.client import make_client, strip_provider_prefix
 from anneal.engine.types import (
     AgentConfig,
     BinaryCriterion,
@@ -33,14 +33,8 @@ class EvalError(Exception):
     """Raised on evaluation failures."""
 
 
-def _make_client(model: str) -> openai.AsyncOpenAI:
-    """Build an OpenAI-compatible async client routed by model prefix."""
-    if model.startswith("gemini-"):
-        return openai.AsyncOpenAI(
-            api_key=os.environ["GEMINI_API_KEY"],
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-        )
-    return openai.AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+# Keep _make_client as an alias for backward compatibility (gate scripts import it)
+_make_client = make_client
 
 
 def _bootstrap_ci(
@@ -178,8 +172,10 @@ class StochasticEvaluator:
         if gen_agent_config is None:
             raise EvalError("StochasticEval requires generation_agent_config")
 
-        gen_client = _make_client(gen_agent_config.model)
-        eval_client = _make_client(gen_agent_config.evaluator_model)
+        gen_client = make_client(gen_agent_config.model)
+        eval_client = make_client(gen_agent_config.evaluator_model)
+        gen_model = strip_provider_prefix(gen_agent_config.model)
+        eval_model = strip_provider_prefix(gen_agent_config.evaluator_model)
 
         total_cost = 0.0
 
@@ -188,7 +184,7 @@ class StochasticEvaluator:
         gen_tasks = [
             self._generate_sample(
                 gen_client,
-                gen_agent_config.model,
+                gen_model,
                 config.generation_prompt_template.format(
                     test_prompt=prompt,
                     artifact_content=artifact_content,
@@ -213,7 +209,7 @@ class StochasticEvaluator:
             score_tasks = [
                 self._score_criterion(
                     eval_client,
-                    gen_agent_config.evaluator_model,
+                    eval_model,
                     sample,
                     criterion,
                     votes=votes,

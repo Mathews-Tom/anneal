@@ -14,8 +14,7 @@ import re
 import signal
 from pathlib import Path
 
-import openai
-
+from anneal.engine.client import compute_cost, make_client, strip_provider_prefix
 from anneal.engine.types import AgentConfig, AgentInvocationResult, DomainTier
 
 logger = logging.getLogger(__name__)
@@ -27,15 +26,6 @@ class AgentInvocationError(Exception):
 
 class AgentTimeoutError(AgentInvocationError):
     """Agent exceeded time budget."""
-
-
-# Per-million-token costs: (input, output)
-_MODEL_COSTS: dict[str, tuple[float, float]] = {
-    "gemini-2.5-flash": (0.15, 0.60),
-    "gemini-2.5-pro": (1.25, 10.0),
-    "gpt-4.1": (2.0, 8.0),
-    "claude-sonnet-4-6": (3.0, 15.0),
-}
 
 
 def _extract_hypothesis(text: str) -> str | None:
@@ -59,31 +49,9 @@ def _extract_tags(text: str) -> list[str]:
     return []
 
 
-def _make_api_client(model: str) -> openai.AsyncOpenAI:
-    """Create OpenAI-compatible client for the model's provider."""
-    if model.startswith("gemini-"):
-        return openai.AsyncOpenAI(
-            api_key=os.environ["GEMINI_API_KEY"],
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-        )
-    if model.startswith("claude-"):
-        return openai.AsyncOpenAI(
-            api_key=os.environ["ANTHROPIC_API_KEY"],
-            base_url="https://api.anthropic.com/v1/",
-        )
-    if model.startswith("gpt-"):
-        return openai.AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    raise AgentInvocationError(f"No API client mapping for model: {model}")
-
-
-def _compute_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-    """Compute USD cost from token counts using _MODEL_COSTS."""
-    costs = _MODEL_COSTS.get(model)
-    if costs is None:
-        logger.warning("No cost data for model %s; reporting $0.00", model)
-        return 0.0
-    input_cost_per_tok, output_cost_per_tok = costs[0] / 1_000_000, costs[1] / 1_000_000
-    return input_tokens * input_cost_per_tok + output_tokens * output_cost_per_tok
+# Backward compatibility aliases (gate scripts import these)
+_make_api_client = make_client
+_compute_cost = compute_cost
 
 
 class AgentInvoker:
@@ -252,12 +220,13 @@ class AgentInvoker:
         worktree_path: Path,
         time_budget_seconds: int,
     ) -> AgentInvocationResult:
-        client = _make_api_client(config.model)
+        client = make_client(config.model)
+        api_model = strip_provider_prefix(config.model)
 
         try:
             response = await asyncio.wait_for(
                 client.chat.completions.create(
-                    model=config.model,
+                    model=api_model,
                     temperature=config.temperature,
                     messages=[{"role": "user", "content": prompt}],
                 ),
@@ -273,7 +242,7 @@ class AgentInvoker:
         usage = response.usage
         input_tokens = usage.prompt_tokens if usage else 0
         output_tokens = usage.completion_tokens if usage else 0
-        cost_usd = _compute_cost(config.model, input_tokens, output_tokens)
+        cost_usd = compute_cost(config.model, input_tokens, output_tokens)
 
         hypothesis = _extract_hypothesis(raw_output)
         hypothesis_source: str = "agent" if hypothesis is not None else "synthesized"

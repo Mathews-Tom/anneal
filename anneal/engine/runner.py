@@ -37,6 +37,9 @@ from anneal.engine.types import (
 
 logger = logging.getLogger(__name__)
 
+DIVERGENCE_WARNING = 0.10   # 10%
+DIVERGENCE_CRITICAL = 0.25  # 25%
+
 
 class ScopeIntegrityError(Exception):
     """Raised when scope.yaml hash has drifted since registration."""
@@ -562,13 +565,19 @@ class ExperimentRunner:
                         "Held-out eval for %s: score=%.4f (main=%.4f)",
                         target.id, held_out_result.score, record.score,
                     )
-                    # Warn on divergence >20%
-                    if record.score > 0 and abs(held_out_result.score - record.score) / record.score > 0.20:
-                        logger.warning(
-                            "Held-out score diverges >20%% from main score for %s: "
-                            "held_out=%.4f main=%.4f",
-                            target.id, held_out_result.score, record.score,
-                        )
+                    if record.score > 0:
+                        divergence = abs(held_out_result.score - record.score) / record.score
+                        if divergence > DIVERGENCE_CRITICAL:
+                            logger.error(
+                                "CRITICAL: Held-out diverges %.0f%% from main for %s. "
+                                "Evaluator may be compromised.",
+                                divergence * 100, target.id,
+                            )
+                        elif divergence > DIVERGENCE_WARNING:
+                            logger.warning(
+                                "Held-out diverges %.0f%% from main for %s",
+                                divergence * 100, target.id,
+                            )
                 except EvalError as exc:
                     logger.warning("Held-out eval failed for %s: %s", target.id, exc)
 

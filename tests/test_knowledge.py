@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime
 from pathlib import Path
 
-from anneal.engine.knowledge import KnowledgeStore
+from anneal.engine.knowledge import KnowledgeStore, _variance
 from anneal.engine.types import ConsolidationRecord, ExperimentRecord, Outcome
 
 
@@ -206,3 +207,54 @@ def test_consolidation_does_not_summarize_away_raw_records(tmp_path: Path) -> No
     consolidations_file = tmp_path / "knowledge" / "learnings-structured.jsonl"
     assert consolidations_file.exists()
     assert len(consolidations_file.read_text().splitlines()) == 1
+
+
+# ---------------------------------------------------------------------------
+# Variance epsilon (Step 1.5)
+# ---------------------------------------------------------------------------
+
+
+def test_variance_near_zero_clamped() -> None:
+    """Constant values produce exactly 0.0, not a floating-point residual."""
+    assert _variance([0.8, 0.8, 0.8]) == 0.0
+    assert _variance([1.0, 1.0, 1.0, 1.0, 1.0]) == 0.0
+
+
+def test_variance_nonzero_preserved() -> None:
+    """Non-constant values produce correct population variance."""
+    result = _variance([0.7, 0.8, 0.9])
+    # Population variance: ((−0.1)² + 0² + 0.1²) / 3 = 0.02/3 ≈ 0.00667
+    expected = sum((x - 0.8) ** 2 for x in [0.7, 0.8, 0.9]) / 3
+    assert abs(result - expected) < 1e-10
+    assert result > 0
+
+
+# ---------------------------------------------------------------------------
+# Concurrent consolidation safety (Step 1.3)
+# ---------------------------------------------------------------------------
+
+
+def test_concurrent_consolidation_safe(tmp_path: Path) -> None:
+    """Two threads calling consolidate_if_due produce at most one consolidation."""
+    store = KnowledgeStore(tmp_path / "knowledge")
+    for i in range(55):
+        store.append_record(_make_record(idx=i, score=0.75 + i * 0.001))
+
+    assert store.should_consolidate() is True
+
+    results: list[ConsolidationRecord | None] = [None, None]
+
+    def _consolidate(idx: int) -> None:
+        results[idx] = store.consolidate_if_due()
+
+    t1 = threading.Thread(target=_consolidate, args=(0,))
+    t2 = threading.Thread(target=_consolidate, args=(1,))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    # Exactly one thread produced a consolidation record
+    non_none = [r for r in results if r is not None]
+    assert len(non_none) == 1
+    assert isinstance(non_none[0], ConsolidationRecord)

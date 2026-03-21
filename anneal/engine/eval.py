@@ -227,7 +227,7 @@ class StochasticEvaluator:
         aggregate_score = float(np.mean(per_sample_scores))
 
         # 4. Bootstrap CI with reproducible seed from hash of scores
-        score_bytes = ",".join(str(s) for s in per_sample_scores).encode()
+        score_bytes = ",".join(f"{s:.6f}" for s in per_sample_scores).encode()
         seed = int(hashlib.sha256(score_bytes).hexdigest(), 16) % 2**32
         ci_lower, ci_upper = _bootstrap_ci(
             per_sample_scores,

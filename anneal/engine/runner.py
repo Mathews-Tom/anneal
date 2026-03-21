@@ -144,9 +144,13 @@ class ExperimentRunner:
                     worktree,
                     target.time_budget_seconds,
                 )
-                # Approval gate: present raw output to callback
-                if target.approval_callback is not None:
-                    if not target.approval_callback(agent_result.raw_output):
+                # Approval gate: require callback for DEPLOYMENT targets
+                if target.approval_callback is None:
+                    raise ValueError(
+                        f"DEPLOYMENT target {target.id} requires approval_callback. "
+                        f"Set approval_callback during registration."
+                    )
+                if not target.approval_callback(agent_result.raw_output):
                         duration = time.monotonic() - start_time
                         return ExperimentRecord(
                             id=experiment_id,
@@ -362,14 +366,24 @@ class ExperimentRunner:
         stochastic_conf = target.eval_config.stochastic
         confidence = stochastic_conf.confidence_level if stochastic_conf else 0.95
 
-        keep = self._search.should_keep(
-            eval_result,
-            target.baseline_score,
-            target.baseline_raw_scores or None,
-            target.eval_config.direction,
-            target.eval_config.min_improvement_threshold,
-            confidence,
-        )
+        if (
+            target.eval_config.stochastic is not None
+            and (not target.baseline_raw_scores)
+        ):
+            logger.info(
+                "Cold-start for stochastic target %s: accepting first evaluation as baseline",
+                target.id,
+            )
+            keep = True
+        else:
+            keep = self._search.should_keep(
+                eval_result,
+                target.baseline_score,
+                target.baseline_raw_scores or None,
+                target.eval_config.direction,
+                target.eval_config.min_improvement_threshold,
+                confidence,
+            )
 
         # F2: Check constraints before finalizing KEEP
         constraint_failure: str | None = None
@@ -430,9 +444,7 @@ class ExperimentRunner:
         if self._knowledge:
             self._knowledge.append_record(record)
             self._knowledge.update_index(record)
-            if self._knowledge.should_consolidate():
-                self._knowledge.consolidate()
-                self._knowledge.regenerate_learnings()
+            self._knowledge.consolidate_if_due()
 
         # F5: Extract and store cross-project learning
         if self._learning_pool is not None:

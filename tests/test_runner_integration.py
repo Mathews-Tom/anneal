@@ -328,7 +328,11 @@ class TestRunnerDeploymentMode:
     async def test_deployment_tier_uses_invoke_deployment(self, tmp_path: Path) -> None:
         _make_git_repo(tmp_path)
 
-        target = _make_target(str(tmp_path), domain_tier=DomainTier.DEPLOYMENT)
+        target = _make_target(
+            str(tmp_path),
+            domain_tier=DomainTier.DEPLOYMENT,
+            approval_callback=lambda _: True,
+        )
 
         from anneal.engine.scope import compute_scope_hash
         target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
@@ -392,6 +396,52 @@ class TestRunnerDeploymentMode:
 
         agent.invoke.assert_called_once()
         agent.invoke_deployment.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_deployment_without_callback_raises(self, tmp_path: Path) -> None:
+        _make_git_repo(tmp_path)
+
+        target = _make_target(
+            str(tmp_path),
+            domain_tier=DomainTier.DEPLOYMENT,
+            approval_callback=None,
+        )
+
+        from anneal.engine.scope import compute_scope_hash
+        target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
+
+        runner, _, _ = _build_runner(tmp_path)
+        with pytest.raises(ValueError, match="requires approval_callback"):
+            await runner.run_one(target)
+
+
+# =========================================================================
+# F9: Stochastic cold-start guard
+# =========================================================================
+
+
+class TestRunnerStochasticColdStart:
+    """Verify first stochastic experiment is accepted without statistical test."""
+
+    @pytest.mark.asyncio
+    async def test_stochastic_cold_start_accepts_first(self, tmp_path: Path) -> None:
+        _make_git_repo(tmp_path)
+
+        target = _make_target(
+            str(tmp_path),
+            held_out_prompts=["test prompt"],
+        )
+        # Stochastic config is set (via held_out_prompts), but no baseline raw scores
+        target.baseline_raw_scores = []
+
+        from anneal.engine.scope import compute_scope_hash
+        target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
+
+        runner, _, _ = _build_runner(tmp_path)
+        record = await runner.run_one(target)
+
+        # Cold-start: first stochastic experiment accepted unconditionally
+        assert record.outcome is Outcome.KEPT
 
 
 # =========================================================================

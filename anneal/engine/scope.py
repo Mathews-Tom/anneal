@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import os
 from pathlib import Path
 
 import yaml
@@ -171,24 +172,33 @@ def _is_path_editable(file_path: str, editable: list[str]) -> bool:
     - Glob pattern: fnmatch for entries containing "*" or "?"
     - Parent directory: "examples/" is allowed if any editable entry starts
       with "examples/" (git reports untracked directories as a single entry)
+
+    Security: paths are canonicalized with os.path.normpath before matching.
+    Absolute paths and paths that escape the worktree (start with "..") are
+    unconditionally rejected.
     """
     # Normalize: git status may report directories with trailing /
     clean_path = file_path.rstrip("/")
 
+    # Reject path traversal attempts
+    normalized = os.path.normpath(clean_path)
+    if normalized.startswith("..") or os.path.isabs(normalized):
+        return False
+
     for pattern in editable:
         # Directory prefix match (editable is a directory pattern)
-        if pattern.endswith("/") and clean_path.startswith(pattern.rstrip("/")):
+        if pattern.endswith("/") and normalized.startswith(pattern.rstrip("/")):
             return True
         # Glob pattern match
         if "*" in pattern or "?" in pattern:
-            if fnmatch.fnmatch(clean_path, pattern):
+            if fnmatch.fnmatch(normalized, pattern):
                 return True
         # Exact match
-        if clean_path == pattern:
+        if normalized == pattern:
             return True
         # Parent directory match: file_path is a parent dir of an editable entry
         # (git status reports "?? examples/" when examples/skill-diagram/SKILL.md is new)
-        if clean_path and pattern.startswith(clean_path + "/"):
+        if normalized and pattern.startswith(normalized + "/"):
             return True
     return False
 

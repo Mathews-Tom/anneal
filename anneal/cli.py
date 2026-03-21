@@ -883,6 +883,40 @@ def _handle_history(args: argparse.Namespace) -> None:
             )
 
 
+def _handle_local_check(args: argparse.Namespace) -> None:
+    """Handle ``anneal local-check``."""
+    from anneal.engine.client import check_local_server, is_local_model
+
+    model = args.model
+    if not is_local_model(model):
+        console.print(
+            f"[red]{model} is not a local model. "
+            f"Use ollama/model-name, lmstudio/model-name, or local/model-name.[/red]"
+        )
+        sys.exit(1)
+
+    console.print(f"[dim]Checking {model}...[/dim]")
+    healthy, message = asyncio.run(check_local_server(model))
+
+    if healthy:
+        console.print(
+            Panel(
+                f"[green]{message}[/green]",
+                title=f"anneal local-check — {model}",
+                style="green",
+            )
+        )
+    else:
+        console.print(
+            Panel(
+                f"[red]{message}[/red]",
+                title=f"anneal local-check — {model}",
+                style="red",
+            )
+        )
+        sys.exit(1)
+
+
 def _handle_compare(args: argparse.Namespace) -> None:
     """Handle ``anneal compare``."""
     from anneal.engine.compare import compare_runs
@@ -1115,6 +1149,10 @@ def _build_parser() -> argparse.ArgumentParser:
     sug.add_argument("--accept", action="store_true", help="Write files and register target (skip review)")
     sug.add_argument("--model", default="gpt-4.1", help="Model for problem analysis (default: gpt-4.1)")
 
+    # -- local-check --
+    lc = subparsers.add_parser("local-check", help="Verify local LLM server health and model availability")
+    lc.add_argument("--model", required=True, help="Local model to check (e.g., ollama/llama3.1:8b)")
+
     # -- compare --
     cmp = subparsers.add_parser("compare", help="Compare two experiment runs side-by-side")
     cmp.add_argument("run_a", help="Path to first run directory or experiments.jsonl")
@@ -1159,6 +1197,7 @@ def main(argv: list[str] | None = None) -> None:
         "suggest": lambda: _handle_suggest(args),
         "compare": lambda: _handle_compare(args),
         "templates": lambda: _handle_templates(args),
+        "local-check": lambda: _handle_local_check(args),
     }
 
     try:

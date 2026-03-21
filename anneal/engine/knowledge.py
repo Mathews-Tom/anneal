@@ -83,7 +83,8 @@ def _variance(xs: list[float]) -> float:
     if len(xs) < 2:
         return 0.0
     mean = sum(xs) / len(xs)
-    return sum((x - mean) ** 2 for x in xs) / len(xs)
+    result = sum((x - mean) ** 2 for x in xs) / len(xs)
+    return 0.0 if result < 1e-15 else result
 
 
 class KnowledgeStore:

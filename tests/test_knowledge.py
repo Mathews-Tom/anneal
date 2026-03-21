@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from anneal.engine.knowledge import KnowledgeStore
+from anneal.engine.knowledge import KnowledgeStore, _variance
 from anneal.engine.types import ConsolidationRecord, ExperimentRecord, Outcome
 
 
@@ -206,3 +206,23 @@ def test_consolidation_does_not_summarize_away_raw_records(tmp_path: Path) -> No
     consolidations_file = tmp_path / "knowledge" / "learnings-structured.jsonl"
     assert consolidations_file.exists()
     assert len(consolidations_file.read_text().splitlines()) == 1
+
+
+# ---------------------------------------------------------------------------
+# Variance epsilon (Step 1.5)
+# ---------------------------------------------------------------------------
+
+
+def test_variance_near_zero_clamped() -> None:
+    """Constant values produce exactly 0.0, not a floating-point residual."""
+    assert _variance([0.8, 0.8, 0.8]) == 0.0
+    assert _variance([1.0, 1.0, 1.0, 1.0, 1.0]) == 0.0
+
+
+def test_variance_nonzero_preserved() -> None:
+    """Non-constant values produce correct population variance."""
+    result = _variance([0.7, 0.8, 0.9])
+    # Population variance: ((−0.1)² + 0² + 0.1²) / 3 = 0.02/3 ≈ 0.00667
+    expected = sum((x - 0.8) ** 2 for x in [0.7, 0.8, 0.9]) / 3
+    assert abs(result - expected) < 1e-10
+    assert result > 0

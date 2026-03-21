@@ -237,6 +237,16 @@ class KnowledgeStore:
     # 2.16, 2.17, 2.18 — Consolidation
     # ------------------------------------------------------------------
 
+    def consolidate_if_due(self) -> ConsolidationRecord | None:
+        """Atomically check and consolidate under lock."""
+        lock = FileLock(str(self._lock_file))
+        with lock:
+            if not self.should_consolidate():
+                return None
+            record = self.consolidate()
+            self.regenerate_learnings()
+            return record
+
     def should_consolidate(self) -> bool:
         """Return True if 50+ experiments since last consolidation."""
         total = self.record_count()

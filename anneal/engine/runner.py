@@ -430,9 +430,7 @@ class ExperimentRunner:
         if self._knowledge:
             self._knowledge.append_record(record)
             self._knowledge.update_index(record)
-            if self._knowledge.should_consolidate():
-                self._knowledge.consolidate()
-                self._knowledge.regenerate_learnings()
+            self._knowledge.consolidate_if_due()
 
         # F5: Extract and store cross-project learning
         if self._learning_pool is not None:

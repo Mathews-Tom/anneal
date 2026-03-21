@@ -261,3 +261,39 @@ class TestPersistentLearningPool:
         assert r.source_condition == "random"
         assert r.source_target == "t-9"
         assert r.observation == "persisted obs"
+
+
+# ---------------------------------------------------------------------------
+# Eviction diversity
+# ---------------------------------------------------------------------------
+
+
+def test_eviction_breaks_ties_randomly_varies_across_runs(tmp_path: Path) -> None:
+    """Eviction with identical scores does not always keep the same subset."""
+    from datetime import UTC, datetime
+
+    fixed_ts = datetime(2026, 1, 1, tzinfo=UTC)
+
+    surviving_sets: list[frozenset[str]] = []
+    for _ in range(10):
+        pool = LearningPool(max_size=10)
+        for i in range(20):
+            pool.add(
+                Learning(
+                    observation=f"obs-{i}",
+                    signal=LearningSignal.POSITIVE,
+                    source_condition="guided",
+                    source_target="target-1",
+                    source_experiment_ids=[i],
+                    score_delta=0.1,
+                    criterion_deltas={},
+                    confidence=1.0,
+                    tags=[],
+                    created_at=fixed_ts,
+                )
+            )
+        surviving = frozenset(l.observation for l in pool._learnings)  # noqa: SLF001
+        surviving_sets.append(surviving)
+
+    # With random tiebreaking, not all 10 runs can produce the same survivor set
+    assert len(set(surviving_sets)) > 1

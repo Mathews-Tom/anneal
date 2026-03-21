@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import random
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from enum import Enum
@@ -195,8 +196,12 @@ class LearningPool:
             self._evict()
 
     def _evict(self) -> None:
-        """Remove lowest-impact learnings to stay within max_size."""
-        scored = sorted(self._learnings, key=self._effective_score, reverse=True)
+        """Remove lowest-impact learnings. Break ties randomly."""
+        scored = sorted(
+            self._learnings,
+            key=lambda l: (self._effective_score(l), random.random()),
+            reverse=True,
+        )
         self._learnings = scored[: self._max_size]
 
     def _effective_score(self, learning: Learning) -> float:

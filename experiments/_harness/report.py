@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import csv
 import io
+import json
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from experiments._harness.types import ResultRecord
@@ -105,28 +108,39 @@ def write_summary(
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def format_summary_to_string(results: dict[str, list[ResultRecord]], title: str = "EXPERIMENT SUMMARY") -> str:
-    """Return summary as a string (for terminal output)."""
-    buf = io.StringIO()
-    path = Path("/dev/null")  # placeholder
-    # Use write_summary logic inline
-    lines: list[str] = []
-    sep = "=" * 60
-    lines.append(sep)
-    lines.append(title)
-    lines.append(sep)
+def write_jsonl(records: list[ResultRecord], path: Path, gate_name: str = "") -> None:
+    """Write experiment records as engine-compatible JSONL.
 
-    for condition, records in sorted(results.items()):
-        scores = [r.score for r in records]
-        total_cost = sum(r.cost_usd for r in records)
-        kept_count = sum(1 for r in records if r.kept)
-        cond_best = max(scores) if scores else 0.0
+    Produces the same format as anneal's KnowledgeStore (ExperimentRecord),
+    making the output readable by `anneal dashboard`.
+    """
+    if not records:
+        return
 
-        lines.append(f"\n  {condition}:")
-        lines.append(f"    Best score:     {cond_best:.4f}")
-        lines.append(f"    Experiments:    {len(records)}")
-        lines.append(f"    Kept:           {kept_count}")
-        lines.append(f"    Cost:           ${total_cost:.4f}")
+    path.parent.mkdir(parents=True, exist_ok=True)
 
-    lines.append(sep)
-    return "\n".join(lines)
+    with open(path, "w") as f:
+        for r in records:
+            entry = {
+                "id": str(uuid.uuid4()),
+                "target_id": gate_name or r.condition,
+                "git_sha": "",
+                "pre_experiment_sha": "",
+                "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+                "hypothesis": r.hypothesis,
+                "hypothesis_source": "agent",
+                "mutation_diff_summary": "",
+                "score": r.score,
+                "score_ci_lower": r.ci_lower,
+                "score_ci_upper": r.ci_upper,
+                "raw_scores": r.raw_scores if r.raw_scores else None,
+                "baseline_score": r.baseline_score,
+                "outcome": "KEPT" if r.kept else "DISCARDED",
+                "failure_mode": r.failure_mode or None,
+                "duration_seconds": r.duration_seconds,
+                "tags": r.tags,
+                "learnings": "",
+                "cost_usd": r.cost_usd,
+                "bootstrap_seed": r.seed,
+            }
+            f.write(json.dumps(entry, separators=(",", ":")) + "\n")

@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+import os
+import resource
 import shutil
 import time
 import tomllib
+from datetime import datetime, timezone
 from pathlib import Path
+
+# Raise FD soft limit to hard limit. Gate experiments spawn many async
+# subprocesses (agent + eval API calls + git commands) across 50+ experiments.
+# macOS default soft limit of 256 is insufficient.
+_soft, _hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+if _soft < _hard:
+    resource.setrlimit(resource.RLIMIT_NOFILE, (_hard, _hard))
 
 from rich.console import Console
 from rich.panel import Panel
@@ -19,10 +29,31 @@ from rich.progress import (
 )
 
 from experiments._harness.plotting import plot_trajectory
-from experiments._harness.report import write_csv, write_summary
+from experiments._harness.report import write_csv, write_jsonl, write_summary
 from experiments._harness.types import ConditionConfig, ExperimentConfig, ResultRecord
 
 console = Console(stderr=True)
+
+
+def _make_run_dir(base_results_dir: Path) -> Path:
+    """Create a timestamped run directory and update the `latest` symlink."""
+    timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+    run_dir = base_results_dir / timestamp
+    # Append numeric suffix if directory already exists (same-second re-run)
+    if run_dir.exists():
+        suffix = 1
+        while (base_results_dir / f"{timestamp}-{suffix}").exists():
+            suffix += 1
+        run_dir = base_results_dir / f"{timestamp}-{suffix}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    # Update latest symlink
+    latest = base_results_dir / "latest"
+    if latest.is_symlink() or latest.exists():
+        latest.unlink()
+    os.symlink(run_dir.name, latest)
+
+    return run_dir
 
 
 def load_config(config_path: Path) -> ExperimentConfig:
@@ -107,12 +138,17 @@ class ExperimentHarness:
 
     Subclasses override `run_condition` to implement experiment-specific logic.
     The harness handles config loading, result persistence, and report generation.
+
+    Each run creates a timestamped directory under results/:
+        results/2026-03-19T23-15-00/
+        results/latest -> 2026-03-19T23-15-00
     """
 
     def __init__(self, config: ExperimentConfig, experiment_dir: Path) -> None:
         self._config = config
         self._experiment_dir = experiment_dir
-        self._results_dir = experiment_dir / config.output_dir
+        self._base_results_dir = experiment_dir / config.output_dir
+        self._results_dir = _make_run_dir(self._base_results_dir)
 
     @property
     def config(self) -> ExperimentConfig:
@@ -133,9 +169,7 @@ class ExperimentHarness:
 
     async def run_all(self) -> dict[str, list[ResultRecord]]:
         """Run all conditions and return results keyed by condition name."""
-        self._results_dir.mkdir(parents=True, exist_ok=True)
-
-        # Freeze config into results for reproducibility
+        # Freeze config into run directory for reproducibility
         config_src = self._experiment_dir / "config.toml"
         if config_src.exists():
             shutil.copy2(config_src, self._results_dir / "config.toml")
@@ -146,7 +180,8 @@ class ExperimentHarness:
                 f"[bold]{self._config.name}[/bold]\n"
                 f"  {self._config.description}\n"
                 f"  Conditions: {', '.join(c.name for c in self._config.conditions)}\n"
-                f"  Max experiments: {self._config.max_experiments_per_condition} per condition",
+                f"  Max experiments: {self._config.max_experiments_per_condition} per condition\n"
+                f"  Run directory: {self._results_dir}",
                 title=f"Validation Gate: {self._config.checkpoint}",
                 style="blue",
             )
@@ -173,15 +208,18 @@ class ExperimentHarness:
         return all_results
 
     def save_results(self, results: dict[str, list[ResultRecord]]) -> None:
-        """Write CSV, summary, and trajectory plot."""
-        self._results_dir.mkdir(parents=True, exist_ok=True)
-
-        # Flatten all records for CSV
+        """Write CSV, JSONL, summary, and trajectory plot to the run directory."""
+        # Flatten all records for CSV and JSONL
         all_records: list[ResultRecord] = []
         for records in results.values():
             all_records.extend(records)
 
         write_csv(all_records, self._results_dir / "experiments.csv")
+        write_jsonl(
+            all_records,
+            self._results_dir / "experiments.jsonl",
+            gate_name=self._config.name,
+        )
         write_summary(
             results,
             self._results_dir / "summary.txt",
@@ -195,7 +233,8 @@ class ExperimentHarness:
 
         console.print(
             Panel(
-                f"Results saved to [bold]{self._results_dir}/[/bold]",
+                f"Results saved to [bold]{self._results_dir}/[/bold]\n"
+                f"  Symlink: {self._base_results_dir / 'latest'}",
                 style="green",
             )
         )

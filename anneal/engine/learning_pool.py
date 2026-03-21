@@ -300,10 +300,19 @@ class LearningPool:
 
         for i, learning in enumerate(learnings, 1):
             signal_marker = "+" if learning.signal is LearningSignal.POSITIVE else "-"
-            lines.append(
+            line = (
                 f"{i}. [{signal_marker}] (from {learning.source_condition}/{learning.source_target}, "
                 f"delta={learning.score_delta:+.4f}) {learning.observation}"
             )
+            if learning.criterion_deltas:
+                top_criteria = sorted(
+                    learning.criterion_deltas.items(),
+                    key=lambda x: abs(x[1]),
+                    reverse=True,
+                )[:3]
+                criterion_str = ", ".join(f"{name}: {d:+.2f}" for name, d in top_criteria)
+                line += f"\n   Criteria: {criterion_str}"
+            lines.append(line)
 
         lines.append("")
         return "\n".join(lines)

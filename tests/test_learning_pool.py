@@ -442,4 +442,59 @@ class TestDomainAwareRetrieval:
 # ---------------------------------------------------------------------------
 
 
-_SUMMARIZE_TESTS_PLACEHOLDER = True
+class TestSummarizeCriterionDeltas:
+    def test_summarize_includes_criterion_deltas_in_output(self) -> None:
+        """Summarize output includes top criterion deltas when available."""
+        pool = LearningPool(max_size=100)
+        learning = Learning(
+            observation="improved clarity",
+            signal=LearningSignal.POSITIVE,
+            source_condition="cond1",
+            source_target="target1",
+            source_experiment_ids=[1],
+            score_delta=0.1,
+            criterion_deltas={"clarity": 0.15, "accuracy": -0.05, "tone": 0.02},
+            confidence=0.9,
+            tags=[],
+        )
+        pool.add(learning)
+
+        output = pool.summarize(scope=LearningScope.GLOBAL)
+        assert "Criteria:" in output
+        assert "clarity: +0.15" in output
+        assert "accuracy: -0.05" in output
+
+    def test_summarize_omits_criteria_line_when_no_criterion_deltas(self) -> None:
+        """Summarize does not append Criteria line when criterion_deltas is empty."""
+        pool = LearningPool(max_size=100)
+        pool.add(_make_learning(score_delta=0.3))
+
+        output = pool.summarize(scope=LearningScope.GLOBAL)
+        assert "Criteria:" not in output
+
+    def test_summarize_top_three_criteria_by_abs_value(self) -> None:
+        """Only the top 3 criteria by absolute delta are included."""
+        pool = LearningPool(max_size=100)
+        learning = Learning(
+            observation="multi-criteria",
+            signal=LearningSignal.POSITIVE,
+            source_condition="cond1",
+            source_target="t1",
+            source_experiment_ids=[1],
+            score_delta=0.2,
+            criterion_deltas={
+                "a": 0.01,
+                "b": 0.5,
+                "c": -0.4,
+                "d": 0.3,
+            },
+            confidence=1.0,
+            tags=[],
+        )
+        pool.add(learning)
+
+        output = pool.summarize(scope=LearningScope.GLOBAL)
+        assert "b: +0.50" in output
+        assert "c: -0.40" in output
+        assert "d: +0.30" in output
+        assert "a: +0.01" not in output

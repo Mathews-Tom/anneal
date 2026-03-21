@@ -17,7 +17,10 @@ knowledge_enabled = false
 [thresholds]
 # Score variance across runs must be below this for the eval to be "stable"
 max_score_variance = 0.1
-# Per-criterion variance threshold
-max_criterion_variance = 0.15
+# Per-sample variance threshold (informational — not a gate blocker)
+# Binary criteria on regenerated outputs have inherent Bernoulli variance
+# of ~p(1-p) per criterion. With 4 criteria summed, expected variance is
+# ~0.84 even for a perfectly stable evaluator. Threshold flags outliers only.
+max_sample_variance = 1.5
 # Coefficient of variation threshold (stddev / mean)
 max_coefficient_of_variation = 0.20

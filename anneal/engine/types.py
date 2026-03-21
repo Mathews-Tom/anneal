@@ -109,6 +109,7 @@ class StochasticEval:
     generation_agent_config: AgentConfig | None = None
     held_out_prompts: list[str] = field(default_factory=list)
     min_criterion_scores: dict[str, float] = field(default_factory=dict)
+    judgment_votes: int = 3
 
 
 @dataclass
@@ -205,6 +206,7 @@ class OptimizationTarget:
     max_consecutive_failures: int = 5
     budget_cap: BudgetCap | None = None
     meta_depth: int = 0
+    inject_knowledge_context: bool = False
     notifications: NotificationConfig = field(default_factory=NotificationConfig)
     approval_callback: Callable[[str], bool] | None = None
     population_config: PopulationConfig | None = None

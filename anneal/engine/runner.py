@@ -118,14 +118,14 @@ class ExperimentRunner:
             path for _, path in await self._git.status_porcelain(worktree)
         )
 
-        # Load recent history from knowledge store
+        # Load recent history and knowledge context (opt-in per target)
+        # Gate 3 validated that knowledge context injection does not improve
+        # convergence at small scale. Structured logging (append_record,
+        # consolidation) is always active; context injection is opt-in.
         history: list[ExperimentRecord] = []
-        if self._knowledge:
-            history = self._knowledge.load_records(limit=10)
-
-        # 3. Build context with budget assembly and invoke agent
         knowledge_context = ""
-        if self._knowledge:
+        if self._knowledge and target.inject_knowledge_context:
+            history = self._knowledge.load_records(limit=10)
             knowledge_context = self._knowledge.get_context()
 
         prompt, context_tokens = build_target_context(

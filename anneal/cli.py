@@ -666,6 +666,10 @@ def _handle_configure(args: argparse.Namespace) -> None:
         target.meta_depth = args.meta_depth
         changes.append(f"  meta_depth = {args.meta_depth}")
 
+    if getattr(args, "knowledge_context", None) is not None:
+        target.inject_knowledge_context = args.knowledge_context
+        changes.append(f"  inject_knowledge_context = {args.knowledge_context}")
+
     if not changes:
         console.print("[yellow]No configuration changes specified.[/yellow]")
         return
@@ -982,6 +986,7 @@ def _build_parser() -> argparse.ArgumentParser:
     conf.add_argument("--time-budget", type=int, help="Set time budget per experiment (seconds)")
     conf.add_argument("--max-failures", type=int, help="Set max consecutive failures before HALT")
     conf.add_argument("--meta-depth", type=int, help="Set meta-optimization depth (0=disabled, 1=enabled)")
+    conf.add_argument("--knowledge-context", action=argparse.BooleanOptionalAction, help="Enable/disable knowledge context injection into agent prompt")
 
     # -- dashboard --
     dash = subparsers.add_parser("dashboard", help="Start live dashboard reading from .anneal/ directory")

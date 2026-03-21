@@ -203,6 +203,7 @@ class StochasticEvaluator:
             total_cost += cost
 
         # 2. Score each sample against K criteria independently
+        votes = config.judgment_votes
         per_sample_scores: list[float] = []
         for i, sample in enumerate(samples):
             # Randomize criterion order per sample to prevent anchoring
@@ -215,6 +216,7 @@ class StochasticEvaluator:
                     gen_agent_config.evaluator_model,
                     sample,
                     criterion,
+                    votes=votes,
                 )
                 for criterion in shuffled_criteria
             ]
@@ -269,14 +271,14 @@ class StochasticEvaluator:
         cost = _extract_cost(response)
         return text, cost
 
-    async def _score_criterion(
+    async def _score_criterion_once(
         self,
         client: openai.AsyncOpenAI,
         model: str,
         sample: str,
         criterion: BinaryCriterion,
     ) -> tuple[float, float]:
-        """Score a single (sample, criterion) pair. Returns (0|1, cost_usd)."""
+        """Single judgment call for a (sample, criterion) pair. Returns (0|1, cost_usd)."""
         async with _API_SEMAPHORE:
             response = await client.chat.completions.create(
                 model=model,
@@ -303,6 +305,35 @@ class StochasticEvaluator:
         binary = 1.0 if answer.startswith("YES") else 0.0
         cost = _extract_cost(response)
         return binary, cost
+
+    async def _score_criterion(
+        self,
+        client: openai.AsyncOpenAI,
+        model: str,
+        sample: str,
+        criterion: BinaryCriterion,
+        votes: int = 1,
+    ) -> tuple[float, float]:
+        """Score a (sample, criterion) pair with majority voting.
+
+        When votes=1, behaves identically to a single judgment call.
+        When votes>1, makes N independent calls and returns the majority
+        answer. This eliminates judgment variance from non-deterministic
+        API responses while preserving generation diversity.
+        """
+        if votes <= 1:
+            return await self._score_criterion_once(client, model, sample, criterion)
+
+        vote_tasks = [
+            self._score_criterion_once(client, model, sample, criterion)
+            for _ in range(votes)
+        ]
+        vote_results = await asyncio.gather(*vote_tasks)
+
+        total_cost = sum(cost for _, cost in vote_results)
+        yes_count = sum(1 for binary, _ in vote_results if binary > 0.5)
+        majority = 1.0 if yes_count > votes / 2 else 0.0
+        return majority, total_cost
 
 
 def _extract_cost(response: object) -> float:  # openai.types.chat.ChatCompletion

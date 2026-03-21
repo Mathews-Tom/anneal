@@ -91,6 +91,7 @@ def _serialize_target_toml(target: OptimizationTarget) -> str:
         ("baseline_raw_scores", target.baseline_raw_scores),
         ("max_consecutive_failures", target.max_consecutive_failures),
         ("meta_depth", target.meta_depth),
+        ("inject_knowledge_context", target.inject_knowledge_context),
     ]
 
     for key, val in flat_fields:
@@ -144,6 +145,7 @@ def _serialize_target_toml(target: OptimizationTarget) -> str:
         lines.append(f"generation_prompt_template = {_toml_value(sto.generation_prompt_template)}")
         lines.append(f"output_format = {_toml_value(sto.output_format)}")
         lines.append(f"confidence_level = {_toml_value(sto.confidence_level)}")
+        lines.append(f"judgment_votes = {_toml_value(sto.judgment_votes)}")
 
         # F1: held_out_prompts
         if sto.held_out_prompts:
@@ -275,6 +277,7 @@ def _parse_eval_config(data: dict[str, object]) -> EvalConfig:
             generation_agent_config=gen_ac,
             held_out_prompts=held_out_prompts,
             min_criterion_scores=min_criterion_scores,
+            judgment_votes=int(sto_data.get("judgment_votes", 3)),  # type: ignore[arg-type]
         )
 
     # F2: Parse constraints
@@ -367,6 +370,7 @@ def _parse_target(data: dict[str, object]) -> OptimizationTarget:
         max_consecutive_failures=int(data.get("max_consecutive_failures", 5)),  # type: ignore[arg-type]
         budget_cap=budget_cap,
         meta_depth=int(data.get("meta_depth", 0)),  # type: ignore[arg-type]
+        inject_knowledge_context=bool(data.get("inject_knowledge_context", False)),
         notifications=notifications,
         population_config=population_config,
     )

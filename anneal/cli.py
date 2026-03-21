@@ -883,6 +883,95 @@ def _handle_history(args: argparse.Namespace) -> None:
             )
 
 
+def _handle_colab_setup(args: argparse.Namespace) -> None:
+    """Handle ``anneal colab-setup``."""
+    repo_root = _find_repo_root()
+    anneal_dir = repo_root / ".anneal"
+    anneal_dir.mkdir(parents=True, exist_ok=True)
+    creds_dest = anneal_dir / "colab-credentials.json"
+
+    if args.credentials:
+        import shutil
+        src = Path(args.credentials)
+        if not src.exists():
+            console.print(f"[red]Credentials file not found: {src}[/red]")
+            sys.exit(1)
+        shutil.copy2(src, creds_dest)
+        console.print(
+            Panel(
+                f"Credentials saved to [bold]{creds_dest}[/bold]\n\n"
+                f"  Configure a target with Colab eval:\n"
+                f"  [dim]anneal configure --target X (then edit config.toml to add [eval_config.colab])[/dim]",
+                title="anneal colab-setup",
+                style="green",
+            )
+        )
+    else:
+        if creds_dest.exists():
+            console.print(f"  Credentials: [green]{creds_dest}[/green] (exists)")
+        else:
+            console.print(f"  Credentials: [yellow]not configured[/yellow]")
+            console.print()
+            console.print(
+                "  To configure, provide your OAuth credentials JSON:\n"
+                f"  [bold]anneal colab-setup --credentials path/to/oauth-credentials.json[/bold]\n\n"
+                "  Get credentials from: Google Cloud Console → APIs & Services → Credentials\n"
+                "  Required scopes: Colab API access\n"
+                "  See: https://github.com/googlecolab/colab-mcp"
+            )
+
+
+def _handle_colab_check(args: argparse.Namespace) -> None:
+    """Handle ``anneal colab-check``."""
+    from anneal.engine.colab import ColabConfig, ColabSession
+
+    repo_root = _find_repo_root()
+
+    if args.target:
+        registry = Registry(repo_root)
+        try:
+            target = registry.get_target(args.target)
+        except RegistryError as exc:
+            console.print(f"[red]{exc}[/red]")
+            sys.exit(1)
+        colab_config = target.eval_config.colab
+        if colab_config is None or not colab_config.enabled:
+            console.print(f"[yellow]Target {args.target} does not have Colab eval enabled.[/yellow]")
+            sys.exit(1)
+    else:
+        colab_config = ColabConfig(
+            enabled=True,
+            accelerator=args.accelerator,
+            credentials_path=str(repo_root / ".anneal" / "colab-credentials.json"),
+        )
+
+    console.print(f"[dim]Checking Colab connection (accelerator={colab_config.accelerator})...[/dim]")
+
+    session = ColabSession(colab_config)
+    try:
+        asyncio.run(session.initialize())
+        console.print(
+            Panel(
+                f"[green]Colab session initialized[/green]\n"
+                f"  Accelerator: {colab_config.accelerator}\n"
+                f"  CCU budget:  {colab_config.max_ccu_per_day}",
+                title="anneal colab-check",
+                style="green",
+            )
+        )
+    except Exception as exc:
+        console.print(
+            Panel(
+                f"[red]{exc}[/red]",
+                title="anneal colab-check",
+                style="red",
+            )
+        )
+        sys.exit(1)
+    finally:
+        asyncio.run(session.cleanup())
+
+
 def _handle_local_check(args: argparse.Namespace) -> None:
     """Handle ``anneal local-check``."""
     from anneal.engine.client import check_local_server, is_local_model
@@ -1163,6 +1252,15 @@ def _build_parser() -> argparse.ArgumentParser:
     # -- templates --
     subparsers.add_parser("templates", help="List available experiment templates")
 
+    # -- colab-setup --
+    cs = subparsers.add_parser("colab-setup", help="Configure Google Colab credentials for remote GPU eval")
+    cs.add_argument("--credentials", help="Path to OAuth credentials JSON file")
+
+    # -- colab-check --
+    cc = subparsers.add_parser("colab-check", help="Verify Colab connection and accelerator availability")
+    cc.add_argument("--target", help="Target to check (reads colab config from target)")
+    cc.add_argument("--accelerator", default="T4", help="Accelerator to check (default: T4)")
+
     return parser
 
 
@@ -1198,6 +1296,8 @@ def main(argv: list[str] | None = None) -> None:
         "compare": lambda: _handle_compare(args),
         "templates": lambda: _handle_templates(args),
         "local-check": lambda: _handle_local_check(args),
+        "colab-setup": lambda: _handle_colab_setup(args),
+        "colab-check": lambda: _handle_colab_check(args),
     }
 
     try:

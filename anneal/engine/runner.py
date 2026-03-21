@@ -366,6 +366,14 @@ class ExperimentRunner:
         stochastic_conf = target.eval_config.stochastic
         confidence = stochastic_conf.confidence_level if stochastic_conf else 0.95
 
+        if isinstance(self._search, GreedySearch) and self._knowledge:
+            experiments_in_window = self._knowledge.record_count() % self._knowledge.CONSOLIDATION_INTERVAL
+            window_size = self._knowledge.CONSOLIDATION_INTERVAL
+            adjusted_alpha = GreedySearch._adjusted_alpha(
+                1 - confidence, experiments_in_window, window_size,
+            )
+            confidence = 1 - adjusted_alpha
+
         if (
             target.eval_config.stochastic is not None
             and (not target.baseline_raw_scores)

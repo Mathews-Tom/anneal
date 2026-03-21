@@ -94,3 +94,28 @@ class TestEvalEngineHeldOut:
         )
         with pytest.raises(EvalError, match="Held-out evaluation requires stochastic config"):
             await engine.evaluate_held_out(tmp_path, eval_config, "artifact text")
+
+
+class TestDivergenceThresholds:
+    """Tests for held-out divergence threshold constants and logic."""
+
+    def test_warning_threshold_value(self) -> None:
+        from anneal.engine.runner import DIVERGENCE_WARNING
+        assert DIVERGENCE_WARNING == 0.10
+
+    def test_critical_threshold_value(self) -> None:
+        from anneal.engine.runner import DIVERGENCE_CRITICAL
+        assert DIVERGENCE_CRITICAL == 0.25
+
+    def test_warning_at_10_percent_above_warning_below_critical(self) -> None:
+        from anneal.engine.runner import DIVERGENCE_CRITICAL, DIVERGENCE_WARNING
+        # 15% divergence: above warning, below critical
+        divergence = abs(0.85 - 1.0) / 1.0  # = 0.15
+        assert divergence > DIVERGENCE_WARNING
+        assert divergence < DIVERGENCE_CRITICAL
+
+    def test_critical_at_25_percent_above_critical(self) -> None:
+        from anneal.engine.runner import DIVERGENCE_CRITICAL
+        # 30% divergence: above critical
+        divergence = abs(0.70 - 1.0) / 1.0  # = 0.30
+        assert divergence > DIVERGENCE_CRITICAL

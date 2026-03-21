@@ -225,6 +225,7 @@ class EvalResult(NamedTuple):
     ci_upper: float | None = None
     raw_scores: list[float] | None = None
     cost_usd: float = 0.0
+    criterion_names: list[str] | None = None  # Ordered criterion names matching raw_scores
 
 
 @dataclass
@@ -278,6 +279,8 @@ class ExperimentRecord:
     bootstrap_seed: int
     agent_model: str = ""
     held_out_score: float | None = None
+    criterion_names: list[str] | None = None
+    per_criterion_scores: dict[str, float] | None = None
 
 
 @dataclass

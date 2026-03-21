@@ -883,6 +883,39 @@ def _handle_history(args: argparse.Namespace) -> None:
             )
 
 
+def _handle_compare(args: argparse.Namespace) -> None:
+    """Handle ``anneal compare``."""
+    from anneal.engine.compare import compare_runs
+
+    run_a = Path(args.run_a)
+    run_b = Path(args.run_b)
+
+    if not run_a.exists():
+        console.print(f"[red]Run path not found: {run_a}[/red]")
+        sys.exit(1)
+    if not run_b.exists():
+        console.print(f"[red]Run path not found: {run_b}[/red]")
+        sys.exit(1)
+
+    compare_runs(run_a, run_b, args.label_a, args.label_b)
+
+
+def _handle_templates(_args: argparse.Namespace) -> None:
+    """Handle ``anneal templates``."""
+    from anneal.suggest.templates import list_templates
+
+    templates = list_templates()
+    if not templates:
+        console.print("[yellow]No templates available.[/yellow]")
+        return
+
+    for t in templates:
+        console.print(
+            f"  [bold]{t.name:20s}[/bold] {t.description:50s} "
+            f"[dim]{t.eval_mode}/{t.direction}[/dim]"
+        )
+
+
 def _handle_suggest(args: argparse.Namespace) -> None:
     """Handle ``anneal suggest``."""
     from anneal.suggest.analyzer import analyze_problem
@@ -1082,6 +1115,16 @@ def _build_parser() -> argparse.ArgumentParser:
     sug.add_argument("--accept", action="store_true", help="Write files and register target (skip review)")
     sug.add_argument("--model", default="gpt-4.1", help="Model for problem analysis (default: gpt-4.1)")
 
+    # -- compare --
+    cmp = subparsers.add_parser("compare", help="Compare two experiment runs side-by-side")
+    cmp.add_argument("run_a", help="Path to first run directory or experiments.jsonl")
+    cmp.add_argument("run_b", help="Path to second run directory or experiments.jsonl")
+    cmp.add_argument("--label-a", default="Run A", help="Label for first run")
+    cmp.add_argument("--label-b", default="Run B", help="Label for second run")
+
+    # -- templates --
+    subparsers.add_parser("templates", help="List available experiment templates")
+
     return parser
 
 
@@ -1114,6 +1157,8 @@ def main(argv: list[str] | None = None) -> None:
         "drift": lambda: _handle_drift(args),
         "list": lambda: _handle_list(args),
         "suggest": lambda: _handle_suggest(args),
+        "compare": lambda: _handle_compare(args),
+        "templates": lambda: _handle_templates(args),
     }
 
     try:

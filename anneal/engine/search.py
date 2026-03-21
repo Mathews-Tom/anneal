@@ -35,6 +35,8 @@ class SearchStrategy(Protocol):
 class GreedySearch:
     """Accept only strict improvements, verified by statistical test when possible."""
 
+    MIN_PAIRED_SAMPLES: int = 6
+
     def should_keep(
         self,
         challenger_result: EvalResult,
@@ -90,15 +92,30 @@ class GreedySearch:
         direction: Direction,
         confidence: float,
     ) -> bool:
+        n = len(challenger_raw)
         differences = [c - b for c, b in zip(challenger_raw, baseline_raw)]
-        challenger_mean = sum(challenger_raw) / len(challenger_raw)
-        baseline_mean = sum(baseline_raw) / len(baseline_raw)
+        challenger_mean = sum(challenger_raw) / n
+        baseline_mean = sum(baseline_raw) / n
 
         # Quick rejection: mean must be in the right direction
         if direction is Direction.HIGHER_IS_BETTER and challenger_mean <= baseline_mean:
             return False
         if direction is Direction.LOWER_IS_BETTER and challenger_mean >= baseline_mean:
             return False
+
+        # Insufficient samples: fall back to effect-size threshold
+        if n < GreedySearch.MIN_PAIRED_SAMPLES:
+            logger.warning(
+                "Only %d paired samples (need %d for Wilcoxon). "
+                "Using effect-size threshold instead.",
+                n, GreedySearch.MIN_PAIRED_SAMPLES,
+            )
+            mean_diff = sum(differences) / n
+            std_diff = (sum((d - mean_diff) ** 2 for d in differences) / max(n - 1, 1)) ** 0.5
+            if std_diff == 0:
+                return mean_diff != 0  # All identical differences
+            effect_size = abs(mean_diff) / std_diff
+            return effect_size > 0.5  # Medium effect (Cohen's d)
 
         alternative = (
             "greater" if direction is Direction.HIGHER_IS_BETTER else "less"
@@ -111,6 +128,18 @@ class GreedySearch:
             return False
 
         return float(p_value) < (1 - confidence)
+
+    @staticmethod
+    def _adjusted_alpha(
+        base_alpha: float,
+        experiment_index: int,
+        window_size: int = 50,
+    ) -> float:
+        """Holm-Bonferroni adjusted alpha for sequential testing.
+        Divides alpha by remaining comparisons in the window.
+        """
+        remaining = max(1, window_size - experiment_index)
+        return base_alpha / remaining
 
 
 class SimulatedAnnealingSearch:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from pathlib import Path
 
 from filelock import FileLock, Timeout
@@ -57,6 +58,14 @@ class Scheduler:
         for target_id, target in self._targets.items():
             if target_id in self._halted:
                 continue
+
+            if self._is_lock_stale(target):
+                lock_path = self._lock_path(target)
+                lock_path.unlink(missing_ok=True)
+                self._skip_counts[target_id] = 0
+                logger.warning(
+                    "Removed stale lock for target %s (age > 1h)", target_id
+                )
 
             lock = self._make_lock(target)
 
@@ -135,6 +144,14 @@ class Scheduler:
         """Derive the absolute lock path from the target's worktree."""
         path = Path(target.worktree_path).resolve() / ".anneal.lock"
         return path
+
+    def _is_lock_stale(self, target: OptimizationTarget, max_age_seconds: int = 3600) -> bool:
+        """Return True if the lock file is older than *max_age_seconds*."""
+        lock_path = self._lock_path(target)
+        if not lock_path.exists():
+            return False
+        age = time.time() - lock_path.stat().st_mtime
+        return age > max_age_seconds
 
     def _make_lock(self, target: OptimizationTarget) -> FileLock:
         return FileLock(str(self._lock_path(target)), timeout=0)  # type: ignore[return-value]

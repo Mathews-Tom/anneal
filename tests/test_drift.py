@@ -156,3 +156,42 @@ class TestGetDriftReport:
         assert len(entries) == 1
         expected_mean = sum(values) / len(values)
         assert entries[0].mean_score == pytest.approx(expected_mean)
+
+
+class TestDriftSlidingWindow:
+    """Tests for sliding window drift detection."""
+
+    def test_increasing_variance_detected(self, tmp_path: Path) -> None:
+        """First half low-variance, second half high-variance → drift reported."""
+        store = KnowledgeStore(tmp_path / "knowledge")
+        # First 25 records: small alternation (variance ~0.0025)
+        # Last 25 records: large alternation (variance ~0.25), ratio > 2x
+        for i in range(50):
+            if i < 25:
+                raw = [0.5 + (i % 2) * 0.1, 0.5]  # Slight wobble: 0.5 or 0.6
+            else:
+                raw = [float(i % 2), 0.5]  # Large swing: 0 or 1
+            rec = _make_record(idx=i, score=0.75 + i * 0.001)
+            rec.raw_scores = raw
+            store.append_record(rec)
+
+        store.consolidate()
+        entries = store.get_drift_report(variance_threshold=1.0)  # High threshold so total_var doesn't trigger
+
+        # Drift should be detected via sliding window (second half variance >> first half)
+        assert len(entries) > 0
+
+    def test_stable_variance_no_drift(self, tmp_path: Path) -> None:
+        """Consistent variance throughout → no drift from sliding window."""
+        store = KnowledgeStore(tmp_path / "knowledge")
+        for i in range(50):
+            raw = [float(i % 2), float((i + 1) % 2)]  # Same pattern throughout
+            rec = _make_record(idx=i, score=0.75 + i * 0.001)
+            rec.raw_scores = raw
+            store.append_record(rec)
+
+        store.consolidate()
+        entries = store.get_drift_report(variance_threshold=1.0)  # High threshold
+
+        # No drift: variance is consistent between halves
+        assert len(entries) == 0

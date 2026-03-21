@@ -381,61 +381,75 @@ class KnowledgeStore:
         return record
 
     def get_drift_report(self, variance_threshold: float = 0.1) -> list[DriftEntry]:
-        """Return criteria with variance above threshold from recent consolidations.
+        """Detect drift using sliding window comparison.
 
-        Analyzes the most recent consolidation record's criterion_variances
-        and returns entries where variance exceeds the threshold.
+        Compares first-half vs second-half variance within consolidation window.
+        Reports criteria where variance increased >2x between halves.
         """
         consolidations = self.load_consolidations()
         if not consolidations:
             return []
 
         latest = consolidations[-1]
-        if not latest.criterion_variances:
-            return []
-
-        # Collect raw_scores from the latest consolidation window to compute means
         all_records = self.load_records()
         start_idx, end_idx = latest.experiment_range
         window = all_records[start_idx:end_idx]
         records_with_raw = [r for r in window if r.raw_scores]
 
-        # Build a name -> index mapping for raw_scores lookup
-        # For records with criterion_names, use those; fall back to positional parsing
+        if len(records_with_raw) < 10:
+            return []  # Not enough data for drift analysis
+
+        # Build name -> index mapping
         if records_with_raw and records_with_raw[0].criterion_names:
             name_to_idx = {
                 cname: i
                 for i, cname in enumerate(records_with_raw[0].criterion_names)
             }
         else:
-            # Legacy positional names: "criterion_0", "criterion_1", ...
             name_to_idx = {
                 name: int(name.split("_")[1])
                 for name in latest.criterion_variances
                 if name.startswith("criterion_") and name.split("_")[1].isdigit()
             }
 
+        mid = len(records_with_raw) // 2
+        first_half = records_with_raw[:mid]
+        second_half = records_with_raw[mid:]
+
         entries: list[DriftEntry] = []
-        for name, var in latest.criterion_variances.items():
-            if var <= variance_threshold:
-                continue
+        for name, total_var in latest.criterion_variances.items():
             idx = name_to_idx.get(name)
             if idx is None:
                 continue
-            values = [
-                r.raw_scores[idx]  # type: ignore[index]
-                for r in records_with_raw
+
+            vals_first = [
+                r.raw_scores[idx]
+                for r in first_half
                 if r.raw_scores is not None and len(r.raw_scores) > idx
             ]
-            mean_score = sum(values) / len(values) if values else 0.0
-            entries.append(
-                DriftEntry(
-                    criterion_name=name,
-                    variance=var,
-                    mean_score=mean_score,
-                    window_size=len(values),
-                )
+            vals_second = [
+                r.raw_scores[idx]
+                for r in second_half
+                if r.raw_scores is not None and len(r.raw_scores) > idx
+            ]
+
+            var_first = _variance(vals_first) if len(vals_first) >= 2 else 0.0
+            var_second = _variance(vals_second) if len(vals_second) >= 2 else 0.0
+
+            drift_detected = (
+                total_var > variance_threshold
+                or (var_first > 0 and var_second > 2 * var_first)
             )
+            if drift_detected:
+                all_vals = vals_first + vals_second
+                entries.append(
+                    DriftEntry(
+                        criterion_name=name,
+                        variance=total_var,
+                        mean_score=sum(all_vals) / len(all_vals) if all_vals else 0.0,
+                        window_size=len(all_vals),
+                    )
+                )
 
         return entries
 

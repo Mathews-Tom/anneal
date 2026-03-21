@@ -124,6 +124,17 @@ class AnnealStateReader:
             scores = [r["score"] for r in records if "score" in r]
             last_record = records[-1] if records else None
 
+            # Per-target outcome distribution
+            outcome_counts: dict[str, int] = {}
+            for r in records:
+                oc = r.get("outcome", "UNKNOWN")
+                outcome_counts[oc] = outcome_counts.get(oc, 0) + 1
+            kept_count = outcome_counts.get("KEPT", 0)
+            kept_rate = kept_count / experiment_count if experiment_count > 0 else 0.0
+            durations = [r["duration_seconds"] for r in records if "duration_seconds" in r]
+            avg_duration = sum(durations) / len(durations) if durations else 0.0
+            best_score = max(scores) if scores else meta.get("baseline", 0.0)
+
             target_info: dict[str, Any] = {
                 "target_id": tid,
                 "baseline": meta.get("baseline", 0.0),
@@ -136,6 +147,10 @@ class AnnealStateReader:
                 "cost": last_record.get("cost_usd", 0.0) if last_record else 0.0,
                 "total_cost": sum(r.get("cost_usd", 0.0) for r in records),
                 "state": status.get("state", "UNKNOWN"),
+                "outcome_counts": outcome_counts,
+                "kept_rate": kept_rate,
+                "avg_duration": avg_duration,
+                "best_score": best_score,
             }
             targets[tid] = target_info
             score_history[tid] = scores[-MAX_SCORE_HISTORY:]
@@ -238,6 +253,22 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
 .hyp{max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .no-data{color:#484f58;font-style:italic;padding:24px;text-align:center}
 .cost{color:#8b949e;font-size:0.85rem}
+.target-cards{display:flex;flex-wrap:wrap;gap:16px;margin-bottom:24px}
+.target-card{background:#161b22;border:1px solid #21262d;border-radius:6px;padding:16px;flex:1;min-width:320px;max-width:480px}
+.target-card h3{font-size:0.9rem;color:#58a6ff;margin-bottom:12px}
+.outcome-bar{height:16px;border-radius:3px;overflow:hidden;display:flex;margin-bottom:8px;background:#21262d}
+.outcome-bar div{height:100%;transition:width 0.3s}
+.card-stats{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:0.82rem}
+.card-stats dt{color:#8b949e}
+.card-stats dd{color:#c9d1d9;text-align:right}
+.card-stats .kept-rate{color:#3fb950;font-weight:600}
+.card-stats .best-score{color:#58a6ff;font-weight:600}
+.outcome-legend{display:flex;gap:10px;font-size:0.75rem;color:#8b949e;margin-bottom:8px}
+.outcome-legend span::before{content:'';display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:middle}
+.legend-kept::before{background:#3fb950 !important}
+.legend-discarded::before{background:#f85149 !important}
+.legend-blocked::before{background:#d29922 !important}
+.legend-crashed::before{background:#f85149 !important}
 </style>
 </head>
 <body>
@@ -251,6 +282,7 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
   <div class="chart-title">Score Trajectory (last 50 per target)</div>
   <canvas id="chart" width="900" height="260"></canvas>
 </div>
+<div id="target-cards" class="target-cards"></div>
 <table>
 <thead>
 <tr><th>Target</th><th>Score</th><th>Baseline</th><th>Experiments</th><th>Cost</th><th>State</th><th>Last Outcome</th><th>Last Hypothesis</th></tr>
@@ -324,8 +356,59 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
   function render(){
     updEl.textContent = 'Last update: ' + new Date().toLocaleTimeString();
     evtEl.textContent = 'Events: ' + eventCount;
+    renderCards();
     renderTable();
     renderChart();
+  }
+
+  function renderCards(){
+    var container = document.getElementById('target-cards');
+    var ids = Object.keys(targets).sort();
+    if(ids.length === 0){ container.innerHTML = ''; return; }
+    var OCOLOR = {KEPT:'#3fb950',DISCARDED:'#f85149',BLOCKED:'#d29922',CRASHED:'#f85149'};
+    var html = '';
+    ids.forEach(function(tid){
+      var t = targets[tid];
+      var oc = t.outcome_counts || {};
+      var total = t.experiment_count || 0;
+      var barHtml = '';
+      ['KEPT','DISCARDED','BLOCKED','CRASHED'].forEach(function(o){
+        var c = oc[o] || 0;
+        if(c > 0 && total > 0){
+          var pct = (c / total * 100).toFixed(1);
+          barHtml += '<div style="width:' + pct + '%;background:' + OCOLOR[o] + '" title="' + o + ': ' + c + ' (' + pct + '%)"></div>';
+        }
+      });
+      // Handle unknown outcomes
+      var known = (oc['KEPT']||0) + (oc['DISCARDED']||0) + (oc['BLOCKED']||0) + (oc['CRASHED']||0);
+      var other = total - known;
+      if(other > 0 && total > 0){
+        barHtml += '<div style="width:' + (other/total*100).toFixed(1) + '%;background:#484f58" title="OTHER: ' + other + '"></div>';
+      }
+      var keptRate = t.kept_rate != null ? (t.kept_rate * 100).toFixed(1) + '%' : '--';
+      var bestScore = t.best_score != null ? Number(t.best_score).toFixed(4) : '--';
+      var baseline = t.baseline != null ? Number(t.baseline).toFixed(4) : '--';
+      var avgDur = t.avg_duration != null ? Number(t.avg_duration).toFixed(1) + 's' : '--';
+      var totalCost = t.total_cost != null ? '$' + Number(t.total_cost).toFixed(4) : '--';
+      html += '<div class="target-card">'
+        + '<h3>' + esc(tid) + '</h3>'
+        + '<div class="outcome-legend">'
+        + '<span class="legend-kept">Kept</span>'
+        + '<span class="legend-discarded">Discarded</span>'
+        + '<span class="legend-blocked">Blocked</span>'
+        + '<span class="legend-crashed">Crashed</span>'
+        + '</div>'
+        + '<div class="outcome-bar">' + barHtml + '</div>'
+        + '<dl class="card-stats">'
+        + '<dt>Kept rate</dt><dd class="kept-rate">' + keptRate + '</dd>'
+        + '<dt>Best score</dt><dd class="best-score">' + bestScore + '</dd>'
+        + '<dt>Baseline</dt><dd>' + baseline + '</dd>'
+        + '<dt>Total cost</dt><dd>' + totalCost + '</dd>'
+        + '<dt>Avg duration</dt><dd>' + avgDur + '</dd>'
+        + '<dt>Experiments</dt><dd>' + total + '</dd>'
+        + '</dl></div>';
+    });
+    container.innerHTML = html;
   }
 
   function renderTable(){

@@ -242,10 +242,13 @@ class PopulationSearch:
         self,
         population_size: int = 4,
         tournament_size: int = 2,
+        crossover_rate: float = 0.3,
     ) -> None:
         self._population_size = population_size
         self._tournament_size = tournament_size
+        self._crossover_rate = crossover_rate
         self._population: list[tuple[str, float]] = []
+        self._hypotheses: dict[str, str] = {}
 
     def should_keep(
         self,
@@ -266,11 +269,29 @@ class PopulationSearch:
             return challenger_score > baseline_score
         return challenger_score < baseline_score
 
-    def add_candidate(self, branch: str, score: float) -> None:
-        """Add a candidate to the population. Cull via tournament if oversized."""
+    def add_candidate(self, branch: str, score: float, hypothesis: str = "") -> None:
+        """Add a candidate with its hypothesis for crossover."""
         self._population.append((branch, score))
+        if hypothesis:
+            self._hypotheses[branch] = hypothesis
         if len(self._population) > self._population_size:
             self._population = self.tournament_select(Direction.HIGHER_IS_BETTER)
+
+    def get_crossover_parents(self) -> tuple[str, str] | None:
+        """Select two parents for crossover if population has >= 2 candidates.
+
+        Returns (hypothesis_a, hypothesis_b) or None.
+        """
+        if len(self._population) < 2 or random.random() > self._crossover_rate:
+            return None
+        sorted_pop = sorted(self._population, key=lambda c: c[1], reverse=True)
+        parent_a = sorted_pop[0][0]
+        parent_b = sorted_pop[1][0]
+        hyp_a = self._hypotheses.get(parent_a, "")
+        hyp_b = self._hypotheses.get(parent_b, "")
+        if hyp_a and hyp_b:
+            return (hyp_a, hyp_b)
+        return None
 
     def tournament_select(self, direction: Direction) -> list[tuple[str, float]]:
         """Run tournament selection. Returns surviving candidates.

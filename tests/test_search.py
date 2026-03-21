@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from anneal.engine.search import GreedySearch
+from anneal.engine.search import GreedySearch, SimulatedAnnealingSearch
 from anneal.engine.types import Direction, EvalResult
 
 
@@ -87,3 +87,52 @@ class TestHolmBonferroniAdjustedAlpha:
 
         # Assert: alpha / (50 - 25) = 0.05 / 25 = 0.002
         assert result == pytest.approx(0.002)
+
+
+class TestSimulatedAnnealingAdaptive:
+    """Tests for SA adaptive cooling with reheat."""
+
+    def test_sa_reheat_on_low_acceptance_temperature_increases(self) -> None:
+        """When acceptance drops below threshold, temperature reheats."""
+        sa = SimulatedAnnealingSearch(
+            initial_temperature=1.0,
+            cooling_rate=0.95,
+            min_temperature=0.01,
+            reheat_factor=2.0,
+            acceptance_target=0.3,
+        )
+        # Simulate 10 rejections to trigger reheat
+        sa._accept_history = [False] * 10
+        temp_before = sa.temperature
+        sa.cool()
+        # acceptance_ratio = 0.0 < 0.3 * 0.5 = 0.15 → reheat
+        assert sa.temperature > temp_before * sa._cooling_rate
+
+    def test_sa_no_reheat_above_target_cools_normally(self) -> None:
+        """When acceptance is healthy, normal cooling proceeds."""
+        sa = SimulatedAnnealingSearch(
+            initial_temperature=1.0,
+            cooling_rate=0.95,
+            min_temperature=0.01,
+            reheat_factor=2.0,
+            acceptance_target=0.3,
+        )
+        # Simulate 10 acceptances — acceptance_ratio = 1.0 > 0.15
+        sa._accept_history = [True] * 10
+        temp_before = sa.temperature
+        sa.cool()
+        expected = temp_before * 0.95
+        assert abs(sa.temperature - expected) < 1e-10
+
+    def test_sa_temperature_bounded_never_exceeds_initial(self) -> None:
+        """Reheat never pushes temperature above initial_temperature."""
+        sa = SimulatedAnnealingSearch(
+            initial_temperature=1.0,
+            cooling_rate=0.95,
+            min_temperature=0.01,
+            reheat_factor=100.0,  # Very aggressive reheat
+            acceptance_target=0.3,
+        )
+        sa._accept_history = [False] * 10
+        sa.cool()
+        assert sa.temperature <= 1.0

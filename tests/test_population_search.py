@@ -125,3 +125,28 @@ class TestIsPopulationFull:
         ps = PopulationSearch(population_size=2)
         ps._population = [("a", 1.0), ("b", 2.0), ("c", 3.0)]
         assert ps.is_population_full() is True
+
+
+class TestCrossoverParents:
+    """Tests for PopulationSearch crossover parent selection."""
+
+    def test_crossover_parents_selected_returns_hypotheses(self) -> None:
+        pop = PopulationSearch(population_size=4, crossover_rate=1.0)
+        pop.add_candidate("branch-a", 0.9, hypothesis="Improve clarity")
+        pop.add_candidate("branch-b", 0.8, hypothesis="Add examples")
+        result = pop.get_crossover_parents()
+        assert result is not None
+        assert result == ("Improve clarity", "Add examples")
+
+    def test_crossover_respects_rate_zero_returns_none(self) -> None:
+        pop = PopulationSearch(population_size=4, crossover_rate=0.0)
+        pop.add_candidate("branch-a", 0.9, hypothesis="Improve clarity")
+        pop.add_candidate("branch-b", 0.8, hypothesis="Add examples")
+        result = pop.get_crossover_parents()
+        assert result is None
+
+    def test_crossover_needs_two_candidates_returns_none(self) -> None:
+        pop = PopulationSearch(population_size=4, crossover_rate=1.0)
+        pop.add_candidate("branch-a", 0.9, hypothesis="Improve clarity")
+        result = pop.get_crossover_parents()
+        assert result is None

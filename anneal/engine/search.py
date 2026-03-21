@@ -154,11 +154,17 @@ class SimulatedAnnealingSearch:
         initial_temperature: float = 1.0,
         cooling_rate: float = 0.95,
         min_temperature: float = 0.01,
+        reheat_factor: float = 2.0,
+        acceptance_target: float = 0.3,
     ) -> None:
         self._initial_temperature = initial_temperature
         self._temperature = initial_temperature
         self._cooling_rate = cooling_rate
         self._min_temperature = min_temperature
+        self._reheat_factor = reheat_factor
+        self._acceptance_target = acceptance_target
+        self._accept_history: list[bool] = []
+        self._window_size = 10
 
     def should_keep(
         self,
@@ -195,15 +201,26 @@ class SimulatedAnnealingSearch:
             # delta <= 0 (regression): accept with probability exp(delta / temperature)
             accept = random.random() < math.exp(delta / self._temperature)
 
+        self._accept_history.append(accept)
         self.cool()
         return accept
 
     def cool(self) -> None:
-        """Apply cooling: temperature *= cooling_rate."""
+        """Adaptive cooling: adjust rate based on acceptance ratio."""
         self._temperature = max(
             self._temperature * self._cooling_rate,
             self._min_temperature,
         )
+        # Adaptive: if acceptance ratio drops below target, reheat
+        if len(self._accept_history) >= self._window_size:
+            recent = self._accept_history[-self._window_size:]
+            acceptance_ratio = sum(recent) / len(recent)
+            if acceptance_ratio < self._acceptance_target * 0.5:
+                self._temperature = min(
+                    self._temperature * self._reheat_factor,
+                    self._initial_temperature,
+                )
+                logger.info("SA reheat: T=%.4f (acceptance=%.2f)", self._temperature, acceptance_ratio)
 
     @property
     def temperature(self) -> float:
@@ -225,10 +242,13 @@ class PopulationSearch:
         self,
         population_size: int = 4,
         tournament_size: int = 2,
+        crossover_rate: float = 0.3,
     ) -> None:
         self._population_size = population_size
         self._tournament_size = tournament_size
+        self._crossover_rate = crossover_rate
         self._population: list[tuple[str, float]] = []
+        self._hypotheses: dict[str, str] = {}
 
     def should_keep(
         self,
@@ -249,11 +269,29 @@ class PopulationSearch:
             return challenger_score > baseline_score
         return challenger_score < baseline_score
 
-    def add_candidate(self, branch: str, score: float) -> None:
-        """Add a candidate to the population. Cull via tournament if oversized."""
+    def add_candidate(self, branch: str, score: float, hypothesis: str = "") -> None:
+        """Add a candidate with its hypothesis for crossover."""
         self._population.append((branch, score))
+        if hypothesis:
+            self._hypotheses[branch] = hypothesis
         if len(self._population) > self._population_size:
             self._population = self.tournament_select(Direction.HIGHER_IS_BETTER)
+
+    def get_crossover_parents(self) -> tuple[str, str] | None:
+        """Select two parents for crossover if population has >= 2 candidates.
+
+        Returns (hypothesis_a, hypothesis_b) or None.
+        """
+        if len(self._population) < 2 or random.random() > self._crossover_rate:
+            return None
+        sorted_pop = sorted(self._population, key=lambda c: c[1], reverse=True)
+        parent_a = sorted_pop[0][0]
+        parent_b = sorted_pop[1][0]
+        hyp_a = self._hypotheses.get(parent_a, "")
+        hyp_b = self._hypotheses.get(parent_b, "")
+        if hyp_a and hyp_b:
+            return (hyp_a, hyp_b)
+        return None
 
     def tournament_select(self, direction: Direction) -> list[tuple[str, float]]:
         """Run tournament selection. Returns surviving candidates.

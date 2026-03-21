@@ -339,14 +339,20 @@ class KnowledgeStore:
         records_with_raw = [r for r in window if r.raw_scores]
         if records_with_raw:
             max_len = max(len(r.raw_scores) for r in records_with_raw)  # type: ignore[arg-type]
+            # Use criterion names from records if available, fall back to positional index
+            if records_with_raw[0].criterion_names:
+                crit_names = records_with_raw[0].criterion_names
+            else:
+                crit_names = [f"criterion_{i}" for i in range(max_len)]
             for i in range(max_len):
+                name = crit_names[i] if i < len(crit_names) else f"criterion_{i}"
                 values = [
                     r.raw_scores[i]  # type: ignore[index]
                     for r in records_with_raw
                     if r.raw_scores is not None and len(r.raw_scores) > i
                 ]
                 if len(values) >= 2:
-                    criterion_variances[f"criterion_{i}"] = _variance(values)
+                    criterion_variances[name] = _variance(values)
 
         record = ConsolidationRecord(
             experiment_range=(start_idx, total),
@@ -394,12 +400,28 @@ class KnowledgeStore:
         window = all_records[start_idx:end_idx]
         records_with_raw = [r for r in window if r.raw_scores]
 
+        # Build a name -> index mapping for raw_scores lookup
+        # For records with criterion_names, use those; fall back to positional parsing
+        if records_with_raw and records_with_raw[0].criterion_names:
+            name_to_idx = {
+                cname: i
+                for i, cname in enumerate(records_with_raw[0].criterion_names)
+            }
+        else:
+            # Legacy positional names: "criterion_0", "criterion_1", ...
+            name_to_idx = {
+                name: int(name.split("_")[1])
+                for name in latest.criterion_variances
+                if name.startswith("criterion_") and name.split("_")[1].isdigit()
+            }
+
         entries: list[DriftEntry] = []
         for name, var in latest.criterion_variances.items():
             if var <= variance_threshold:
                 continue
-            # Extract criterion index from name
-            idx = int(name.split("_")[1])
+            idx = name_to_idx.get(name)
+            if idx is None:
+                continue
             values = [
                 r.raw_scores[idx]  # type: ignore[index]
                 for r in records_with_raw

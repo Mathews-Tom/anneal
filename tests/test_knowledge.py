@@ -258,3 +258,79 @@ def test_concurrent_consolidation_safe(tmp_path: Path) -> None:
     non_none = [r for r in results if r is not None]
     assert len(non_none) == 1
     assert isinstance(non_none[0], ConsolidationRecord)
+
+
+# ---------------------------------------------------------------------------
+# Criterion name tracking through consolidation (Step 2.2)
+# ---------------------------------------------------------------------------
+
+
+def _make_record_with_criterion_names(
+    *,
+    idx: int = 0,
+    criterion_names: list[str],
+    raw_scores: list[float],
+    outcome: Outcome = Outcome.KEPT,
+    score: float = 0.8,
+) -> ExperimentRecord:
+    rec = _make_record(idx=idx, outcome=outcome, score=score)
+    # ExperimentRecord is a dataclass — we can override fields directly
+    rec.criterion_names = criterion_names
+    rec.raw_scores = raw_scores
+    return rec
+
+
+def test_consolidation_uses_criterion_names_as_keys(tmp_path: Path) -> None:
+    """consolidate() uses criterion_names as criterion_variances keys when present."""
+    store = KnowledgeStore(tmp_path / "knowledge")
+    names = ["clarity", "accuracy"]
+    # Vary raw_scores across records so variance is non-zero
+    for i in range(50):
+        rec = _make_record_with_criterion_names(
+            idx=i,
+            criterion_names=names,
+            raw_scores=[float(i % 2), float((i + 1) % 2)],
+            score=0.75 + i * 0.001,
+        )
+        store.append_record(rec)
+
+    cr = store.consolidate()
+    assert "clarity" in cr.criterion_variances
+    assert "accuracy" in cr.criterion_variances
+    assert "criterion_0" not in cr.criterion_variances
+    assert "criterion_1" not in cr.criterion_variances
+
+
+def test_consolidation_falls_back_to_positional_names_without_criterion_names(
+    tmp_path: Path,
+) -> None:
+    """consolidate() uses criterion_0/criterion_1 keys when criterion_names is absent."""
+    store = KnowledgeStore(tmp_path / "knowledge")
+    for i in range(50):
+        rec = _make_record(idx=i, score=0.75 + i * 0.001)
+        rec.raw_scores = [float(i % 2), float((i + 1) % 2)]
+        store.append_record(rec)
+
+    cr = store.consolidate()
+    assert "criterion_0" in cr.criterion_variances
+    assert "criterion_1" in cr.criterion_variances
+    assert "clarity" not in cr.criterion_variances
+
+
+def test_consolidation_criterion_names_variance_values_correct(tmp_path: Path) -> None:
+    """Per-criterion variances computed from raw_scores match expected values."""
+    store = KnowledgeStore(tmp_path / "knowledge")
+    names = ["fluency", "tone"]
+    # All records: fluency=1.0 (zero variance), tone alternates 0/1
+    for i in range(50):
+        rec = _make_record_with_criterion_names(
+            idx=i,
+            criterion_names=names,
+            raw_scores=[1.0, float(i % 2)],
+            score=0.75 + i * 0.001,
+        )
+        store.append_record(rec)
+
+    cr = store.consolidate()
+    assert cr.criterion_variances["fluency"] == 0.0
+    assert cr.criterion_variances["tone"] > 0.0

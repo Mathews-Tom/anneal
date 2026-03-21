@@ -201,6 +201,7 @@ class StochasticEvaluator:
         # 2. Score each sample against K criteria independently
         votes = config.judgment_votes
         per_sample_scores: list[float] = []
+        per_criterion_totals: dict[str, list[float]] = {c.name: [] for c in config.criteria}
         for i, sample in enumerate(samples):
             # Randomize criterion order per sample to prevent anchoring
             shuffled_criteria = list(config.criteria)
@@ -218,13 +219,17 @@ class StochasticEvaluator:
             ]
             criterion_results = await asyncio.gather(*score_tasks)
             sample_score = 0.0
-            for binary_val, cost in criterion_results:
+            for criterion, (binary_val, cost) in zip(shuffled_criteria, criterion_results):
                 sample_score += binary_val
                 total_cost += cost
+                per_criterion_totals[criterion.name].append(binary_val)
             per_sample_scores.append(sample_score)
 
         # 3. Aggregate
         aggregate_score = float(np.mean(per_sample_scores))
+
+        # Criterion names in stable original order
+        criterion_names = [c.name for c in config.criteria]
 
         # 4. Bootstrap CI with reproducible seed from hash of scores
         score_bytes = ",".join(f"{s:.6f}" for s in per_sample_scores).encode()
@@ -241,6 +246,7 @@ class StochasticEvaluator:
             ci_upper=ci_upper,
             raw_scores=per_sample_scores,
             cost_usd=total_cost,
+            criterion_names=criterion_names,
         )
 
     async def _generate_sample(

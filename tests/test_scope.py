@@ -100,6 +100,18 @@ class TestIsPathEditable:
     def test_nested_directory(self) -> None:
         assert _is_path_editable("a/b/c/d.txt", ["a/b/"]) is True
 
+    def test_path_traversal_rejected(self) -> None:
+        assert _is_path_editable("src/../../etc/passwd", ["src/"]) is False
+
+    def test_path_traversal_dot_dot_prefix(self) -> None:
+        assert _is_path_editable("../outside", ["src/"]) is False
+
+    def test_absolute_path_rejected(self) -> None:
+        assert _is_path_editable("/etc/passwd", ["src/"]) is False
+
+    def test_normal_paths_still_work(self) -> None:
+        assert _is_path_editable("src/components/Button.tsx", ["src/"]) is True
+
 
 # ---------------------------------------------------------------------------
 # load_scope

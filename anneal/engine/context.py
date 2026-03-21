@@ -204,7 +204,7 @@ def _format_experiment_record(record: ExperimentRecord) -> str:
     if record.score_ci_lower is not None and record.score_ci_upper is not None:
         ci = f" (CI: [{record.score_ci_lower:.4f}, {record.score_ci_upper:.4f}])"
 
-    return (
+    base = (
         f"## Experiment {record.id}\n"
         f"- Hypothesis: {record.hypothesis}\n"
         f"- Outcome: {record.outcome.value}\n"
@@ -213,6 +213,13 @@ def _format_experiment_record(record: ExperimentRecord) -> str:
         f"- Learnings: {record.learnings}\n"
         f"- Diff summary: {record.mutation_diff_summary}"
     )
+    if record.per_criterion_scores:
+        criterion_lines = []
+        for name, score in record.per_criterion_scores.items():
+            status = "PASS" if score >= 0.5 else "FAIL"
+            criterion_lines.append(f"    {name}: {score:.2f} ({status})")
+        base += "\n  Per-criterion:\n" + "\n".join(criterion_lines)
+    return base
 
 
 def _format_recent_history(history: list[ExperimentRecord]) -> str:

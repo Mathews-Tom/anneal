@@ -202,27 +202,56 @@ class StochasticEvaluator:
         votes = config.judgment_votes
         per_sample_scores: list[float] = []
         per_criterion_totals: dict[str, list[float]] = {c.name: [] for c in config.criteria}
-        for i, sample in enumerate(samples):
-            # Randomize criterion order per sample to prevent anchoring
-            shuffled_criteria = list(config.criteria)
-            random.shuffle(shuffled_criteria)
+        for sample in samples:
+            if votes >= 2:
+                # Split votes between forward and reverse criterion order to cancel position bias
+                forward_criteria = list(config.criteria)
+                reverse_criteria = list(reversed(config.criteria))
+                forward_votes = votes // 2
+                reverse_votes = votes - forward_votes
 
-            score_tasks = [
-                self._score_criterion(
-                    eval_client,
-                    eval_model,
-                    sample,
-                    criterion,
-                    votes=votes,
-                )
-                for criterion in shuffled_criteria
-            ]
-            criterion_results = await asyncio.gather(*score_tasks)
-            sample_score = 0.0
-            for criterion, (binary_val, cost) in zip(shuffled_criteria, criterion_results):
-                sample_score += binary_val
-                total_cost += cost
-                per_criterion_totals[criterion.name].append(binary_val)
+                forward_tasks = [
+                    self._score_criterion(eval_client, eval_model, sample, criterion, votes=forward_votes)
+                    for criterion in forward_criteria
+                ]
+                forward_results = await asyncio.gather(*forward_tasks)
+
+                reverse_tasks = [
+                    self._score_criterion(eval_client, eval_model, sample, criterion, votes=reverse_votes)
+                    for criterion in reverse_criteria
+                ]
+                reverse_results = await asyncio.gather(*reverse_tasks)
+
+                # Merge: average forward and reverse scores per criterion
+                criterion_scores: dict[str, tuple[float, float]] = {}
+                for criterion, (binary_val, cost) in zip(forward_criteria, forward_results):
+                    criterion_scores[criterion.name] = (binary_val, cost)
+                for criterion, (binary_val, cost) in zip(reverse_criteria, reverse_results):
+                    fwd_val, fwd_cost = criterion_scores[criterion.name]
+                    criterion_scores[criterion.name] = (
+                        (fwd_val + binary_val) / 2,
+                        fwd_cost + cost,
+                    )
+
+                sample_score = 0.0
+                for crit_name, (avg_val, cost) in criterion_scores.items():
+                    sample_score += avg_val
+                    total_cost += cost
+                    per_criterion_totals[crit_name].append(avg_val)
+            else:
+                # Single vote: use random shuffle (existing behavior)
+                shuffled_criteria = list(config.criteria)
+                random.shuffle(shuffled_criteria)
+                score_tasks = [
+                    self._score_criterion(eval_client, eval_model, sample, criterion, votes=votes)
+                    for criterion in shuffled_criteria
+                ]
+                criterion_results = await asyncio.gather(*score_tasks)
+                sample_score = 0.0
+                for criterion, (binary_val, cost) in zip(shuffled_criteria, criterion_results):
+                    sample_score += binary_val
+                    total_cost += cost
+                    per_criterion_totals[criterion.name].append(binary_val)
             per_sample_scores.append(sample_score)
 
         # 3. Aggregate
@@ -230,6 +259,12 @@ class StochasticEvaluator:
 
         # Criterion names in stable original order
         criterion_names = [c.name for c in config.criteria]
+
+        # Per-criterion mean scores
+        per_criterion_scores = {
+            name: float(np.mean(per_criterion_totals[name]))
+            for name in criterion_names
+        }
 
         # 4. Bootstrap CI with reproducible seed from hash of scores
         score_bytes = ",".join(f"{s:.6f}" for s in per_sample_scores).encode()
@@ -247,6 +282,7 @@ class StochasticEvaluator:
             raw_scores=per_sample_scores,
             cost_usd=total_cost,
             criterion_names=criterion_names,
+            per_criterion_scores=per_criterion_scores,
         )
 
     async def _generate_sample(

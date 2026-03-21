@@ -226,6 +226,7 @@ class EvalResult(NamedTuple):
     raw_scores: list[float] | None = None
     cost_usd: float = 0.0
     criterion_names: list[str] | None = None  # Ordered criterion names matching raw_scores
+    per_criterion_scores: dict[str, float] | None = None
 
 
 @dataclass

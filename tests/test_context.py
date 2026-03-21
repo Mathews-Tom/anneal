@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from anneal.engine.context import ContextBudget, TokenCache, estimate_tokens
+from datetime import datetime
+
+from anneal.engine.context import ContextBudget, TokenCache, _format_experiment_record, estimate_tokens
+from anneal.engine.types import ExperimentRecord, Outcome
 
 
 class TestEstimateTokens:
@@ -102,3 +105,47 @@ class TestTokenCache:
         # Different content under the same key produces a different token count
         assert v1 != v2
         assert v2 == estimate_tokens("a much longer string that has more tokens")
+
+
+def _make_experiment_record(**overrides: object) -> ExperimentRecord:
+    defaults: dict[str, object] = dict(
+        id="exp-0001",
+        target_id="target-1",
+        git_sha="abc0001",
+        pre_experiment_sha="pre0001",
+        timestamp=datetime(2026, 1, 1, 0, 0),
+        hypothesis="test hypothesis",
+        hypothesis_source="agent",
+        mutation_diff_summary="diff summary",
+        score=0.75,
+        score_ci_lower=None,
+        score_ci_upper=None,
+        raw_scores=None,
+        baseline_score=0.70,
+        outcome=Outcome.KEPT,
+        failure_mode=None,
+        duration_seconds=1.0,
+        tags=["prompt"],
+        learnings="some learning",
+        cost_usd=0.01,
+        bootstrap_seed=42,
+    )
+    defaults.update(overrides)
+    return ExperimentRecord(**defaults)  # type: ignore[arg-type]
+
+
+def test_per_criterion_in_context_appears_in_formatted_record() -> None:
+    """Per-criterion breakdown appears in formatted experiment record."""
+    record = _make_experiment_record(
+        per_criterion_scores={"clarity": 0.9, "accuracy": 0.3},
+    )
+    output = _format_experiment_record(record)
+    assert "clarity: 0.90 (PASS)" in output
+    assert "accuracy: 0.30 (FAIL)" in output
+
+
+def test_format_experiment_record_no_per_criterion_omits_section() -> None:
+    """Records without per_criterion_scores do not include Per-criterion section."""
+    record = _make_experiment_record(per_criterion_scores=None)
+    output = _format_experiment_record(record)
+    assert "Per-criterion" not in output

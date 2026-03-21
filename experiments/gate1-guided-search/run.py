@@ -88,6 +88,136 @@ def _build_stochastic_config(
     )
 
 
+_EDIT_FORMAT = """You edit text artifacts by producing SEARCH/REPLACE blocks.
+
+For each change, output exactly this format:
+
+<<<SEARCH
+exact text to find in the artifact
+>>>REPLACE
+replacement text
+<<<END
+
+Rules:
+- The SEARCH block must match the artifact EXACTLY (whitespace, punctuation, case)
+- You may output multiple SEARCH/REPLACE blocks for multiple changes
+- Keep changes focused and meaningful — each block should serve the hypothesis
+- Start your response with ## Hypothesis followed by a one-sentence explanation
+- Then output SEARCH/REPLACE blocks"""
+
+_CONDITION_PROMPTS: dict[str, tuple[str, str]] = {
+    "random": (
+        "You mutate text artifacts randomly to explore the search space. "
+        "Make a substantive structural change — reword a section, add a guideline, "
+        "reorganize bullet points, change a constraint value, or add an example. "
+        "Do NOT make trivial character-level edits.",
+
+        "Make one random but substantive modification to this artifact. "
+        "Change something structural: rewrite a section, add or remove a guideline, "
+        "adjust a constraint, reorganize the content, or add a concrete example.",
+    ),
+    "bayesian": (
+        "You optimize text artifacts through systematic parameter exploration. "
+        "Each mutation should adjust exactly one dimension: structure, wording "
+        "precision, constraint values, formatting, examples, or ordering. "
+        "Explore the parameter space methodically.",
+
+        "Optimize this artifact by adjusting one specific parameter. Pick one "
+        "dimension (structure, wording, constraints, examples, ordering) and "
+        "make a targeted change along that dimension.",
+    ),
+    "guided": (
+        "You optimize text artifacts using experiment history and cross-condition "
+        "insights. Analyze which changes improved or degraded specific evaluation "
+        "criteria, then make an informed mutation that targets the weakest criteria.",
+
+        "Analyze the experiment history and evaluation criteria below. Identify "
+        "which criteria are weakest and propose a targeted change to improve them.",
+    ),
+}
+
+
+def _apply_edits(artifact: str, edit_blocks: str) -> tuple[str, int, int]:
+    """Apply SEARCH/REPLACE blocks to the artifact content.
+
+    Three-tier matching:
+      1. Exact string match
+      2. Whitespace-normalized line-by-line match
+      3. Difflib sequence similarity (threshold 0.85)
+
+    Returns (mutated_artifact, blocks_found, blocks_applied).
+    """
+    import re
+    from difflib import SequenceMatcher
+
+    pattern = r"<<<SEARCH\n(.*?)\n>>>REPLACE\n(.*?)\n<<<END"
+    matches = re.findall(pattern, edit_blocks, re.DOTALL)
+
+    if not matches:
+        # No edit blocks found — check if the model output a complete artifact
+        cleaned = edit_blocks.strip()
+        artifact_start = re.search(r"^#\s+\w", cleaned, re.MULTILINE)
+        if artifact_start and "<<<SEARCH" not in cleaned:
+            candidate = cleaned[artifact_start.start():]
+            if len(candidate) > len(artifact) * 0.3:
+                return candidate, 0, 0
+        return artifact, 0, 0
+
+    result = artifact
+    applied = 0
+    for search, replace in matches:
+        # Tier 1: Exact match
+        if search in result:
+            result = result.replace(search, replace, 1)
+            applied += 1
+            continue
+
+        # Tier 2: Whitespace-normalized line-by-line match
+        search_lines = search.split("\n")
+        result_lines = result.split("\n")
+        tier2_matched = False
+        for i in range(len(result_lines) - len(search_lines) + 1):
+            window = result_lines[i:i + len(search_lines)]
+            if all(
+                sl.rstrip() == rl.rstrip()
+                for sl, rl in zip(search_lines, window)
+            ):
+                result_lines[i:i + len(search_lines)] = replace.split("\n")
+                result = "\n".join(result_lines)
+                applied += 1
+                tier2_matched = True
+                break
+        if tier2_matched:
+            continue
+
+        # Tier 3: Difflib sequence similarity on sliding window
+        # Find the best-matching window of similar line count in the artifact
+        search_norm = search.strip()
+        best_ratio = 0.0
+        best_start = -1
+        best_end = -1
+        window_sizes = [len(search_lines), len(search_lines) - 1, len(search_lines) + 1]
+        result_lines = result.split("\n")
+        for wsize in window_sizes:
+            if wsize < 1 or wsize > len(result_lines):
+                continue
+            for i in range(len(result_lines) - wsize + 1):
+                window_text = "\n".join(result_lines[i:i + wsize]).strip()
+                ratio = SequenceMatcher(None, search_norm, window_text).ratio()
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best_start = i
+                    best_end = i + wsize
+
+        if best_ratio >= 0.85 and best_start >= 0:
+            result_lines = result.split("\n")
+            result_lines[best_start:best_end] = replace.split("\n")
+            result = "\n".join(result_lines)
+            applied += 1
+
+    return result, len(matches), applied
+
+
 async def _mutate_artifact(
     client: openai.AsyncOpenAI,
     model: str,
@@ -95,51 +225,31 @@ async def _mutate_artifact(
     condition: str,
     history_text: str,
     cross_condition_insights: str,
+    criteria_text: str = "",
 ) -> tuple[str, str, float]:
-    """Generate a mutated artifact via API call.
+    """Generate a mutated artifact via targeted SEARCH/REPLACE edits.
 
     Returns (mutated_content, hypothesis, cost_usd).
     """
-    if condition == "random":
-        system_prompt = (
-            "You modify text artifacts. Make a single random change. "
-            "Do NOT use any context or history. Just change something."
-        )
-        user_prompt = (
-            f"Make one random modification to this artifact. "
-            f"Output the full modified artifact.\n\n"
-            f"## Hypothesis\nState what you changed in one sentence.\n\n"
-            f"---\n{artifact_content}"
-        )
-    elif condition == "bayesian":
-        system_prompt = (
-            "You optimize text artifacts using systematic parameter search. "
-            "Focus on one parameter at a time: structure, wording, constraints, "
-            "examples. Explore the parameter space methodically."
-        )
-        user_prompt = (
-            f"Optimize this artifact by adjusting one parameter. "
-            f"Output the full modified artifact.\n\n"
-            f"## Hypothesis\nState what parameter you changed and why.\n\n"
-            f"---\n{artifact_content}"
-        )
-    else:  # guided
-        system_prompt = (
-            "You optimize text artifacts using experiment history and "
-            "cross-condition insights. Analyze what worked and what didn't, "
-            "then make an informed mutation."
-        )
-        parts = [
-            f"Improve this artifact based on the experiment history below. "
-            f"Output the full modified artifact.\n\n"
-            f"## Hypothesis\nState your hypothesis in one sentence.\n",
-        ]
+    from anneal.engine.agent import _compute_cost
+
+    system_base, task_instruction = _CONDITION_PROMPTS[condition]
+    system_prompt = f"{system_base}\n\n{_EDIT_FORMAT}"
+
+    parts = [task_instruction, ""]
+
+    if condition == "guided":
         if history_text:
-            parts.append(f"\n## Previous Results\n{history_text}")
+            parts.append(f"## Previous Results\n{history_text}\n")
         if cross_condition_insights:
-            parts.append(f"\n{cross_condition_insights}")
-        parts.append(f"\n---\n{artifact_content}")
-        user_prompt = "\n".join(parts)
+            parts.append(f"{cross_condition_insights}\n")
+
+    if criteria_text:
+        parts.append(f"## Evaluation Criteria\n{criteria_text}\n")
+
+    parts.append(f"## Current Artifact\n\n{artifact_content}")
+
+    user_prompt = "\n".join(parts)
 
     response = await client.chat.completions.create(
         model=model,
@@ -153,25 +263,35 @@ async def _mutate_artifact(
     output = response.choices[0].message.content or ""
     input_tokens = response.usage.prompt_tokens if response.usage else 0
     output_tokens = response.usage.completion_tokens if response.usage else 0
+    cost = _compute_cost(model, input_tokens, output_tokens)
 
-    # Extract hypothesis (first line after "## Hypothesis")
+    # Apply edits to artifact
+    mutated, blocks_found, blocks_applied = _apply_edits(artifact_content, output)
+
+    # If no edits were applied and artifact is unchanged, the mutation failed
+    if mutated == artifact_content:
+        # Return original — the eval will score the same artifact and likely
+        # discard it, which is the correct behavior for a failed mutation
+        pass
+
+    # Extract hypothesis
     hypothesis = ""
-    lines = output.split("\n")
-    for i, line in enumerate(lines):
-        if line.strip().lower().startswith("## hypothesis"):
-            # Take the next non-empty line
-            for j in range(i + 1, min(i + 5, len(lines))):
-                if lines[j].strip():
-                    hypothesis = lines[j].strip()
-                    break
+    for line in output.split("\n"):
+        stripped = line.strip()
+        if stripped.lower().startswith("## hypothesis"):
+            continue
+        if hypothesis == "" and stripped and not stripped.startswith("<<<"):
+            hypothesis = stripped
             break
+    # Search for hypothesis after the header
+    import re
+    match = re.search(r"## Hypothesis\s*\n(.*?)(?=\n<<<|\n## |\Z)", output, re.DOTALL)
+    if match:
+        hypothesis = match.group(1).strip().split("\n")[0].strip()
     if not hypothesis:
         hypothesis = f"{condition} mutation"
 
-    # Approximate cost from tokens
-    cost = (input_tokens * 0.0000015 + output_tokens * 0.000002)
-
-    return output, hypothesis, cost
+    return mutated, hypothesis, cost
 
 
 class GuidedSearchExperiment(ExperimentHarness):
@@ -184,10 +304,11 @@ class GuidedSearchExperiment(ExperimentHarness):
         self._learning_pool = LearningPool()
         self._midpoint_check = 25
 
-        # Load midpoint from config
+        # Load extra settings from config
         config_path = experiment_dir / "config.toml"
         raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
         self._midpoint_check = raw.get("experiment", {}).get("midpoint_check", 25)
+        self._mutation_model = raw.get("experiment", {}).get("mutation_model", "gemini-2.5-pro")
 
     async def run_condition(self, condition: ConditionConfig) -> list[ResultRecord]:
         """Not used directly — run_all handles interleaved execution."""
@@ -213,8 +334,13 @@ class GuidedSearchExperiment(ExperimentHarness):
             self._repo_root, self.config.eval_criteria_path,
         )
         stochastic_config = _build_stochastic_config(criteria, test_prompts, gen_config)
-        mutation_model = "gemini-2.5-flash"
+        mutation_model = self._mutation_model
         mutation_client = _make_client(mutation_model)
+
+        # Build criteria text for mutation context
+        criteria_text = "\n".join(
+            f"- **{c.name}**: {c.question}" for c in criteria
+        )
 
         # Read initial artifact
         original_artifact = ""
@@ -299,38 +425,61 @@ class GuidedSearchExperiment(ExperimentHarness):
                         )
 
                     start = time.monotonic()
+                    hypothesis = ""
+                    failure_mode = ""
 
-                    # Mutate
-                    mutated, hypothesis, mutation_cost = await _mutate_artifact(
-                        mutation_client,
-                        mutation_model,
-                        artifacts[cond_name],
-                        cond_name,
-                        history_text,
-                        cross_insights,
-                    )
+                    try:
+                        # Mutate
+                        mutated, hypothesis, mutation_cost = await _mutate_artifact(
+                            mutation_client,
+                            mutation_model,
+                            artifacts[cond_name],
+                            cond_name,
+                            history_text,
+                            cross_insights,
+                            criteria_text=criteria_text,
+                        )
 
-                    # Evaluate mutated artifact
-                    eval_result: EvalResult = await self._evaluator.evaluate(
-                        worktree_path=self._repo_root,
-                        config=stochastic_config,
-                        artifact_content=mutated,
-                    )
-                    elapsed = time.monotonic() - start
-                    exp_cost = mutation_cost + eval_result.cost_usd
+                        # Check if mutation actually changed the artifact
+                        mutation_applied = mutated != artifacts[cond_name]
 
-                    # Keep/discard decision
-                    kept = eval_result.score > baselines[cond_name]
-                    if kept:
-                        artifacts[cond_name] = mutated
-                        baselines[cond_name] = eval_result.score
+                        # Evaluate mutated artifact
+                        eval_result: EvalResult = await self._evaluator.evaluate(
+                            worktree_path=self._repo_root,
+                            config=stochastic_config,
+                            artifact_content=mutated,
+                        )
+                        elapsed = time.monotonic() - start
+                        exp_cost = mutation_cost + eval_result.cost_usd
 
-                    # Per-criterion scores
-                    per_criterion: dict[str, float] = {}
-                    if eval_result.raw_scores:
-                        for i, c in enumerate(criteria):
-                            if i < len(eval_result.raw_scores):
-                                per_criterion[c.name] = eval_result.raw_scores[i]
+                        # Keep/discard decision — use CI-aware comparison
+                        baseline = baselines[cond_name]
+                        ci_lower = eval_result.ci_lower if eval_result.ci_lower is not None else eval_result.score
+                        kept = eval_result.score > baseline or ci_lower >= baseline
+                        if kept:
+                            artifacts[cond_name] = mutated
+                            baselines[cond_name] = eval_result.score
+
+                        # Per-criterion scores
+                        per_criterion: dict[str, float] = {}
+                        if eval_result.raw_scores:
+                            for i, c in enumerate(criteria):
+                                if i < len(eval_result.raw_scores):
+                                    per_criterion[c.name] = eval_result.raw_scores[i]
+
+                        failure_mode = ""
+
+                    except Exception as exc:
+                        # API errors, timeout, JSON parse failures — log and continue
+                        elapsed = time.monotonic() - start
+                        eval_result = EvalResult(score=0.0)
+                        if not hypothesis:
+                            hypothesis = f"{cond_name} mutation (crashed)"
+                        mutation_applied = False
+                        kept = False
+                        exp_cost = 0.0
+                        per_criterion = {}
+                        failure_mode = f"{type(exc).__name__}: {str(exc)[:100]}"
 
                     record = ResultRecord(
                         condition=cond_name,
@@ -346,13 +495,21 @@ class GuidedSearchExperiment(ExperimentHarness):
                         seed=self.config.seed + round_idx,
                         raw_scores=list(eval_result.raw_scores) if eval_result.raw_scores else [],
                         per_criterion=per_criterion,
+                        failure_mode=failure_mode,
                     )
                     results[cond_name].append(record)
                     histories[cond_name].append(record)
                     total_costs[cond_name] += exp_cost
 
                     # Update progress bar
-                    tag = "[green]KEPT[/]" if kept else "[dim]DISC[/]"
+                    if kept:
+                        tag = "[green]KEPT[/]"
+                    elif failure_mode:
+                        tag = "[red]ERR![/]"
+                    elif not mutation_applied:
+                        tag = "[yellow]NOOP[/]"
+                    else:
+                        tag = "[dim]DISC[/]"
                     progress.update(
                         task_ids[cond_name],  # type: ignore[arg-type]
                         advance=1,
@@ -363,35 +520,36 @@ class GuidedSearchExperiment(ExperimentHarness):
                         ),
                     )
 
-                    # Extract learning for cross-condition pool
-                    engine_record = ExperimentRecord(
-                        id=str(exp_idx + 1),
-                        target_id="gate1",
-                        git_sha="",
-                        pre_experiment_sha="",
-                        timestamp=datetime.now(tz=timezone.utc),
-                        hypothesis=hypothesis,
-                        hypothesis_source="agent",
-                        mutation_diff_summary="",
-                        score=eval_result.score,
-                        score_ci_lower=eval_result.ci_lower,
-                        score_ci_upper=eval_result.ci_upper,
-                        raw_scores=eval_result.raw_scores,
-                        baseline_score=baselines[cond_name],
-                        outcome=Outcome.KEPT if kept else Outcome.DISCARDED,
-                        failure_mode=None,
-                        duration_seconds=elapsed,
-                        tags=[],
-                        learnings="",
-                        cost_usd=exp_cost,
-                        bootstrap_seed=0,
-                    )
-                    learning = extract_learning(
-                        engine_record,
-                        source_condition=cond_name,
-                        source_target="gate1",
-                    )
-                    self._learning_pool.add(learning)
+                    # Extract learning for cross-condition pool (skip crashed)
+                    if not failure_mode:
+                        engine_record = ExperimentRecord(
+                            id=str(exp_idx + 1),
+                            target_id="gate1",
+                            git_sha="",
+                            pre_experiment_sha="",
+                            timestamp=datetime.now(tz=timezone.utc),
+                            hypothesis=hypothesis,
+                            hypothesis_source="agent",
+                            mutation_diff_summary="",
+                            score=eval_result.score,
+                            score_ci_lower=eval_result.ci_lower,
+                            score_ci_upper=eval_result.ci_upper,
+                            raw_scores=eval_result.raw_scores,
+                            baseline_score=baselines[cond_name],
+                            outcome=Outcome.KEPT if kept else Outcome.DISCARDED,
+                            failure_mode=None,
+                            duration_seconds=elapsed,
+                            tags=[],
+                            learnings="",
+                            cost_usd=exp_cost,
+                            bootstrap_seed=0,
+                        )
+                        learning = extract_learning(
+                            engine_record,
+                            source_condition=cond_name,
+                            source_target="gate1",
+                        )
+                        self._learning_pool.add(learning)
 
                 # Midpoint early warning check
                 if round_idx + 1 == self._midpoint_check and not midpoint_warned:

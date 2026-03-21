@@ -883,6 +883,75 @@ def _handle_history(args: argparse.Namespace) -> None:
             )
 
 
+def _handle_suggest(args: argparse.Namespace) -> None:
+    """Handle ``anneal suggest``."""
+    from anneal.suggest.analyzer import analyze_problem
+    from anneal.suggest.generators import build_suggestion
+    from anneal.suggest.renderer import render_criteria, render_plan, write_suggestion_files
+    from anneal.suggest.scope import generate_scope
+
+    repo_root = _find_repo_root()
+
+    # Pre-flight: verify artifact files exist
+    for artifact in args.artifact:
+        if not (repo_root / artifact).exists():
+            console.print(f"[red]Artifact not found: {artifact}[/red]")
+            sys.exit(1)
+
+    # Step 1: Analyze the problem
+    console.print("[dim]Analyzing problem...[/dim]")
+    intent = asyncio.run(analyze_problem(
+        problem=args.problem,
+        artifact_paths=args.artifact,
+        eval_cmd=args.eval_cmd,
+        parse_cmd=args.parse_cmd,
+        metric=args.metric,
+        direction=args.direction,
+        model=args.model,
+    ))
+
+    # Step 2: Scan codebase and generate scope
+    scope = generate_scope(repo_root, args.artifact, intent)
+
+    # Step 3: Build the complete suggestion
+    suggestion = build_suggestion(
+        intent=intent,
+        scope=scope,
+        artifact_paths=args.artifact,
+        eval_cmd=args.eval_cmd,
+        parse_cmd=args.parse_cmd or ("cat" if args.eval_cmd else None),
+    )
+
+    # Step 4: Render the plan
+    render_plan(suggestion)
+    if suggestion.intent.criteria:
+        render_criteria(suggestion)
+
+    # Step 5: Write files or show what would be written
+    target_dir = repo_root / ".anneal" / "targets" / suggestion.name
+    if args.accept:
+        written = write_suggestion_files(suggestion, target_dir)
+        console.print(
+            Panel(
+                f"Files written to [bold]{target_dir}[/bold]:\n"
+                + "\n".join(f"  {p.name}" for p in written)
+                + "\n\nRegister with:\n"
+                + f"  anneal register --name {suggestion.name} "
+                + f"--artifact {' '.join(args.artifact)} "
+                + f"--eval-mode {suggestion.eval_mode} "
+                + (f"--run-cmd '{suggestion.run_command}' --parse-cmd '{suggestion.parse_command}' " if suggestion.eval_mode == "deterministic" else f"--criteria {target_dir / 'eval_criteria.toml'} ")
+                + f"--direction {suggestion.direction} "
+                + f"--scope {target_dir / 'scope.yaml'}",
+                title="anneal suggest — Files Written",
+                style="green",
+            )
+        )
+    else:
+        console.print()
+        console.print("[dim]Run with --accept to write files, or review the plan above and adjust.[/dim]")
+        console.print(f"[dim]Target directory: {target_dir}[/dim]")
+
+
 # ---------------------------------------------------------------------------
 # Argument parser construction
 # ---------------------------------------------------------------------------
@@ -1002,6 +1071,17 @@ def _build_parser() -> argparse.ArgumentParser:
     # -- list --
     subparsers.add_parser("list", help="List all registered targets")
 
+    # -- suggest --
+    sug = subparsers.add_parser("suggest", help="Generate experiment configuration from a problem description")
+    sug.add_argument("--problem", required=True, help="Natural-language description of what to optimize")
+    sug.add_argument("--artifact", required=True, nargs="+", help="Artifact file paths to optimize")
+    sug.add_argument("--eval-cmd", help="Deterministic eval run command (omit for stochastic mode)")
+    sug.add_argument("--parse-cmd", help="Deterministic eval parse command (default: cat)")
+    sug.add_argument("--metric", help="Metric name (e.g., 'p95 latency in ms', 'character count')")
+    sug.add_argument("--direction", choices=["maximize", "minimize"], help="Optimization direction")
+    sug.add_argument("--accept", action="store_true", help="Write files and register target (skip review)")
+    sug.add_argument("--model", default="gpt-4.1", help="Model for problem analysis (default: gpt-4.1)")
+
     return parser
 
 
@@ -1033,6 +1113,7 @@ def main(argv: list[str] | None = None) -> None:
         "dashboard": lambda: _handle_dashboard(args),
         "drift": lambda: _handle_drift(args),
         "list": lambda: _handle_list(args),
+        "suggest": lambda: _handle_suggest(args),
     }
 
     try:

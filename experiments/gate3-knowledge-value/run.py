@@ -1,24 +1,23 @@
-"""V3: Knowledge store value validation.
+"""Gate 3: Knowledge store value validation.
 
 A/B comparison: agent with experiment history vs memoryless agent.
 Runs 50 experiments per condition on the same artifact and compares
 score-at-N convergence curves.
 
+Uses a local temp git repo (no GitHub, no mocks) so the production
+ExperimentRunner operates exactly as it would in a real optimization.
+
 Usage:
-    uv run python experiments/knowledge-value-v3/run.py
+    PYTHONPATH=. uv run python experiments/gate3-knowledge-value/run.py
 """
 
 from __future__ import annotations
 
 import asyncio
-import shutil
 import sys
-import tempfile
 import time
 import tomllib
 from pathlib import Path
-
-import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -35,12 +34,14 @@ from anneal.engine.types import (
     BinaryCriterion,
     BudgetCap,
     Direction,
+    DomainTier,
     EvalConfig,
     EvalMode,
     OptimizationTarget,
     StochasticEval,
 )
 from experiments._harness.base import ExperimentHarness, load_config, make_progress, update_progress
+from experiments._harness.git_setup import ExperimentRepo, create_experiment_repo
 from experiments._harness.plotting import plot_trajectory
 from experiments._harness.types import ConditionConfig, ExperimentConfig, ResultRecord
 
@@ -49,13 +50,15 @@ EXPERIMENT_DIR = Path(__file__).resolve().parent
 
 def _load_eval_criteria(repo_root: Path, criteria_path: str) -> tuple[list[BinaryCriterion], list[str], dict[str, object]]:
     path = repo_root / criteria_path
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    data: dict[str, object] = tomllib.loads(path.read_text(encoding="utf-8"))
     criteria = [
         BinaryCriterion(name=c["name"], question=c["question"])
-        for c in data.get("criteria", [])
+        for c in (data.get("criteria") or [])  # type: ignore[union-attr]
     ]
-    test_prompts = [tp["prompt"] for tp in data.get("test_prompts", [])]
-    generation = data.get("generation", {})
+    test_prompts = [
+        tp["prompt"] for tp in (data.get("test_prompts") or [])  # type: ignore[union-attr]
+    ]
+    generation: dict[str, object] = data.get("generation") or {}  # type: ignore[assignment]
     return criteria, test_prompts, generation
 
 
@@ -75,26 +78,31 @@ class KnowledgeValueExperiment(ExperimentHarness):
             "min_score_advantage": 0.05,
         })
 
-    def _build_target(self, condition: ConditionConfig, work_dir: Path) -> OptimizationTarget:
-        """Build an OptimizationTarget for this experiment condition."""
+    def _build_target(
+        self, condition: ConditionConfig, repo: ExperimentRepo,
+    ) -> OptimizationTarget:
+        """Build an OptimizationTarget using the temp git repo."""
         criteria, test_prompts, gen_config = _load_eval_criteria(
-            self._repo_root, self.config.eval_criteria_path,
+            repo.repo_root, self.config.eval_criteria_path,
         )
+
+        agent_section = gen_config.get("agent") or {}
+        assert isinstance(agent_section, dict)
 
         gen_agent = AgentConfig(
             mode="api",
-            model=gen_config.get("agent", {}).get("model", "gemini-2.5-flash"),
+            model=str(agent_section.get("model", "gemini-2.5-flash")),
             evaluator_model="gpt-4.1",
             max_budget_usd=0.02,
-            temperature=gen_config.get("agent", {}).get("temperature", 0.7),
+            temperature=float(agent_section.get("temperature", 0.7)),
         )
 
         stochastic_eval = StochasticEval(
             sample_count=len(test_prompts),
             criteria=criteria,
             test_prompts=test_prompts,
-            generation_prompt_template=gen_config.get("prompt_template", ""),
-            output_format=gen_config.get("output_format", "text"),
+            generation_prompt_template=str(gen_config.get("prompt_template", "")),
+            output_format=str(gen_config.get("output_format", "text")),
             confidence_level=0.95,
             generation_agent_config=gen_agent,
         )
@@ -112,32 +120,59 @@ class KnowledgeValueExperiment(ExperimentHarness):
             max_budget_usd=1.00,
         )
 
+        knowledge_path = str(repo.worktree_path / ".anneal" / "knowledge")
+
         return OptimizationTarget(
             id=f"gate3-{condition.name}",
+            domain_tier=DomainTier.SANDBOX,
             artifact_paths=list(self.config.artifact_paths),
-            scope_path="examples/skill-diagram/scope.yaml",
-            scope_hash="experiment",
+            scope_path=repo.scope_rel_path,
+            scope_hash=repo.scope_hash,
             eval_mode=EvalMode.STOCHASTIC,
             eval_config=eval_config,
             agent_config=agent_config,
             time_budget_seconds=300,
             loop_interval_seconds=300,
-            knowledge_path=str(work_dir / "knowledge"),
-            worktree_path=str(work_dir / "worktree"),
+            knowledge_path=knowledge_path,
+            worktree_path=str(repo.worktree_path),
             git_branch=f"anneal/gate3-{condition.name}",
             baseline_score=0.0,
             budget_cap=BudgetCap(max_usd_per_day=5.0),
         )
 
     async def run_condition(self, condition: ConditionConfig) -> list[ResultRecord]:
-        """Run N experiments with or without knowledge store."""
-        with tempfile.TemporaryDirectory(prefix=f"anneal-gate3-{condition.name}-") as tmpdir:
-            work_dir = Path(tmpdir)
-            target = self._build_target(condition, work_dir)
+        """Run N experiments with or without knowledge store in a temp git repo."""
+        import gc
+
+        async with create_experiment_repo(
+            source_root=self._repo_root,
+            artifact_paths=list(self.config.artifact_paths),
+            scope_path="examples/skill-diagram/scope.yaml",
+            eval_criteria_path=self.config.eval_criteria_path,
+            target_id=f"gate3-{condition.name}",
+        ) as repo:
+            target = self._build_target(condition, repo)
+
+            # Run baseline eval to set the starting score
+            try:
+                artifact_content = ""
+                for ap in target.artifact_paths:
+                    fp = repo.worktree_path / ap
+                    if fp.exists():
+                        artifact_content += fp.read_text(encoding="utf-8")
+                baseline_result = await EvalEngine().evaluate(
+                    repo.worktree_path, target.eval_config, artifact_content,
+                )
+                target.baseline_score = baseline_result.score
+            except Exception:
+                pass
+
+            # Pre-register target so runner.update_target() works on KEPT outcomes
+            repo.pre_register_target(target)
 
             knowledge: KnowledgeStore | None = None
             if condition.knowledge_enabled:
-                knowledge = KnowledgeStore(work_dir / "knowledge")
+                knowledge = KnowledgeStore(Path(target.knowledge_path))
 
             git = GitEnvironment()
             runner = ExperimentRunner(
@@ -145,8 +180,8 @@ class KnowledgeValueExperiment(ExperimentHarness):
                 agent_invoker=AgentInvoker(),
                 eval_engine=EvalEngine(),
                 search=GreedySearch(),
-                registry=Registry(self._repo_root),
-                repo_root=self._repo_root,
+                registry=Registry(repo.repo_root),
+                repo_root=repo.repo_root,
                 knowledge=knowledge,
             )
 
@@ -160,31 +195,57 @@ class KnowledgeValueExperiment(ExperimentHarness):
             with progress:
                 for exp_idx in range(n):
                     start = time.monotonic()
-                    engine_record = await runner.run_one(target)
-                    elapsed = time.monotonic() - start
 
-                    record = ResultRecord(
-                        condition=condition.name,
-                        experiment_idx=exp_idx + 1,
-                        hypothesis=engine_record.hypothesis,
-                        score=engine_record.score,
-                        ci_lower=engine_record.score_ci_lower,
-                        ci_upper=engine_record.score_ci_upper,
-                        baseline_score=engine_record.baseline_score,
-                        kept=engine_record.outcome.value == "KEPT",
-                        cost_usd=engine_record.cost_usd,
-                        duration_seconds=elapsed,
-                        seed=self.config.seed + exp_idx,
-                        raw_scores=list(engine_record.raw_scores) if engine_record.raw_scores else [],
-                        tags=list(engine_record.tags),
-                        failure_mode=engine_record.failure_mode or "",
-                    )
+                    try:
+                        engine_record = await runner.run_one(target)
+                        elapsed = time.monotonic() - start
+
+                        record = ResultRecord(
+                            condition=condition.name,
+                            experiment_idx=exp_idx + 1,
+                            hypothesis=engine_record.hypothesis,
+                            score=engine_record.score,
+                            ci_lower=engine_record.score_ci_lower,
+                            ci_upper=engine_record.score_ci_upper,
+                            baseline_score=engine_record.baseline_score,
+                            kept=engine_record.outcome.value == "KEPT",
+                            cost_usd=engine_record.cost_usd,
+                            duration_seconds=elapsed,
+                            seed=self.config.seed + exp_idx,
+                            raw_scores=list(engine_record.raw_scores) if engine_record.raw_scores else [],
+                            tags=list(engine_record.tags),
+                            failure_mode=engine_record.failure_mode or "",
+                        )
+                    except Exception as exc:
+                        elapsed = time.monotonic() - start
+                        record = ResultRecord(
+                            condition=condition.name,
+                            experiment_idx=exp_idx + 1,
+                            hypothesis=f"{condition.name} mutation (crashed)",
+                            score=0.0,
+                            ci_lower=None,
+                            ci_upper=None,
+                            baseline_score=best_score,
+                            kept=False,
+                            cost_usd=0.0,
+                            duration_seconds=elapsed,
+                            seed=self.config.seed + exp_idx,
+                            failure_mode=f"{type(exc).__name__}: {str(exc)[:100]}",
+                        )
+
                     records.append(record)
                     total_cost += record.cost_usd
                     best_score = max(best_score, record.score)
                     update_progress(progress, task_id, record, best_score, total_cost)
 
-            return records
+            # Release subprocess transports before context exit triggers cleanup.
+            # gc.collect() alone is insufficient — async transports have ref cycles.
+            # Yielding to the event loop lets it process pending transport closures.
+            gc.collect()
+            await asyncio.sleep(0.1)
+            gc.collect()
+
+        return records
 
     async def run_all(self) -> dict[str, list[ResultRecord]]:
         results = await super().run_all()
@@ -203,7 +264,6 @@ class KnowledgeValueExperiment(ExperimentHarness):
             "=" * 60,
         ]
 
-        # Running best score per condition
         for cond_name, records in sorted(results.items()):
             scores = [r.score for r in records]
             running_best: list[float] = []
@@ -218,7 +278,6 @@ class KnowledgeValueExperiment(ExperimentHarness):
             report_lines.append(f"    Kept rate:            {sum(1 for r in records if r.kept) / max(len(records), 1):.2%}")
             report_lines.append(f"    Total cost:           ${sum(r.cost_usd for r in records):.4f}")
 
-        # Compare at convergence point
         informed_records = results.get("history-informed", [])
         memoryless_records = results.get("memoryless", [])
 

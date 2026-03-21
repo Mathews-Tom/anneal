@@ -1,17 +1,19 @@
-"""V4: Multi-domain stress test.
+"""Gate 4: Multi-domain stress test.
 
 Runs the optimization loop across multiple domains with different feedback
 loop speeds. Documents failure modes and convergence characteristics.
 
+Uses a local temp git repo per domain so the production ExperimentRunner
+operates exactly as it would in a real optimization.
+
 Usage:
-    uv run python experiments/multi-domain-stress-v4/run.py
+    PYTHONPATH=. uv run python experiments/gate4-multi-domain-stress/run.py
 """
 
 from __future__ import annotations
 
 import asyncio
 import sys
-import tempfile
 import time
 import tomllib
 from collections import Counter
@@ -40,6 +42,7 @@ from anneal.engine.types import (
     StochasticEval,
 )
 from experiments._harness.base import ExperimentHarness, load_config, make_progress, update_progress
+from experiments._harness.git_setup import ExperimentRepo, create_experiment_repo
 from experiments._harness.plotting import plot_domain_comparison, plot_trajectory
 from experiments._harness.types import ConditionConfig, ExperimentConfig, ResultRecord
 
@@ -62,7 +65,9 @@ class MultiDomainExperiment(ExperimentHarness):
             "max_crash_rate": 0.30,
         })
 
-    def _build_target(self, condition: ConditionConfig, work_dir: Path) -> OptimizationTarget:
+    def _build_target(
+        self, condition: ConditionConfig, repo: ExperimentRepo,
+    ) -> OptimizationTarget:
         """Build domain-specific OptimizationTarget from condition config."""
         extra = condition.extra
         domain = str(extra.get("domain", "deterministic"))
@@ -71,7 +76,7 @@ class MultiDomainExperiment(ExperimentHarness):
         eval_mode: EvalMode
 
         if domain == "stochastic":
-            criteria_path = self._repo_root / str(extra.get("eval_criteria_path", ""))
+            criteria_path = repo.repo_root / str(extra.get("eval_criteria_path", ""))
             crit_data = tomllib.loads(criteria_path.read_text(encoding="utf-8"))
 
             criteria = [
@@ -129,30 +134,107 @@ class MultiDomainExperiment(ExperimentHarness):
             max_budget_usd=1.00,
         )
 
+        # knowledge_path determines where program.md is read from.
+        # Use the artifact's parent directory so the runner finds program.md
+        # next to the artifact (e.g., examples/code-minify/program.md).
+        if artifact_paths:
+            knowledge_path = str(Path(str(artifact_paths[0])).parent)
+        else:
+            knowledge_path = str(repo.worktree_path / ".anneal" / "knowledge")
+
         return OptimizationTarget(
             id=f"gate4-{condition.name}",
             domain_tier=DomainTier.SANDBOX,
             artifact_paths=list(artifact_paths),
-            scope_path=str(extra.get("scope_path", "")),
-            scope_hash="experiment",
+            scope_path=repo.scope_rel_path,
+            scope_hash=repo.scope_hash,
             eval_mode=eval_mode,
             eval_config=eval_config,
             agent_config=agent_config,
             time_budget_seconds=300,
             loop_interval_seconds=300,
-            knowledge_path=str(work_dir / "knowledge"),
-            worktree_path=str(work_dir / "worktree"),
+            knowledge_path=knowledge_path,
+            worktree_path=str(repo.worktree_path),
             git_branch=f"anneal/gate4-{condition.name}",
             baseline_score=0.0,
             budget_cap=BudgetCap(max_usd_per_day=5.0),
         )
 
+    def _get_repo_files(self, condition: ConditionConfig) -> tuple[list[str], str, str, list[str]]:
+        """Extract file paths needed for the temp repo from condition config."""
+        extra = condition.extra
+        artifact_paths = extra.get("artifact_paths", [])
+        if isinstance(artifact_paths, str):
+            artifact_paths = [artifact_paths]
+        scope_path = str(extra.get("scope_path", ""))
+        eval_criteria_path = str(extra.get("eval_criteria_path", ""))
+
+        # Collect extra files: eval scripts, their siblings, and program.md
+        extra_files: list[str] = []
+        run_cmd = str(extra.get("run_cmd", ""))
+        parse_cmd = str(extra.get("parse_cmd", ""))
+
+        # Files referenced directly in commands
+        for cmd in [run_cmd, parse_cmd]:
+            for token in cmd.split():
+                if "/" in token and (self._repo_root / token).exists():
+                    path = self._repo_root / token
+                    extra_files.append(token)
+                    # Include all sibling files in the same directory
+                    # (eval scripts often reference siblings via $SCRIPT_DIR)
+                    if path.is_file():
+                        for sibling in path.parent.iterdir():
+                            if sibling.is_file():
+                                rel = str(sibling.relative_to(self._repo_root))
+                                if rel not in extra_files and rel not in artifact_paths and rel != scope_path:
+                                    extra_files.append(rel)
+
+        # Include program.md if it exists alongside the artifact
+        if artifact_paths:
+            artifact_dir = str(Path(str(artifact_paths[0])).parent)
+            program_md = f"{artifact_dir}/program.md"
+            if (self._repo_root / program_md).exists() and program_md not in extra_files:
+                extra_files.append(program_md)
+
+        return list(artifact_paths), scope_path, eval_criteria_path, extra_files
+
     async def run_condition(self, condition: ConditionConfig) -> list[ResultRecord]:
-        """Run N experiments for a single domain."""
-        with tempfile.TemporaryDirectory(prefix=f"anneal-gate4-{condition.name}-") as tmpdir:
-            work_dir = Path(tmpdir)
-            target = self._build_target(condition, work_dir)
-            knowledge = KnowledgeStore(work_dir / "knowledge")
+        """Run N experiments for a single domain in a temp git repo."""
+        import gc
+
+        artifact_paths, scope_path, eval_criteria_path, extra_files = self._get_repo_files(condition)
+
+        async with create_experiment_repo(
+            source_root=self._repo_root,
+            artifact_paths=artifact_paths,
+            scope_path=scope_path,
+            eval_criteria_path=eval_criteria_path,
+            target_id=f"gate4-{condition.name}",
+            extra_files=extra_files,
+        ) as repo:
+            target = self._build_target(condition, repo)
+
+            # Run baseline eval to set the starting score.
+            # Critical for LOWER_IS_BETTER: baseline of 0.0 means nothing
+            # can ever be kept (score < 0 is impossible).
+            eval_engine = EvalEngine()
+            try:
+                artifact_content = ""
+                for ap in target.artifact_paths:
+                    fp = repo.worktree_path / ap
+                    if fp.exists():
+                        artifact_content += fp.read_text(encoding="utf-8")
+                baseline_result = await eval_engine.evaluate(
+                    repo.worktree_path, target.eval_config, artifact_content,
+                )
+                target.baseline_score = baseline_result.score
+            except Exception:
+                pass  # Keep 0.0 baseline if eval fails — experiments will still run
+
+            # Pre-register target so runner.update_target() works on KEPT outcomes
+            repo.pre_register_target(target)
+
+            knowledge = KnowledgeStore(Path(target.knowledge_path))
 
             git = GitEnvironment()
             runner = ExperimentRunner(
@@ -160,8 +242,8 @@ class MultiDomainExperiment(ExperimentHarness):
                 agent_invoker=AgentInvoker(),
                 eval_engine=EvalEngine(),
                 search=GreedySearch(),
-                registry=Registry(self._repo_root),
-                repo_root=self._repo_root,
+                registry=Registry(repo.repo_root),
+                repo_root=repo.repo_root,
                 knowledge=knowledge,
             )
 
@@ -175,30 +257,56 @@ class MultiDomainExperiment(ExperimentHarness):
             with progress:
                 for exp_idx in range(n):
                     start = time.monotonic()
-                    engine_record = await runner.run_one(target)
-                    elapsed = time.monotonic() - start
 
-                    record = ResultRecord(
-                        condition=condition.name,
-                        experiment_idx=exp_idx + 1,
-                        hypothesis=engine_record.hypothesis,
-                        score=engine_record.score,
-                        ci_lower=engine_record.score_ci_lower,
-                        ci_upper=engine_record.score_ci_upper,
-                        baseline_score=engine_record.baseline_score,
-                        kept=engine_record.outcome.value == "KEPT",
-                        cost_usd=engine_record.cost_usd,
-                        duration_seconds=elapsed,
-                        seed=self.config.seed + exp_idx,
-                        tags=list(engine_record.tags),
-                        failure_mode=engine_record.failure_mode or "",
-                    )
+                    try:
+                        engine_record = await runner.run_one(target)
+                        elapsed = time.monotonic() - start
+
+                        record = ResultRecord(
+                            condition=condition.name,
+                            experiment_idx=exp_idx + 1,
+                            hypothesis=engine_record.hypothesis,
+                            score=engine_record.score,
+                            ci_lower=engine_record.score_ci_lower,
+                            ci_upper=engine_record.score_ci_upper,
+                            baseline_score=engine_record.baseline_score,
+                            kept=engine_record.outcome.value == "KEPT",
+                            cost_usd=engine_record.cost_usd,
+                            duration_seconds=elapsed,
+                            seed=self.config.seed + exp_idx,
+                            tags=list(engine_record.tags),
+                            failure_mode=engine_record.failure_mode or "",
+                        )
+                    except Exception as exc:
+                        elapsed = time.monotonic() - start
+                        record = ResultRecord(
+                            condition=condition.name,
+                            experiment_idx=exp_idx + 1,
+                            hypothesis=f"{condition.name} (crashed)",
+                            score=0.0,
+                            ci_lower=None,
+                            ci_upper=None,
+                            baseline_score=best_score,
+                            kept=False,
+                            cost_usd=0.0,
+                            duration_seconds=elapsed,
+                            seed=self.config.seed + exp_idx,
+                            failure_mode=f"{type(exc).__name__}: {str(exc)[:100]}",
+                        )
+
                     records.append(record)
                     total_cost += record.cost_usd
                     best_score = max(best_score, record.score)
                     update_progress(progress, task_id, record, best_score, total_cost)
 
-            return records
+            # Release subprocess transports before context exit triggers cleanup.
+            # gc.collect() alone is insufficient — async transports have ref cycles.
+            # Yielding to the event loop lets it process pending transport closures.
+            gc.collect()
+            await asyncio.sleep(0.1)
+            gc.collect()
+
+        return records
 
     async def run_all(self) -> dict[str, list[ResultRecord]]:
         results = await super().run_all()
@@ -229,9 +337,13 @@ class MultiDomainExperiment(ExperimentHarness):
             total_time = sum(r.duration_seconds for r in records)
 
             scores = [r.score for r in records]
+            # Use baseline_score from first record (set by baseline eval before loop)
+            baseline = records[0].baseline_score if records else 0.0
+            # "Improved" = at least one experiment was kept by the runner.
+            # This is direction-agnostic — the runner already handles
+            # HIGHER_IS_BETTER vs LOWER_IS_BETTER in the keep decision.
+            improved = kept > 0
             best_score = max(scores) if scores else 0.0
-            first_score = scores[0] if scores else 0.0
-            improved = best_score > first_score
 
             crash_rate = crashes / max(n, 1)
             crash_ok = crash_rate <= max_crash_rate
@@ -239,7 +351,6 @@ class MultiDomainExperiment(ExperimentHarness):
             if improved:
                 improving_domains += 1
 
-            # Failure mode taxonomy
             failure_modes: Counter[str] = Counter()
             for r in records:
                 if r.failure_mode:
@@ -251,7 +362,7 @@ class MultiDomainExperiment(ExperimentHarness):
                 f"    Kept:           {kept} ({kept / max(n, 1):.0%})",
                 f"    Crashes:        {crashes} ({crash_rate:.0%})  {'PASS' if crash_ok else 'FAIL'}",
                 f"    Blocked:        {blocked}",
-                f"    Score range:    {first_score:.4f} -> {best_score:.4f}  {'improved' if improved else 'stalled'}",
+                f"    Score:          baseline={baseline:.4f}  best={best_score:.4f}  {'improved' if improved else 'stalled'}",
                 f"    Total cost:     ${total_cost:.4f}",
                 f"    Avg duration:   {total_time / max(n, 1):.1f}s",
             ])
@@ -264,7 +375,7 @@ class MultiDomainExperiment(ExperimentHarness):
             domain_metrics[domain] = {
                 "kept_rate": kept / max(n, 1),
                 "crash_rate": crash_rate,
-                "improvement": best_score - first_score,
+                "improvement": abs(best_score - baseline) if improved else 0.0,
                 "cost_per_kept": total_cost / max(kept, 1),
             }
 
@@ -285,7 +396,6 @@ class MultiDomainExperiment(ExperimentHarness):
         report_path.write_text(report_text, encoding="utf-8")
         print(report_text)
 
-        # Cross-domain comparison chart
         plot_domain_comparison(
             domain_metrics,
             self.results_dir / "domain_comparison.png",

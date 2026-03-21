@@ -18,7 +18,7 @@ description = "Deterministic eval, code size optimization (~5-10 min loops)"
 domain = "deterministic"
 artifact_paths = ["examples/code-minify/app.py"]
 run_cmd = "bash examples/code-minify/eval.sh"
-parse_cmd = "cat examples/code-minify/expected_output.txt"
+parse_cmd = "cat"
 scope_path = "examples/code-minify/scope.yaml"
 
 # Analysis targets

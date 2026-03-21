@@ -154,11 +154,17 @@ class SimulatedAnnealingSearch:
         initial_temperature: float = 1.0,
         cooling_rate: float = 0.95,
         min_temperature: float = 0.01,
+        reheat_factor: float = 2.0,
+        acceptance_target: float = 0.3,
     ) -> None:
         self._initial_temperature = initial_temperature
         self._temperature = initial_temperature
         self._cooling_rate = cooling_rate
         self._min_temperature = min_temperature
+        self._reheat_factor = reheat_factor
+        self._acceptance_target = acceptance_target
+        self._accept_history: list[bool] = []
+        self._window_size = 10
 
     def should_keep(
         self,
@@ -195,15 +201,26 @@ class SimulatedAnnealingSearch:
             # delta <= 0 (regression): accept with probability exp(delta / temperature)
             accept = random.random() < math.exp(delta / self._temperature)
 
+        self._accept_history.append(accept)
         self.cool()
         return accept
 
     def cool(self) -> None:
-        """Apply cooling: temperature *= cooling_rate."""
+        """Adaptive cooling: adjust rate based on acceptance ratio."""
         self._temperature = max(
             self._temperature * self._cooling_rate,
             self._min_temperature,
         )
+        # Adaptive: if acceptance ratio drops below target, reheat
+        if len(self._accept_history) >= self._window_size:
+            recent = self._accept_history[-self._window_size:]
+            acceptance_ratio = sum(recent) / len(recent)
+            if acceptance_ratio < self._acceptance_target * 0.5:
+                self._temperature = min(
+                    self._temperature * self._reheat_factor,
+                    self._initial_temperature,
+                )
+                logger.info("SA reheat: T=%.4f (acceptance=%.2f)", self._temperature, acceptance_ratio)
 
     @property
     def temperature(self) -> float:

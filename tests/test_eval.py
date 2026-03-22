@@ -102,4 +102,13 @@ class TestBradleyTerryScorer:
 # ---------------------------------------------------------------------------
 
 
-_FIDELITY_PLACEHOLDER = True
+def test_fidelity_stage_fields_default() -> None:
+    """FidelityStage has sensible defaults."""
+    from anneal.engine.types import FidelityStage
+    stage = FidelityStage(
+        name="fast_check",
+        run_command="echo 0.9",
+        parse_command="cat",
+    )
+    assert stage.timeout_seconds == 30
+    assert stage.min_pass_score == 0.0

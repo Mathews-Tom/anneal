@@ -632,3 +632,35 @@ class TestRunnerStopFile:
         # Loop should have exited immediately due to stop file
         assert len(records) == 0
         assert not stop_file.exists()  # Stop file should be cleaned up
+
+
+# =========================================================================
+# Step 7.3 — Multi-fidelity pre-filter
+# =========================================================================
+
+
+class TestMultiFidelityPreFilter:
+    """Tests for multi-fidelity stage filtering in run_one."""
+
+    @pytest.mark.asyncio
+    async def test_fidelity_stage_rejects_low_score(self, tmp_path: Path) -> None:
+        from anneal.engine.types import FidelityStage
+        _make_git_repo(tmp_path)
+        target = _make_target(str(tmp_path))
+        # Add a fidelity stage that returns 0.1 (below min_pass_score of 0.5)
+        target.eval_config.fidelity_stages = [
+            FidelityStage(
+                name="quick_check",
+                run_command="echo 0.1",
+                parse_command="cat",
+                min_pass_score=0.5,
+            ),
+        ]
+        from anneal.engine.scope import compute_scope_hash
+        target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
+
+        runner, _, _ = _build_runner(tmp_path)
+        record = await runner.run_one(target)
+
+        assert record.outcome is Outcome.DISCARDED
+        assert record.failure_mode == "fidelity_stage:quick_check"

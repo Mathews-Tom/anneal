@@ -110,6 +110,7 @@ class StochasticEval:
     held_out_prompts: list[str] = field(default_factory=list)
     min_criterion_scores: dict[str, float] = field(default_factory=dict)
     judgment_votes: int = 3
+    comparison_mode: str = "majority_vote"  # "majority_vote" or "bradley_terry"
 
 
 @dataclass

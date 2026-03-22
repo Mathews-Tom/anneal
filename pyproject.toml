@@ -21,6 +21,9 @@ anneal = "anneal.cli:main"
 [tool.setuptools.packages.find]
 include = ["anneal*"]
 
+[project.optional-dependencies]
+ml = ["scikit-learn>=1.5"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",

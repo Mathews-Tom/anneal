@@ -130,6 +130,50 @@ class DeterministicEvaluator:
         return EvalResult(score=score)
 
 
+class BradleyTerryScorer:
+    """Bradley-Terry pairwise comparison model for criterion scoring.
+
+    Instead of majority voting (binary YES/NO), estimates the
+    probability that a sample satisfies a criterion using pairwise
+    comparison with a reference. Provides calibrated uncertainty
+    estimates that enable early stopping.
+    """
+
+    @staticmethod
+    def estimate_strength(
+        yes_count: int,
+        total_votes: int,
+    ) -> tuple[float, float]:
+        """Estimate Bradley-Terry strength parameter with uncertainty.
+
+        Uses Bayesian estimation with Beta(1,1) prior.
+        Returns (mean_strength, uncertainty_width).
+
+        mean = (yes + 1) / (total + 2)  # Laplace smoothing
+        uncertainty = 1.96 * sqrt(mean * (1-mean) / (total + 2))  # Normal approx
+        """
+        alpha = yes_count + 1  # Beta prior
+        beta = (total_votes - yes_count) + 1
+        mean = alpha / (alpha + beta)
+        n = alpha + beta
+        uncertainty = 1.96 * (mean * (1 - mean) / n) ** 0.5
+        return (mean, uncertainty)
+
+    @staticmethod
+    def should_stop_early(
+        mean: float,
+        uncertainty: float,
+        threshold: float = 0.5,
+    ) -> bool:
+        """Check if we can stop voting early.
+
+        Stop if the 95% CI is entirely above or below the threshold.
+        """
+        lower = mean - uncertainty
+        upper = mean + uncertainty
+        return lower > threshold or upper < threshold
+
+
 class StochasticEvaluator:
     """Generates N samples from fixed test prompts, scores each against K criteria."""
 
@@ -200,6 +244,7 @@ class StochasticEvaluator:
 
         # 2. Score each sample against K criteria independently
         votes = config.judgment_votes
+        comparison_mode = getattr(config, "comparison_mode", "majority_vote")
         per_sample_scores: list[float] = []
         per_criterion_totals: dict[str, list[float]] = {c.name: [] for c in config.criteria}
         for sample in samples:
@@ -211,13 +256,19 @@ class StochasticEvaluator:
                 reverse_votes = votes - forward_votes
 
                 forward_tasks = [
-                    self._score_criterion(eval_client, eval_model, sample, criterion, votes=forward_votes)
+                    self._score_criterion(
+                        eval_client, eval_model, sample, criterion,
+                        votes=forward_votes, comparison_mode=comparison_mode,
+                    )
                     for criterion in forward_criteria
                 ]
                 forward_results = await asyncio.gather(*forward_tasks)
 
                 reverse_tasks = [
-                    self._score_criterion(eval_client, eval_model, sample, criterion, votes=reverse_votes)
+                    self._score_criterion(
+                        eval_client, eval_model, sample, criterion,
+                        votes=reverse_votes, comparison_mode=comparison_mode,
+                    )
                     for criterion in reverse_criteria
                 ]
                 reverse_results = await asyncio.gather(*reverse_tasks)
@@ -243,7 +294,10 @@ class StochasticEvaluator:
                 shuffled_criteria = list(config.criteria)
                 random.shuffle(shuffled_criteria)
                 score_tasks = [
-                    self._score_criterion(eval_client, eval_model, sample, criterion, votes=votes)
+                    self._score_criterion(
+                        eval_client, eval_model, sample, criterion,
+                        votes=votes, comparison_mode=comparison_mode,
+                    )
                     for criterion in shuffled_criteria
                 ]
                 criterion_results = await asyncio.gather(*score_tasks)
@@ -351,25 +405,38 @@ class StochasticEvaluator:
         sample: str,
         criterion: BinaryCriterion,
         votes: int = 1,
+        comparison_mode: str = "majority_vote",
     ) -> tuple[float, float]:
-        """Score a (sample, criterion) pair with majority voting.
+        """Score a (sample, criterion) pair with majority voting or Bradley-Terry.
 
-        When votes=1, behaves identically to a single judgment call.
-        When votes>1, makes N independent calls and returns the majority
-        answer. This eliminates judgment variance from non-deterministic
-        API responses while preserving generation diversity.
+        comparison_mode="majority_vote": existing binary voting behavior.
+        comparison_mode="bradley_terry": Bradley-Terry strength estimation
+            with early stopping when confidence is sufficient.
+
+        When votes=1 and comparison_mode="majority_vote", behaves identically
+        to a single judgment call.
         """
-        if votes <= 1:
+        if votes <= 1 and comparison_mode == "majority_vote":
             return await self._score_criterion_once(client, model, sample, criterion)
 
-        vote_tasks = [
-            self._score_criterion_once(client, model, sample, criterion)
-            for _ in range(votes)
-        ]
-        vote_results = await asyncio.gather(*vote_tasks)
+        yes_count = 0
+        total_cost = 0.0
 
-        total_cost = sum(cost for _, cost in vote_results)
-        yes_count = sum(1 for binary, _ in vote_results if binary > 0.5)
+        for i in range(votes):
+            binary, cost = await self._score_criterion_once(client, model, sample, criterion)
+            yes_count += int(binary)
+            total_cost += cost
+
+            if comparison_mode == "bradley_terry" and i >= 1:
+                mean, uncertainty = BradleyTerryScorer.estimate_strength(yes_count, i + 1)
+                if BradleyTerryScorer.should_stop_early(mean, uncertainty):
+                    return (mean, total_cost)
+
+        if comparison_mode == "bradley_terry":
+            mean, _ = BradleyTerryScorer.estimate_strength(yes_count, votes)
+            return (mean, total_cost)
+
+        # Majority vote (existing behavior)
         majority = 1.0 if yes_count > votes / 2 else 0.0
         return majority, total_cost
 

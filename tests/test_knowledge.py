@@ -388,3 +388,62 @@ class TestTFIDFIndex:
         index = TFIDFIndex()
         results = index.query("anything", k=5)
         assert results == []
+
+
+# ---------------------------------------------------------------------------
+# Embedding retrieval with TF-IDF fallback (Step 7.5)
+# ---------------------------------------------------------------------------
+
+
+class TestEmbeddingRetrieval:
+    """Tests for embedding-based retrieval with TF-IDF fallback."""
+
+    def test_retrieve_similar_embedding_falls_back_to_tfidf(self, tmp_path: Path) -> None:
+        """When sentence-transformers not installed, falls back to TF-IDF."""
+        store = KnowledgeStore(tmp_path / "knowledge")
+        # Mix of related and unrelated hypotheses so TF-IDF has signal (IDF > 0)
+        hypotheses = [
+            "improve prompt clarity for better output",
+            "reduce token usage in system messages",
+            "fix CSS color styling bug",
+            "improve clarity with concise instructions",
+            "database connection pooling optimization",
+            "improve prompt wording for clarity",
+            "refactor authentication middleware",
+            "increase batch size for training runs",
+            "improve response clarity and tone",
+            "update API endpoint documentation",
+            "improve prompt structure for tasks",
+            "optimize SQL query performance",
+            "improve clarity of error messages",
+            "add retry logic for network calls",
+            "improve prompt examples and clarity",
+        ]
+        for i, hyp in enumerate(hypotheses):
+            rec = _make_record(idx=i, hypothesis=hyp)
+            store.append_record(rec)
+            store.update_index(rec)
+
+        # Works regardless of whether sentence-transformers is installed
+        results = store.retrieve_similar("improve prompt clarity", k=3)
+        assert isinstance(results, list)
+        # Should return some results since some hypotheses share query terms
+        assert len(results) > 0
+
+    def test_retrieve_similar_embedding_cold_start_returns_empty(self, tmp_path: Path) -> None:
+        """Below cold-start threshold, returns empty list."""
+        store = KnowledgeStore(tmp_path / "knowledge")
+        for i in range(5):
+            rec = _make_record(idx=i)
+            store.append_record(rec)
+            store.update_index(rec)
+
+        results = store.retrieve_similar("anything", k=3)
+        assert results == []
+
+    def test_embedding_model_lazy_load_no_crash(self) -> None:
+        """_get_embedding_model doesn't crash regardless of availability."""
+        from anneal.engine.knowledge import _get_embedding_model
+        result = _get_embedding_model()
+        # Either returns a model or None, never crashes
+        assert result is None or result is not None

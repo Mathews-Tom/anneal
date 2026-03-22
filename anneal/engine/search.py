@@ -318,3 +318,112 @@ class PopulationSearch:
     def population(self) -> list[tuple[str, float]]:
         """Current population."""
         return list(self._population)
+
+
+class ParetoSearch:
+    """Multi-objective search using Pareto dominance.
+
+    Instead of comparing scalar scores, compares vectors of per-criterion
+    scores. A challenger dominates if it's >= on all criteria and > on at
+    least one. Non-dominated solutions are always kept.
+    """
+
+    def __init__(self, criterion_weights: dict[str, float] | None = None) -> None:
+        self._criterion_weights = criterion_weights or {}
+        self._pareto_front: list[dict[str, float]] = []
+
+    def should_keep(
+        self,
+        challenger_result: EvalResult,
+        baseline_score: float,
+        baseline_raw_scores: list[float] | None,
+        direction: Direction,
+        min_improvement_threshold: float = 0.0,
+        confidence: float = 0.95,
+    ) -> bool:
+        """Accept if challenger Pareto-dominates baseline or is non-dominated.
+
+        Falls back to scalar comparison if per_criterion_scores unavailable.
+        """
+        challenger_criteria = challenger_result.per_criterion_scores
+        if not challenger_criteria:
+            # No per-criterion data: fall back to scalar comparison
+            if direction is Direction.HIGHER_IS_BETTER:
+                return challenger_result.score > baseline_score + min_improvement_threshold
+            return challenger_result.score < baseline_score - min_improvement_threshold
+
+        # Check Pareto dominance against current front
+        if not self._pareto_front:
+            self._pareto_front.append(challenger_criteria)
+            return True
+
+        dominated_by_any = False
+        dominates_any = False
+
+        for front_point in self._pareto_front:
+            if self._dominates(front_point, challenger_criteria, direction):
+                dominated_by_any = True
+                break
+            if self._dominates(challenger_criteria, front_point, direction):
+                dominates_any = True
+
+        if dominated_by_any:
+            return False
+
+        # Non-dominated: add to front and remove dominated points
+        if dominates_any:
+            self._pareto_front = [
+                p for p in self._pareto_front
+                if not self._dominates(challenger_criteria, p, direction)
+            ]
+        self._pareto_front.append(challenger_criteria)
+        return True
+
+    @staticmethod
+    def _dominates(
+        a: dict[str, float],
+        b: dict[str, float],
+        direction: Direction,
+    ) -> bool:
+        """Return True if a Pareto-dominates b.
+
+        a dominates b iff a >= b on all shared criteria and a > b on at least one.
+        """
+        shared_keys = set(a.keys()) & set(b.keys())
+        if not shared_keys:
+            return False
+
+        all_geq = True
+        any_gt = False
+        for key in shared_keys:
+            if direction is Direction.HIGHER_IS_BETTER:
+                if a[key] < b[key]:
+                    all_geq = False
+                    break
+                if a[key] > b[key]:
+                    any_gt = True
+            else:
+                if a[key] > b[key]:
+                    all_geq = False
+                    break
+                if a[key] < b[key]:
+                    any_gt = True
+
+        return all_geq and any_gt
+
+    def scalarize(self, criteria: dict[str, float]) -> float:
+        """Weighted sum scalarization for ranking."""
+        if not self._criterion_weights:
+            return sum(criteria.values()) / max(len(criteria), 1)
+        total = 0.0
+        weight_sum = 0.0
+        for name, value in criteria.items():
+            w = self._criterion_weights.get(name, 1.0)
+            total += w * value
+            weight_sum += w
+        return total / max(weight_sum, 1e-10)
+
+    @property
+    def pareto_front(self) -> list[dict[str, float]]:
+        """Current Pareto front."""
+        return list(self._pareto_front)

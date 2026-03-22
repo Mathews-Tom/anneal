@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from anneal.engine.search import GreedySearch, SimulatedAnnealingSearch
+from anneal.engine.search import GreedySearch, ParetoSearch, SimulatedAnnealingSearch
 from anneal.engine.types import Direction, EvalResult
 
 
@@ -136,3 +136,74 @@ class TestSimulatedAnnealingAdaptive:
         sa._accept_history = [False] * 10
         sa.cool()
         assert sa.temperature <= 1.0
+
+
+class TestParetoSearch:
+    """Tests for multi-objective Pareto search."""
+
+    def test_pareto_first_challenger_always_kept(self) -> None:
+        search = ParetoSearch()
+        result = EvalResult(
+            score=0.8,
+            per_criterion_scores={"clarity": 0.9, "accuracy": 0.7},
+        )
+        assert search.should_keep(result, 0.5, None, Direction.HIGHER_IS_BETTER) is True
+
+    def test_pareto_dominated_challenger_rejected(self) -> None:
+        search = ParetoSearch()
+        # First: establish front
+        first = EvalResult(score=0.8, per_criterion_scores={"a": 0.9, "b": 0.8})
+        search.should_keep(first, 0.5, None, Direction.HIGHER_IS_BETTER)
+        # Second: dominated (worse on both)
+        dominated = EvalResult(score=0.6, per_criterion_scores={"a": 0.7, "b": 0.6})
+        assert search.should_keep(dominated, 0.5, None, Direction.HIGHER_IS_BETTER) is False
+
+    def test_pareto_non_dominated_challenger_kept(self) -> None:
+        search = ParetoSearch()
+        first = EvalResult(score=0.8, per_criterion_scores={"a": 0.9, "b": 0.5})
+        search.should_keep(first, 0.5, None, Direction.HIGHER_IS_BETTER)
+        # Non-dominated: better on b, worse on a
+        tradeoff = EvalResult(score=0.7, per_criterion_scores={"a": 0.6, "b": 0.9})
+        assert search.should_keep(tradeoff, 0.5, None, Direction.HIGHER_IS_BETTER) is True
+        assert len(search.pareto_front) == 2
+
+    def test_pareto_dominating_challenger_prunes_front(self) -> None:
+        search = ParetoSearch()
+        weak = EvalResult(score=0.5, per_criterion_scores={"a": 0.5, "b": 0.5})
+        search.should_keep(weak, 0.3, None, Direction.HIGHER_IS_BETTER)
+        # Dominating: better on both
+        strong = EvalResult(score=0.9, per_criterion_scores={"a": 0.9, "b": 0.9})
+        assert search.should_keep(strong, 0.3, None, Direction.HIGHER_IS_BETTER) is True
+        assert len(search.pareto_front) == 1  # Weak was pruned
+
+    def test_pareto_fallback_to_scalar_without_criteria(self) -> None:
+        search = ParetoSearch()
+        result = EvalResult(score=0.8)  # No per_criterion_scores
+        assert search.should_keep(result, 0.5, None, Direction.HIGHER_IS_BETTER) is True
+        result_worse = EvalResult(score=0.3)
+        assert search.should_keep(result_worse, 0.5, None, Direction.HIGHER_IS_BETTER) is False
+
+    def test_scalarize_uniform_weights(self) -> None:
+        search = ParetoSearch()
+        score = search.scalarize({"a": 0.8, "b": 0.6})
+        assert abs(score - 0.7) < 1e-10
+
+    def test_scalarize_custom_weights(self) -> None:
+        search = ParetoSearch(criterion_weights={"a": 2.0, "b": 1.0})
+        score = search.scalarize({"a": 0.8, "b": 0.6})
+        expected = (2.0 * 0.8 + 1.0 * 0.6) / 3.0  # 2.2 / 3.0 = 0.7333...
+        assert abs(score - expected) < 1e-10
+
+    def test_dominates_higher_is_better(self) -> None:
+        assert ParetoSearch._dominates(
+            {"a": 0.9, "b": 0.8},
+            {"a": 0.7, "b": 0.6},
+            Direction.HIGHER_IS_BETTER,
+        ) is True
+
+    def test_dominates_lower_is_better(self) -> None:
+        assert ParetoSearch._dominates(
+            {"a": 0.3, "b": 0.2},
+            {"a": 0.5, "b": 0.4},
+            Direction.LOWER_IS_BETTER,
+        ) is True

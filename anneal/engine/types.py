@@ -110,6 +110,7 @@ class StochasticEval:
     held_out_prompts: list[str] = field(default_factory=list)
     min_criterion_scores: dict[str, float] = field(default_factory=dict)
     judgment_votes: int = 3
+    comparison_mode: str = "majority_vote"  # "majority_vote" or "bradley_terry"
 
 
 @dataclass
@@ -134,6 +135,17 @@ class ConstraintCommand:
 
 
 @dataclass
+class FidelityStage:
+    """A stage in a multi-fidelity evaluation pipeline."""
+
+    name: str
+    run_command: str  # Deterministic eval command
+    parse_command: str  # Parse output to float
+    timeout_seconds: int = 30
+    min_pass_score: float = 0.0  # Minimum to proceed to next stage
+
+
+@dataclass
 class EvalConfig:
     """Evaluation configuration for a target."""
 
@@ -145,6 +157,7 @@ class EvalConfig:
     held_out_interval: int = 10
     constraints: list[MetricConstraint] = field(default_factory=list)
     constraint_commands: list[ConstraintCommand] = field(default_factory=list)
+    fidelity_stages: list[FidelityStage] = field(default_factory=list)
 
 
 @dataclass

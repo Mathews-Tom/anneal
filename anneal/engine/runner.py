@@ -28,7 +28,10 @@ from anneal.engine.safety import pre_experiment_check
 from anneal.engine.scope import enforce_scope, load_scope, verify_scope_hash
 from anneal.engine.search import GreedySearch, SearchStrategy
 from anneal.engine.types import (
+    DeterministicEval,
+    Direction,
     DomainTier,
+    EvalConfig,
     ExperimentRecord,
     OptimizationTarget,
     Outcome,
@@ -366,6 +369,65 @@ class ExperimentRunner:
                     if self._learning_pool is not None:
                         self._learning_pool.add(extract_learning(early_record, source_target=target.id))
                     return early_record
+
+        # 5c. Multi-fidelity pre-filter (cheap deterministic stages before expensive eval)
+        if target.eval_config.fidelity_stages:
+            for stage in target.eval_config.fidelity_stages:
+                stage_config = EvalConfig(
+                    metric_name=f"fidelity_{stage.name}",
+                    direction=target.eval_config.direction,
+                    deterministic=DeterministicEval(
+                        run_command=stage.run_command,
+                        parse_command=stage.parse_command,
+                        timeout_seconds=stage.timeout_seconds,
+                    ),
+                )
+                try:
+                    stage_result = await self._eval.evaluate(
+                        worktree, stage_config, artifact_content,
+                    )
+                except EvalError as exc:
+                    logger.warning("Fidelity stage %s failed: %s", stage.name, exc)
+                    continue  # Skip failed stages, don't block
+
+                if target.eval_config.direction is Direction.HIGHER_IS_BETTER:
+                    passed = stage_result.score >= stage.min_pass_score
+                else:
+                    passed = stage_result.score <= stage.min_pass_score
+
+                if not passed:
+                    duration = time.monotonic() - start_time
+                    await self._git.reset_hard(worktree, pre_experiment_sha)
+                    logger.info(
+                        "Fidelity stage %s rejected mutation for %s: score=%.4f (min=%.4f)",
+                        stage.name, target.id, stage_result.score, stage.min_pass_score,
+                    )
+                    fidelity_record = ExperimentRecord(
+                        id=experiment_id,
+                        target_id=target.id,
+                        git_sha=pre_experiment_sha,
+                        pre_experiment_sha=pre_experiment_sha,
+                        timestamp=datetime.now(tz=timezone.utc),
+                        hypothesis=hypothesis,
+                        hypothesis_source=hypothesis_source,
+                        mutation_diff_summary="",
+                        score=stage_result.score,
+                        score_ci_lower=None,
+                        score_ci_upper=None,
+                        raw_scores=None,
+                        baseline_score=target.baseline_score,
+                        outcome=Outcome.DISCARDED,
+                        failure_mode=f"fidelity_stage:{stage.name}",
+                        duration_seconds=duration,
+                        tags=tags,
+                        learnings="",
+                        cost_usd=cost_usd,
+                        bootstrap_seed=0,
+                        agent_model=target.agent_config.model,
+                    )
+                    if self._learning_pool is not None:
+                        self._learning_pool.add(extract_learning(fidelity_record, source_target=target.id))
+                    return fidelity_record
 
         # 6. Evaluate
         try:

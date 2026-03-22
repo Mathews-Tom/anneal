@@ -57,3 +57,58 @@ def test_eval_result_per_criterion_scores_defaults_none() -> None:
     """Backward compat: per_criterion_scores defaults to None."""
     result = EvalResult(score=0.8)
     assert result.per_criterion_scores is None
+
+
+# ---------------------------------------------------------------------------
+# Step 7.2 — Bradley-Terry scorer
+# ---------------------------------------------------------------------------
+
+
+class TestBradleyTerryScorer:
+    """Tests for Bradley-Terry strength estimation."""
+
+    def test_estimate_strength_all_yes_near_one(self) -> None:
+        from anneal.engine.eval import BradleyTerryScorer
+        mean, uncertainty = BradleyTerryScorer.estimate_strength(10, 10)
+        assert mean > 0.85
+        assert uncertainty < 0.2
+
+    def test_estimate_strength_all_no_near_zero(self) -> None:
+        from anneal.engine.eval import BradleyTerryScorer
+        mean, uncertainty = BradleyTerryScorer.estimate_strength(0, 10)
+        assert mean < 0.15
+        assert uncertainty < 0.2
+
+    def test_estimate_strength_even_split_near_half(self) -> None:
+        from anneal.engine.eval import BradleyTerryScorer
+        mean, uncertainty = BradleyTerryScorer.estimate_strength(5, 10)
+        assert abs(mean - 0.5) < 0.1
+
+    def test_should_stop_early_confident_above(self) -> None:
+        from anneal.engine.eval import BradleyTerryScorer
+        # 9/10 yes votes: mean ≈ 0.833, uncertainty small
+        mean, uncertainty = BradleyTerryScorer.estimate_strength(9, 10)
+        assert BradleyTerryScorer.should_stop_early(mean, uncertainty) is True
+
+    def test_should_stop_early_uncertain_no_stop(self) -> None:
+        from anneal.engine.eval import BradleyTerryScorer
+        # 3/5 yes votes: mean ≈ 0.571, still uncertain
+        mean, uncertainty = BradleyTerryScorer.estimate_strength(3, 5)
+        assert BradleyTerryScorer.should_stop_early(mean, uncertainty) is False
+
+
+# ---------------------------------------------------------------------------
+# Step 7.3 — FidelityStage dataclass
+# ---------------------------------------------------------------------------
+
+
+def test_fidelity_stage_fields_default() -> None:
+    """FidelityStage has sensible defaults."""
+    from anneal.engine.types import FidelityStage
+    stage = FidelityStage(
+        name="fast_check",
+        run_command="echo 0.9",
+        parse_command="cat",
+    )
+    assert stage.timeout_seconds == 30
+    assert stage.min_pass_score == 0.0

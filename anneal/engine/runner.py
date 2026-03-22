@@ -794,11 +794,19 @@ class ExperimentRunner:
                 full.unlink()
 
     async def _handle_killed(self, worktree: Path, pre_experiment_sha: str) -> None:
-        """State-aware KILLED recovery per system design spec."""
+        """State-aware KILLED recovery with integrity verification."""
         await self._git.cleanup_index_lock(worktree)
-        # reset --hard restores tracked files; clean removes untracked
         await self._git.reset_hard(worktree, pre_experiment_sha)
         await self._git.clean_untracked(worktree)
+
+        # Verify git object integrity
+        fsck_ok = await self._git.fsck(worktree)
+        if not fsck_ok:
+            logger.error(
+                "Git object database corruption detected in %s after kill recovery. "
+                "Manual repair required: git -C %s fsck --full",
+                worktree, worktree,
+            )
 
     async def _safe_restore(self, worktree: Path, pre_experiment_sha: str) -> None:
         """Restore worktree to pre-experiment state on error."""

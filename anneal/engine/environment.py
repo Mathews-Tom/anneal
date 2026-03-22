@@ -239,6 +239,17 @@ class GitEnvironment:
     # Index lock cleanup
     # ------------------------------------------------------------------
 
+    async def fsck(self, worktree: Path) -> bool:
+        """Run git fsck. Returns True if clean."""
+        proc = await asyncio.create_subprocess_exec(
+            "git", "fsck", "--no-full", "--no-dangling",
+            cwd=str(worktree),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        return proc.returncode == 0
+
     async def cleanup_index_lock(self, worktree_path: Path) -> bool:
         """Remove ``.git/index.lock`` if it exists (for KILLED recovery).
 

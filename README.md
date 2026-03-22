@@ -2,9 +2,7 @@
 
 Autonomous optimization for any measurable artifact.
 
-<!-- TODO: Replace with hosted video URL — track in GitHub issue -->
-
-https://github.com/user-attachments/assets/VIDEO_PLACEHOLDER
+https://github.com/user-attachments/assets/cb0cd879-444e-444b-8b69-32623ff9af76
 
 Define _what_ to improve, _how to measure_ improvement, and _what's allowed to change_. An LLM agent handles the rest — generating hypotheses, running experiments, keeping winners, discarding losers, compounding learnings. Overnight. Unattended.
 

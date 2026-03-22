@@ -330,6 +330,43 @@ class ExperimentRunner:
         # Re-read artifact content after mutation for stochastic eval
         artifact_content = self._read_artifacts(worktree, target.artifact_paths)
 
+        # 5b. Fast constraint pre-check (before expensive eval)
+        if target.eval_config.constraint_commands:
+            fast_results = await self._eval.check_constraints(
+                worktree, target.eval_config, artifact_content,
+            )
+            for name, passed, actual in fast_results:
+                if not passed:
+                    duration = time.monotonic() - start_time
+                    await self._git.reset_hard(worktree, pre_experiment_sha)
+                    logger.warning("Fast constraint %s failed for target %s: actual=%.4f", name, target.id, actual)
+                    early_record = ExperimentRecord(
+                        id=experiment_id,
+                        target_id=target.id,
+                        git_sha=pre_experiment_sha,
+                        pre_experiment_sha=pre_experiment_sha,
+                        timestamp=datetime.now(tz=timezone.utc),
+                        hypothesis=hypothesis,
+                        hypothesis_source=hypothesis_source,
+                        mutation_diff_summary="",
+                        score=target.baseline_score,
+                        score_ci_lower=None,
+                        score_ci_upper=None,
+                        raw_scores=None,
+                        baseline_score=target.baseline_score,
+                        outcome=Outcome.DISCARDED,
+                        failure_mode=f"constraint_violated:{name}",
+                        duration_seconds=duration,
+                        tags=tags,
+                        learnings="",
+                        cost_usd=cost_usd,
+                        bootstrap_seed=0,
+                        agent_model=target.agent_config.model,
+                    )
+                    if self._learning_pool is not None:
+                        self._learning_pool.add(extract_learning(early_record, source_target=target.id))
+                    return early_record
+
         # 6. Evaluate
         try:
             eval_result = await self._eval.evaluate(

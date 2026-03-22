@@ -163,10 +163,10 @@ anneal/engine/
 
 ```bash
 # Install
-uv pip install -e .
+uv tool install anneal-cli
 
 # Install with ML extras (Bayesian surrogate)
-uv pip install -e ".[ml]"
+uv tool install anneal-cli --with scikit-learn
 
 # Initialize in a git repo
 anneal init

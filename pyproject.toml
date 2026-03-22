@@ -1,5 +1,5 @@
 [project]
-name = "anneal"
+name = "anneal-cli"
 version = "0.1.0"
 description = "Domain-agnostic autonomous optimization framework"
 requires-python = ">=3.12"

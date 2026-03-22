@@ -327,3 +327,24 @@ def test_stash_never_called() -> None:
     """The word 'stash' must not appear in environment.py as a git command."""
     source = inspect.getsource(GitEnvironment)
     assert "stash" not in source.lower()
+
+
+class TestGitFsck:
+    """Tests for git fsck integrity check."""
+
+    @pytest.mark.asyncio
+    async def test_fsck_clean_repo_returns_true(self, tmp_path: Path) -> None:
+        """A valid git repo passes fsck."""
+        # Create a minimal git repo
+        import subprocess
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmp_path, capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True, check=True)
+        (tmp_path / "file.txt").write_text("content")
+        subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, capture_output=True, check=True)
+
+        from anneal.engine.environment import GitEnvironment
+        git = GitEnvironment()
+        result = await git.fsck(tmp_path)
+        assert result is True

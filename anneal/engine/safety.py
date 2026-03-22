@@ -5,28 +5,14 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from anneal.engine.client import get_model_costs as _get_costs
 from anneal.engine.types import CostEstimate, EvalMode, OptimizationTarget
-
-# Pricing tiers per million tokens (input, output)
-_MODEL_COSTS: dict[str, tuple[float, float]] = {
-    "gemini-2.5-flash": (0.15, 0.60),
-    "gemini-2.5-pro": (1.25, 10.00),
-    "gpt-4.1": (2.00, 8.00),
-    "gpt-4.1-mini": (0.40, 1.60),
-}
-# Fallback for unknown models: moderate pricing
-_DEFAULT_COSTS: tuple[float, float] = (2.00, 8.00)
 
 # Stochastic eval token estimates (conservative)
 _GEN_INPUT_TOKENS = 2000
 _GEN_OUTPUT_TOKENS = 1000
 _SCORE_INPUT_TOKENS = 500
 _SCORE_OUTPUT_TOKENS = 10
-
-
-def _get_costs(model: str) -> tuple[float, float]:
-    """Return (input_$/MTok, output_$/MTok) for a model."""
-    return _MODEL_COSTS.get(model, _DEFAULT_COSTS)
 
 
 def estimate_experiment_cost(

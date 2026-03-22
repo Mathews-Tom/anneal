@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Anneal Favicon</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #e5e5e5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+  }
+  .canvas {
+    width: 64px;
+    height: 64px;
+    background: transparent;
+    position: relative;
+    overflow: hidden;
+  }
+</style>
+</head>
+<body>
+
+<div class="canvas">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+    <!-- Left leg of A — solid, representing deterministic paths -->
+    <line x1="10" y1="56" x2="32" y2="6" stroke="#4F46E5" stroke-width="5" stroke-linecap="round"/>
+    <!-- Right leg of A — dashed, representing stochastic exploration -->
+    <line x1="54" y1="56" x2="32" y2="6" stroke="#4F46E5" stroke-width="5" stroke-linecap="round" stroke-dasharray="7,5"/>
+    <!-- Sine wave crossbar — the energy landscape -->
+    <path d="M18,38 C24,30 28,30 32,38 C36,46 40,46 46,38" fill="none" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round" opacity="0.65"/>
+    <!-- Apex dot — the optimal convergence point -->
+    <circle cx="32" cy="6" r="5" fill="#F59E0B"/>
+  </svg>
+</div>
+
+</body>
+</html>

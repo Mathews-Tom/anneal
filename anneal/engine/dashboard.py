@@ -281,6 +281,7 @@ DASHBOARD_HTML = textwrap.dedent("""\
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Anneal Dashboard</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cline x1='12' y1='54' x2='32' y2='8' stroke='%234F46E5' stroke-width='4' stroke-linecap='round'/%3E%3Cline x1='52' y1='54' x2='32' y2='8' stroke='%234F46E5' stroke-width='4' stroke-linecap='round' stroke-dasharray='6,4'/%3E%3Cpath d='M20,38 Q26,32 32,38 Q38,44 44,38' fill='none' stroke='%2394A3B8' stroke-width='2.5' stroke-linecap='round' opacity='0.7'/%3E%3Ccircle cx='32' cy='8' r='4.5' fill='%23F59E0B'/%3E%3C/svg%3E">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;padding:24px}

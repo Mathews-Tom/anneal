@@ -45,3 +45,33 @@ def git_repo(tmp_path: Path) -> Path:
         check=True,
     )
     return tmp_path
+
+
+@pytest.fixture
+def e2e_git_repo(tmp_path: Path) -> Path:
+    """Create a git repo with scope.yaml and artifact.md for e2e tests."""
+    subprocess.run(["git", "init"], cwd=str(tmp_path), capture_output=True, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@test.com"],
+        cwd=str(tmp_path),
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"],
+        cwd=str(tmp_path),
+        capture_output=True,
+        check=True,
+    )
+    (tmp_path / "scope.yaml").write_text(
+        "editable:\n  - artifact.md\nimmutable:\n  - scope.yaml\n"
+    )
+    (tmp_path / "artifact.md").write_text("hello world\n")
+    subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "init"],
+        cwd=str(tmp_path),
+        capture_output=True,
+        check=True,
+    )
+    return tmp_path

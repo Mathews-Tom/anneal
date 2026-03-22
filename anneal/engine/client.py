@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import logging
 import os
+import tomllib
+from pathlib import Path
 
 import openai
 
@@ -24,18 +26,39 @@ logger = logging.getLogger(__name__)
 _OLLAMA_BASE_URL = "http://localhost:11434/v1"
 _LMSTUDIO_BASE_URL = "http://localhost:1234/v1"
 
-# Per-million-token costs: (input, output). Local models are $0.
-_MODEL_COSTS: dict[str, tuple[float, float]] = {
-    "gemini-2.5-flash": (0.15, 0.60),
-    "gemini-2.5-pro": (1.25, 10.0),
-    "gpt-4.1": (2.0, 8.0),
-    "gpt-4.1-mini": (0.4, 1.6),
-    "gpt-5": (5.0, 20.0),
-    "gpt-5-mini": (1.0, 4.0),
-    "claude-sonnet-4-6": (3.0, 15.0),
-    "claude-opus-4-6": (15.0, 75.0),
-    "claude-haiku-4-5": (0.8, 4.0),
-}
+_PRICING_CONFIG_PATH = Path.home() / ".anneal" / "pricing.toml"
+
+# Fallback for unknown models: moderate pricing
+_DEFAULT_COSTS: tuple[float, float] = (2.00, 8.00)
+
+
+def _load_pricing() -> dict[str, tuple[float, float]]:
+    """Load model pricing from config file, with hardcoded defaults."""
+    defaults: dict[str, tuple[float, float]] = {
+        "gemini-2.5-flash": (0.15, 0.60),
+        "gemini-2.5-pro": (1.25, 10.0),
+        "gpt-4.1": (2.0, 8.0),
+        "gpt-4.1-mini": (0.4, 1.6),
+        "gpt-5": (5.0, 20.0),
+        "gpt-5-mini": (1.0, 4.0),
+        "claude-sonnet-4-6": (3.0, 15.0),
+        "claude-opus-4-6": (15.0, 75.0),
+        "claude-haiku-4-5": (0.8, 4.0),
+    }
+    if _PRICING_CONFIG_PATH.exists():
+        with open(_PRICING_CONFIG_PATH, "rb") as f:
+            config = tomllib.load(f)
+        for model, prices in config.get("models", {}).items():
+            defaults[model] = (float(prices["input"]), float(prices["output"]))
+    return defaults
+
+
+_MODEL_COSTS = _load_pricing()
+
+
+def get_model_costs(model: str) -> tuple[float, float]:
+    """Return (input_$/MTok, output_$/MTok) for a model."""
+    return _MODEL_COSTS.get(model, _DEFAULT_COSTS)
 
 
 def make_client(model: str) -> openai.AsyncOpenAI:
@@ -109,10 +132,9 @@ def compute_cost(model: str, input_tokens: int, output_tokens: int) -> float:
         return 0.0
 
     # Strip prefix for cost lookup
-    costs = _MODEL_COSTS.get(model)
-    if costs is None:
-        logger.warning("No cost data for model %s; reporting $0.00", model)
-        return 0.0
+    if model not in _MODEL_COSTS:
+        logger.warning("No cost data for model %s; using default pricing", model)
+    costs = get_model_costs(model)
 
     input_rate, output_rate = costs[0] / 1_000_000, costs[1] / 1_000_000
     return input_tokens * input_rate + output_tokens * output_rate

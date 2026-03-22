@@ -39,7 +39,12 @@ anneal dashboard
 eval: pytest --cov=src | grep TOTAL | awk '{print $4}' → 72.3
 ```
 
-**Stochastic** — an LLM judges N samples against K binary criteria. Majority voting (3 votes per judgment) reduces noise. Bootstrap CI provides variance estimates, though statistical power depends on sample count — higher N gives more reliable comparisons.
+**Stochastic** — an LLM judges N samples against K binary criteria. Supports two comparison modes:
+
+- **Majority voting** (default) — 3 votes per judgment, binary YES/NO, Wilcoxon signed-rank test for comparison (with Cohen's d fallback for n < 6 paired samples)
+- **Bradley-Terry** — Bayesian Beta estimation with Laplace smoothing, calibrated uncertainty, early stopping when the 95% CI clears the 0.5 threshold (saves 1–8 API calls per criterion per sample)
+
+Bootstrap CI provides variance estimates. Position debiasing splits votes between forward and reverse criterion orderings when votes ≥ 2.
 
 ```text
 criteria:
@@ -50,7 +55,7 @@ samples: 10 test prompts × 4 criteria → score with confidence interval
 
 ## Where Anneal Works
 
-The system works when: (1) the artifact is a text file in a git repo, (2) quality is measurable as a scalar, and (3) the feedback loop completes in under ~10 minutes.
+The system works when: (1) the artifact is a text file in a git repo, (2) quality is measurable as a scalar (or per-criterion vector for Pareto optimization), and (3) the feedback loop completes in under ~10 minutes.
 
 | Use Case                             | Eval Mode     | Feedback Speed   | Verdict         |
 | ------------------------------------ | ------------- | ---------------- | --------------- |
@@ -71,7 +76,6 @@ The system works when: (1) the artifact is a text file in a git repo, (2) qualit
 
 | Use Case                                   | Reason                                                                       |
 | ------------------------------------------ | ---------------------------------------------------------------------------- |
-| **Multi-objective without composition**    | Single scalar metric. Compose objectives or use constraints.                 |
 | **Non-git projects / binary artifacts**    | Git worktrees + text diffs are the mutation mechanism.                       |
 | **Live system tuning (real-time metrics)** | Evaluates at experiment end, not continuously.                               |
 | **Database schema migrations**             | Multi-step stateful operations, not file edits.                              |
@@ -79,35 +83,78 @@ The system works when: (1) the artifact is a text file in a git repo, (2) qualit
 | **Embedding model selection**              | Re-embedding a corpus isn't a file edit. One-shot comparison, not iterative. |
 | **Inter-agent protocol changes**           | Requires coordinated edits across multiple files simultaneously.             |
 
-See [docs/use-cases.md](docs/use-cases.md) for detailed analysis of each scenario.
-
 ## Architecture
 
 ```text
 anneal/engine/
-  agent.py          # LLM mutation (Claude Code subprocess or API mode)
-  eval.py           # Deterministic + stochastic evaluation with bootstrap CI
-  runner.py         # Experiment state machine (mutate → eval → decide → log)
-  scope.py          # Editable/immutable enforcement via git status
-  knowledge.py      # JSONL experiment store, consolidation, similarity retrieval
-  learning_pool.py  # Cross-condition, cross-target, cross-project knowledge transfer
-  search.py         # Greedy, simulated annealing, population-based search
-  safety.py         # Budget caps, failure limits, disk checks, process time-boxing
-  dashboard.py      # File-based SSE live dashboard
-  environment.py    # Git worktree management
-  registry.py       # Target configuration (config.toml persistence)
-  context.py        # Token budget assembly with priority-ordered truncation
+  runner.py            # Experiment state machine (mutate → eval → decide → log)
+  eval.py              # Deterministic + stochastic eval, Bradley-Terry, position debiasing
+  eval_cache.py        # Content-hash LRU cache for eval results
+  search.py            # Greedy, simulated annealing (adaptive), population (crossover), Pareto
+  bayesian.py          # GP surrogate model for mutation ranking (optional scikit-learn)
+  strategy_selector.py # Thompson Sampling meta-strategy over search algorithms
+  archive.py           # MAP-Elites quality-diversity archive
+  agent.py             # LLM mutation (Claude Code subprocess or API mode)
+  scope.py             # Editable/immutable enforcement with path traversal protection
+  knowledge.py         # JSONL experiment store, TF-IDF/embedding retrieval, sliding window drift
+  learning_pool.py     # Cross-condition/target/project knowledge transfer with domain filtering
+  context.py           # Token budget assembly with per-criterion feedback formatting
+  environment.py       # Git worktree management with fsck integrity checks
+  safety.py            # Budget caps, failure limits, disk checks, process time-boxing
+  client.py            # Multi-provider LLM client with configurable pricing (TOML overlay)
+  scheduler.py         # Sequential target scheduler with stale lock recovery
+  registry.py          # Target configuration (config.toml persistence)
+  dashboard.py         # File-based SSE live dashboard
 ```
 
 ## Key Features
 
-- **Scope enforcement** — declare what the agent can and cannot modify. Violations are reverted automatically.
-- **Knowledge compounding** — experiment history + consolidated learnings + cross-condition insights available for agent context (opt-in per target).
-- **Statistical comparison** — Wilcoxon signed-rank tests for stochastic eval, bootstrap confidence intervals, majority voting. Statistical power scales with sample count; small N (10) provides directional signal, not high-confidence decisions.
-- **Cost control** — per-experiment and daily budget caps. Cost estimated from token counts and model pricing. Local models tracked at $0.
-- **Safety** — process group time-boxing (SIGKILL), consecutive failure halting, disk space checks, JSONL corruption recovery.
-- **Search strategies** — greedy (default), simulated annealing (escape local optima), population-based (tournament selection).
+### Core
+
+- **Scope enforcement** — declare what the agent can and cannot modify. Path traversal attempts and absolute paths are rejected. Violations are reverted automatically.
+- **Knowledge compounding** — experiment history + consolidated learnings + cross-condition insights available for agent context. Per-criterion feedback (PASS/FAIL per criterion) helps the agent target specific weaknesses.
+- **Cost control** — per-experiment and daily budget caps. Pricing loaded from `~/.anneal/pricing.toml` with hardcoded defaults. Local models tracked at $0.
+- **Safety** — process group time-boxing (SIGKILL), consecutive failure halting, disk space checks, JSONL corruption recovery, git fsck integrity checks after kill recovery.
+- **Graceful shutdown** — `anneal stop --target <id>` writes a stop file; the runner exits cleanly after the current experiment.
+
+### Statistical Rigor
+
+- **Wilcoxon signed-rank test** for stochastic comparison with minimum sample size guard (n ≥ 6); falls back to Cohen's d effect-size threshold for small samples.
+- **Holm-Bonferroni correction** adjusts acceptance threshold across the consolidation window, reducing false positive rate by ~86% on null distributions.
+- **Bootstrap confidence intervals** with deterministic seeding (float precision normalized for cross-platform reproducibility).
+- **Held-out evaluation** with two-tier divergence detection: 10% warning, 25% critical (possible evaluator compromise).
+- **Sliding window drift detection** compares first-half vs second-half variance within consolidation windows to catch temporal drift.
+
+### Search Strategies
+
+- **Greedy** (default) — accept only strict improvements, verified by statistical test.
+- **Simulated annealing** — adaptive cooling with reheat when acceptance drops below target rate. Escapes local optima early, converges to greedy behavior over time.
+- **Population-based** — tournament selection with LLM-guided crossover. Top candidates' hypotheses are combined into crossover prompts.
+- **Pareto** — multi-objective search over per-criterion score vectors. Maintains a Pareto front; non-dominated trade-off solutions are preserved.
+- **Thompson Sampling** — contextual bandit meta-strategy that adaptively selects between search algorithms based on observed reward.
+- **Bayesian surrogate** — Gaussian Process model predicts mutation quality from experiment history. Expected Improvement acquisition balances exploration and exploitation. Requires optional `scikit-learn` dependency.
+
+### Evaluation Intelligence
+
+- **Per-criterion structured feedback** — agents see which criteria passed/failed, not just the aggregate score.
+- **Position debiasing** — when votes ≥ 2, splits between forward and reverse criterion orderings to cancel LLM judge position bias at zero additional API cost.
+- **Bradley-Terry comparison** — calibrated Bayesian strength estimation with early stopping, replacing binary majority voting when configured.
+- **Eval result caching** — content-hash LRU cache avoids re-evaluating identical artifact content + criteria combinations.
+- **Multi-fidelity pipeline** — cheap deterministic stages filter out bad mutations before expensive stochastic evaluation. Constraint pre-checks also run before eval.
+
+### Knowledge System
+
+- **TF-IDF similarity retrieval** — IDF-weighted cosine similarity replaces word-level Jaccard for hypothesis matching.
+- **Embedding-based retrieval** (optional) — sentence-transformer embeddings with lazy loading and TF-IDF fallback when `sentence-transformers` is not installed.
+- **Domain-aware learning transfer** — cross-domain learnings are penalized by a configurable factor, preventing negative transfer between unrelated optimization targets.
+- **Criterion delta exposure** — learning summaries show per-criterion improvements/regressions, not just aggregate score deltas.
+- **MAP-Elites archive** — quality-diversity archive maintaining best solutions per behavioral region, enabling warm-starting and trade-off exploration.
+
+### Operations
+
 - **Meta-optimization** — on plateau, the agent revises its own optimization strategy (program.md).
+- **Stale lock recovery** — scheduler detects and removes lock files older than 1 hour from crashed runners.
+- **Concurrent consolidation safety** — check-and-act consolidation is atomic under FileLock.
 - **Live dashboard** — `anneal dashboard` reads from `.anneal/` directory. No coupling to the runner process.
 
 ## Quick Start
@@ -115,6 +162,9 @@ anneal/engine/
 ```bash
 # Install
 uv pip install -e .
+
+# Install with ML extras (Bayesian surrogate)
+uv pip install -e ".[ml]"
 
 # Initialize in a git repo
 anneal init
@@ -132,31 +182,51 @@ anneal register \
 # Run 20 experiments
 anneal run --target my-target --experiments 20
 
+# Stop gracefully
+anneal stop --target my-target
+
 # Monitor
 anneal status --target my-target
 anneal history --target my-target
 anneal dashboard --open
 ```
 
+## Testing
+
+```bash
+# Run all tests (391 tests)
+uv run pytest tests/ -x -q
+
+# Run with coverage
+uv run pytest tests/ --cov=anneal --cov-report=term-missing
+
+# Run e2e tests only
+uv run pytest tests/test_e2e.py -v
+
+# Run validation benchmarks
+uv run python benchmarks/bench_phase2_false_positives.py
+uv run python benchmarks/bench_phase3_sa_convergence.py
+uv run python benchmarks/bench_phase5_retrieval_precision.py
+```
+
 ## Project Status
 
-262 tests passing.
+391 tests passing. 3 validation benchmarks passing.
 
 ### Complete
 
 - Core engine (git worktrees, scope enforcement, registry, agent invoker, eval engine, runner state machine)
 - Production hardening (safety layer, knowledge store, learning pool, notifications, JSONL recovery)
 - Multi-target orchestration, context budget assembly, rate limiting, background daemon
-- Simulated annealing, population-based search, meta-optimization, held-out evaluation
-- Evaluator drift monitoring, confidence decay, cross-project learning pool
-- File-based live dashboard, deployment-tier approval gates
-- Repeatable validation gate experiments (`experiments/gate1-guided-search/` through `gate4-multi-domain-stress/`)
-
-### In progress
-
-- Validation gate execution (Gate 1 passed, Gates 2–4 running)
+- Search strategies: greedy, simulated annealing (adaptive), population (crossover), Pareto, Thompson Sampling, Bayesian surrogate
+- Statistical rigor: Wilcoxon guard, Holm-Bonferroni correction, criterion name tracking, divergence thresholds
+- Evaluation intelligence: per-criterion feedback, position debiasing, Bradley-Terry comparison, eval caching, multi-fidelity pipeline
+- Knowledge upgrades: TF-IDF retrieval, embedding-based retrieval (optional), domain-aware transfer, criterion delta summaries
+- Operational hardening: `anneal stop`, git fsck, constraint pre-check ordering, pricing externalization
+- Quality-diversity archive (MAP-Elites), stale lock recovery, concurrent consolidation safety
+- File-based live dashboard, deployment-tier approval gates, meta-optimization
+- End-to-end test suite, validation benchmark suite
 
 ### Planned
 
 - Experiment scaffolding — `anneal suggest` generates experiment configs from natural-language problem descriptions
-- Semantic retrieval — embedding-based similarity for knowledge store and learning pool (currently Jaccard word-level)

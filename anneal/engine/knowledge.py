@@ -22,6 +22,25 @@ from anneal.engine.types import ConsolidationRecord, DriftEntry, ExperimentRecor
 
 logger = logging.getLogger(__name__)
 
+_EMBEDDING_AVAILABLE = False
+_embedding_model = None
+
+
+def _get_embedding_model() -> object | None:
+    """Lazy-load sentence transformer model."""
+    global _embedding_model, _EMBEDDING_AVAILABLE
+    if _embedding_model is not None:
+        return _embedding_model
+    try:
+        from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
+
+        _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+        _EMBEDDING_AVAILABLE = True
+        return _embedding_model
+    except ImportError:
+        _EMBEDDING_AVAILABLE = False
+        return None
+
 
 class KnowledgeError(Exception):
     """Raised on knowledge store failures."""
@@ -243,22 +262,13 @@ class KnowledgeStore:
             with open(self._hypotheses_file, "a") as f:
                 f.write(entry + "\n")
 
-    def retrieve_similar(
+    def _retrieve_similar_tfidf(
         self, query: str, k: int = 5
-    ) -> list[ExperimentRecord]:
-        """Return K most similar past experiments by hypothesis similarity.
-
-        Uses Jaccard word overlap. Returns empty list when fewer than
-        COLD_START_THRESHOLD records exist (noise > signal).
-        """
-        count = self.record_count()
-        if count < self.COLD_START_THRESHOLD:
-            return []
-
+    ) -> list[tuple[str, float]]:
+        """Return top-k (record_id, score) pairs using TF-IDF cosine similarity."""
         if not self._hypotheses_file.exists():
             return []
 
-        # Load hypothesis index
         entries: list[dict[str, str]] = []
         with open(self._hypotheses_file) as f:
             for line in f:
@@ -269,18 +279,72 @@ class KnowledgeStore:
         if not entries:
             return []
 
-        # Score by TF-IDF cosine similarity
         index = TFIDFIndex()
         for entry in entries:
             index.add(entry["id"], entry["hypothesis"])
 
-        scored_pairs = index.query(query, k=k)
-        top_ids = [doc_id for doc_id, _ in scored_pairs]
+        return index.query(query, k=k)
 
-        # Load matching records
-        all_records = self.load_records()
-        records_by_id = {r.id: r for r in all_records}
-        return [records_by_id[rid] for rid in top_ids if rid in records_by_id]
+    def retrieve_similar_embedding(
+        self, query: str, k: int = 5
+    ) -> list[tuple[str, float]]:
+        """Retrieve similar hypotheses using sentence embeddings.
+
+        Returns list of (record_id, similarity_score) pairs.
+        Falls back to TF-IDF if sentence-transformers not installed.
+        """
+        model = _get_embedding_model()
+        if model is None:
+            return self._retrieve_similar_tfidf(query, k)
+
+        if not self._hypotheses_file.exists():
+            return []
+
+        entries: list[dict[str, str]] = []
+        with open(self._hypotheses_file) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    entries.append(json.loads(line))
+
+        if not entries:
+            return []
+
+        texts = [e["hypothesis"] for e in entries]
+        ids = [e["id"] for e in entries]
+
+        import numpy as np
+
+        query_emb = model.encode(query, convert_to_numpy=True)  # type: ignore[union-attr]
+        doc_embs = model.encode(texts, convert_to_numpy=True)  # type: ignore[union-attr]
+
+        query_norm = query_emb / (np.linalg.norm(query_emb) + 1e-10)
+        doc_norms = doc_embs / (np.linalg.norm(doc_embs, axis=1, keepdims=True) + 1e-10)
+        similarities = doc_norms @ query_norm
+
+        top_indices = np.argsort(similarities)[-k:][::-1]
+        return [(ids[i], float(similarities[i])) for i in top_indices]
+
+    def retrieve_similar(
+        self, query: str, k: int = 5
+    ) -> list[ExperimentRecord]:
+        """Return K most similar past experiments by hypothesis similarity.
+
+        Uses sentence embeddings when available, TF-IDF otherwise.
+        Returns empty list when fewer than COLD_START_THRESHOLD records
+        exist (noise > signal).
+        """
+        count = self.record_count()
+        if count < self.COLD_START_THRESHOLD:
+            return []
+
+        if _EMBEDDING_AVAILABLE or _get_embedding_model() is not None:
+            pairs = self.retrieve_similar_embedding(query, k)
+        else:
+            pairs = self._retrieve_similar_tfidf(query, k)
+
+        all_records = {r.id: r for r in self.load_records()}
+        return [all_records[rid] for rid, _ in pairs if rid in all_records]
 
     # ------------------------------------------------------------------
     # 2.16, 2.17, 2.18 — Consolidation

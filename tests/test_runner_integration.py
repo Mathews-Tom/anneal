@@ -603,3 +603,32 @@ class TestDeploymentWithConstraint:
         # Rejected at approval gate, never reaches eval or constraint check
         assert record.outcome is Outcome.DISCARDED
         assert record.failure_mode == "approval_rejected"
+
+
+# =========================================================================
+# Step 6.1: Stop file halts run loop
+# =========================================================================
+
+
+class TestRunnerStopFile:
+    """Verify .stop file halts the run loop."""
+
+    @pytest.mark.asyncio
+    async def test_stop_file_halts_loop(self, tmp_path: Path) -> None:
+        _make_git_repo(tmp_path)
+        target = _make_target(str(tmp_path))
+        from anneal.engine.scope import compute_scope_hash
+        target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
+
+        # Create knowledge_path and .stop file
+        knowledge_dir = Path(target.knowledge_path)
+        knowledge_dir.mkdir(parents=True, exist_ok=True)
+        stop_file = knowledge_dir / ".stop"
+        stop_file.write_text("1234567890")
+
+        runner, _, _ = _build_runner(tmp_path)
+        records = await runner.run_loop(target, max_experiments=10)
+
+        # Loop should have exited immediately due to stop file
+        assert len(records) == 0
+        assert not stop_file.exists()  # Stop file should be cleaned up

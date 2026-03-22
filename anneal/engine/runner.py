@@ -492,6 +492,13 @@ class ExperimentRunner:
                 logger.info("Stop requested for target %s", target.id)
                 break
 
+            # Check for .stop file (from CLI `anneal stop`)
+            stop_file = Path(target.knowledge_path) / ".stop"
+            if stop_file.exists():
+                stop_file.unlink()
+                logger.info("Stop file detected for target %s", target.id)
+                break
+
             if max_experiments is not None and len(records) >= max_experiments:
                 break
 

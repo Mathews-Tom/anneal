@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import argparse
 import sys
+import time
 from pathlib import Path
 
 from rich.console import Console
@@ -529,9 +530,20 @@ def _handle_run(args: argparse.Namespace) -> None:
 
 
 def _handle_stop(args: argparse.Namespace) -> None:
-    """Handle ``anneal stop``."""
-    console.print(f"[yellow]anneal stop[/yellow] is not yet implemented.")
-    sys.exit(0)
+    """Handle ``anneal stop``: write stop signal to target's status file."""
+    repo_root = Path.cwd()
+    target_id = args.target
+
+    anneal_dir = repo_root / ".anneal"
+    if not anneal_dir.exists():
+        console.print("[red]Not an anneal project. Run 'anneal init' first.[/red]")
+        sys.exit(1)
+
+    stop_file = anneal_dir / "targets" / target_id / ".stop"
+    stop_file.parent.mkdir(parents=True, exist_ok=True)
+    stop_file.write_text(str(time.time()))
+    console.print(f"[yellow]Stop signal sent to target {target_id}.[/yellow]")
+    console.print("The runner will stop after the current experiment completes.")
 
 
 def _handle_status(args: argparse.Namespace) -> None:

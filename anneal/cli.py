@@ -347,6 +347,57 @@ def _handle_register(args: argparse.Namespace) -> None:
     )
 
 
+def _print_dry_run(targets: list[OptimizationTarget], max_experiments: int | None) -> None:
+    """Print cost estimate for each target without running experiments."""
+    from anneal.engine.context import estimate_tokens
+    from anneal.engine.safety import estimate_experiment_cost
+
+    n = max_experiments or 50
+
+    for target in targets:
+        # Estimate context size from artifact content
+        artifact_tokens = sum(
+            estimate_tokens(Path(target.worktree_path, p).read_text())
+            for p in target.artifact_paths
+            if Path(target.worktree_path, p).exists()
+        )
+        estimate = estimate_experiment_cost(target, context_tokens=artifact_tokens)
+
+        total = estimate.total_usd * n
+        budget_info = ""
+        if target.budget_cap:
+            cap = target.budget_cap.max_usd_per_day
+            max_before_pause = int(cap / estimate.total_usd) if estimate.total_usd > 0 else n
+            budget_info = f"\n  Daily budget cap:         ${cap:.2f} (pauses after ~{max_before_pause} experiments)"
+
+        eval_detail = ""
+        if target.eval_config.stochastic:
+            sto = target.eval_config.stochastic
+            k = len(sto.criteria)
+            votes = sto.judgment_votes
+            calls = sto.sample_count * k * votes * 2  # x2 for position debiasing
+            eval_detail = (
+                f"\n  Eval breakdown:           {sto.sample_count} samples x "
+                f"{k} criteria x {votes} votes x 2 (debiasing) = {calls} judge calls"
+            )
+
+        console.print(
+            Panel(
+                f"Target:                     [bold]{target.id}[/bold]\n"
+                f"  Eval mode:                {target.eval_mode.value}\n"
+                f"  Context tokens:           ~{artifact_tokens:,}\n"
+                f"  Est. cost per experiment: ${estimate.total_usd:.4f}"
+                f"{eval_detail}\n"
+                f"  Est. total for {n} experiments: ${total:.2f}"
+                f"{budget_info}\n"
+                f"  Est. wall-clock time:     ~{n * target.time_budget_seconds / 60:.0f} min "
+                f"(at {target.time_budget_seconds}s/experiment)",
+                title="anneal run --dry-run",
+                style="cyan",
+            )
+        )
+
+
 def _handle_run(args: argparse.Namespace) -> None:
     """Handle ``anneal run``."""
     from rich.progress import (
@@ -397,6 +448,11 @@ def _handle_run(args: argparse.Namespace) -> None:
             overrides.append(f"agent_budget=${args.agent_budget:.2f}")
     if overrides:
         console.print(f"  [dim]Runtime overrides: {', '.join(set(overrides))}[/dim]")
+
+    # --dry-run: preview cost estimates and exit
+    if getattr(args, "dry_run", False):
+        _print_dry_run(targets, args.experiments)
+        return
 
     # F5: Global learning pool
     learning_pool = None
@@ -1081,7 +1137,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--experiments", type=int, help="Stop after N experiments")
     run.add_argument("--until", type=float, help="Stop when score reaches threshold")
     run.add_argument("--foreground", action="store_true", help="Block terminal")
-    run.add_argument("--dry-run", action="store_true", help="One experiment, print output, do not commit")
+    run.add_argument("--dry-run", action="store_true", help="Preview cost estimate without running experiments")
     # Runtime overrides (do not persist — apply to this run only)
     run.add_argument("--samples", type=int, help="Override sample count (N) for this run")
     run.add_argument("--confidence", type=float, help="Override confidence level for this run")

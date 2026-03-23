@@ -7,6 +7,7 @@ in the system design.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import threading
@@ -584,6 +585,22 @@ class ExperimentRunner:
     # Experiment loop
     # ------------------------------------------------------------------
 
+    async def _run_lifecycle_command(self, command: str, label: str) -> None:
+        """Run a setup/teardown command for eval environment lifecycle."""
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            logger.error(
+                "Eval environment %s failed (exit %d): %s",
+                label, proc.returncode, stderr.decode(errors="replace").strip(),
+            )
+        else:
+            logger.info("Eval environment %s completed", label)
+
     async def run_loop(
         self,
         target: OptimizationTarget,
@@ -594,6 +611,11 @@ class ExperimentRunner:
         """Run experiments in a loop until stopped."""
         self._clear_stop(target.id)
         records: list[ExperimentRecord] = []
+
+        # Eval environment lifecycle: run setup command once before loop
+        eval_env = target.eval_environment
+        if eval_env and eval_env.setup_command:
+            await self._run_lifecycle_command(eval_env.setup_command, "setup")
 
         # Restore loop state from previous run (crash recovery)
         state_path = Path(target.knowledge_path) / ".loop-state.json"
@@ -765,6 +787,10 @@ class ExperimentRunner:
             elif record.outcome is Outcome.KILLED:
                 state = RunnerState.KILLED
             await self._write_status(target, state, record)
+
+        # Eval environment lifecycle: run teardown command after loop
+        if eval_env and eval_env.teardown_command:
+            await self._run_lifecycle_command(eval_env.teardown_command, "teardown")
 
         return records
 

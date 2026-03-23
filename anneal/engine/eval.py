@@ -51,14 +51,52 @@ def _bootstrap_ci(
 
 
 class DeterministicEvaluator:
-    """Runs a shell command, parses a number from output."""
+    """Runs a shell command, parses a number from output.
+
+    Supports retry on failure and flake detection (median of 3 runs)
+    for network-dependent eval commands.
+    """
 
     async def evaluate(
         self,
         worktree_path: Path,
         config: DeterministicEval,
     ) -> EvalResult:
-        # Run the command with timeout
+        if config.flake_detection:
+            scores = []
+            for i in range(3):
+                result = await self._evaluate_with_retry(worktree_path, config)
+                scores.append(result.score)
+                logger.debug("Flake detection run %d/3: score=%.4f", i + 1, result.score)
+            median = float(sorted(scores)[1])
+            return EvalResult(score=median)
+        return await self._evaluate_with_retry(worktree_path, config)
+
+    async def _evaluate_with_retry(
+        self,
+        worktree_path: Path,
+        config: DeterministicEval,
+    ) -> EvalResult:
+        last_error: EvalError | None = None
+        for attempt in range(config.max_retries):
+            try:
+                return await self._evaluate_once(worktree_path, config)
+            except EvalError as exc:
+                last_error = exc
+                if attempt < config.max_retries - 1:
+                    logger.warning(
+                        "Eval attempt %d/%d failed: %s. Retrying in %.1fs...",
+                        attempt + 1, config.max_retries, exc, config.retry_delay_seconds,
+                    )
+                    await asyncio.sleep(config.retry_delay_seconds)
+        raise last_error  # type: ignore[misc]
+
+    async def _evaluate_once(
+        self,
+        worktree_path: Path,
+        config: DeterministicEval,
+    ) -> EvalResult:
+        """Single evaluation attempt: run command, parse output, return score."""
         run_proc: asyncio.subprocess.Process | None = None
         try:
             run_proc = await asyncio.create_subprocess_shell(
@@ -79,14 +117,13 @@ class DeterministicEvaluator:
                 f"run_command timed out after {config.timeout_seconds}s: {config.run_command}"
             )
 
-        assert run_proc is not None  # Assigned above; TimeoutError re-raises
+        assert run_proc is not None
         if run_proc.returncode != 0:
             raise EvalError(
                 f"run_command exited with code {run_proc.returncode}: "
                 f"{run_stderr.decode(errors='replace').strip()}"
             )
 
-        # Pipe stdout through parse_command
         parse_proc: asyncio.subprocess.Process | None = None
         try:
             parse_proc = await asyncio.create_subprocess_shell(
@@ -108,7 +145,7 @@ class DeterministicEvaluator:
                 f"parse_command timed out after {config.timeout_seconds}s: {config.parse_command}"
             )
 
-        assert parse_proc is not None  # Assigned above; TimeoutError re-raises
+        assert parse_proc is not None
         if parse_proc.returncode != 0:
             raise EvalError(
                 f"parse_command exited with code {parse_proc.returncode}: "

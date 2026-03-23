@@ -8,6 +8,7 @@ It owns config.toml and mediates all target registration and deregistration.
 from __future__ import annotations
 
 import logging
+import os
 import tomllib
 from pathlib import Path
 
@@ -126,6 +127,14 @@ class Registry:
                 f"Scope validation failed for {target.id}:\n"
                 + "\n".join(f"  - {e}" for e in errors)
             )
+
+        # Validate eval environment variables (fail fast, not mid-experiment)
+        if target.eval_environment and target.eval_environment.env_vars:
+            missing = [v for v in target.eval_environment.env_vars if v not in os.environ]
+            if missing:
+                raise RegistryError(
+                    f"Eval environment requires env vars not set: {', '.join(missing)}"
+                )
 
         # Compute and store scope hash
         target.scope_hash = compute_scope_hash(scope_path)

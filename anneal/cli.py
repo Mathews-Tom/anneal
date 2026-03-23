@@ -632,7 +632,35 @@ def _handle_status(args: argparse.Namespace) -> None:
             status_data = {"state": "UNKNOWN", "last_score": target.baseline_score, "experiment_count": 0}
 
         if getattr(args, "json", False):
-            console.print(json_mod.dumps(status_data, indent=2))
+            from anneal.engine.knowledge import KnowledgeStore
+            from anneal.engine.runner import RunLoopState
+
+            knowledge = KnowledgeStore(repo_root / target.knowledge_path)
+            records = knowledge.load_records()
+            loop_state_path = Path(target.knowledge_path) / ".loop-state.json"
+            loop = RunLoopState.load(loop_state_path)
+
+            kept_records = [r for r in records if r.outcome.value == "KEPT"]
+            enriched = {
+                "target_id": target.id,
+                "runner_state": status_data.get("state", "UNKNOWN"),
+                "total_experiments": loop.total_experiments,
+                "kept_count": loop.kept_count,
+                "baseline_score": target.baseline_score,
+                "current_score": status_data.get("last_score", target.baseline_score),
+                "total_cost_usd": loop.cumulative_cost_usd,
+                "experiments": [
+                    {
+                        "id": r.id,
+                        "outcome": r.outcome.value,
+                        "hypothesis": r.hypothesis,
+                        "score": r.score,
+                        "git_sha": r.git_sha,
+                    }
+                    for r in kept_records[-10:]  # last 10 KEPT
+                ],
+            }
+            console.print(json_mod.dumps(enriched, indent=2))
         else:
             console.print(
                 f"  [bold]{target.id}[/bold]  "

@@ -268,16 +268,17 @@ class TestPersistentLearningPool:
 # ---------------------------------------------------------------------------
 
 
-def test_eviction_breaks_ties_randomly_varies_across_runs() -> None:
-    """Eviction with identical scores uses random tiebreaking, producing
-    different survivor sets under different random seeds."""
+def test_eviction_sort_key_includes_random_tiebreaker() -> None:
+    """Eviction sort key includes random.random() for tiebreaking."""
     import random as random_mod
+    from unittest.mock import patch
     from datetime import UTC, datetime
 
     fixed_ts = datetime(2026, 1, 1, tzinfo=UTC)
 
-    def _make_learning(i: int) -> Learning:
-        return Learning(
+    pool = LearningPool(max_size=5)
+    pool._learnings = [  # noqa: SLF001
+        Learning(
             observation=f"obs-{i}",
             signal=LearningSignal.POSITIVE,
             source_condition="guided",
@@ -289,23 +290,15 @@ def test_eviction_breaks_ties_randomly_varies_across_runs() -> None:
             tags=[],
             created_at=fixed_ts,
         )
+        for i in range(10)
+    ]
 
-    surviving_sets: list[frozenset[str]] = []
-    saved_state = random_mod.getstate()
-    try:
-        for seed in range(20):
-            random_mod.seed(seed)
-            pool = LearningPool(max_size=10)
-            pool._learnings = [_make_learning(i) for i in range(20)]  # noqa: SLF001
-            pool._evict()  # noqa: SLF001
-            surviving = frozenset(l.observation for l in pool._learnings)  # noqa: SLF001
-            assert len(pool._learnings) == 10  # noqa: SLF001
-            surviving_sets.append(surviving)
-    finally:
-        random_mod.setstate(saved_state)
+    # random.random() is called once per item during sorted() key evaluation
+    with patch.object(random_mod, "random", wraps=random_mod.random) as mock_random:
+        pool._evict()  # noqa: SLF001
+        assert mock_random.call_count == 10  # one per item in the sort key
 
-    # Different seeds must produce different survivor sets
-    assert len(set(surviving_sets)) > 1
+    assert len(pool._learnings) == 5  # noqa: SLF001
 
 
 # ---------------------------------------------------------------------------

@@ -344,6 +344,20 @@ def _handle_register(args: argparse.Namespace) -> None:
         console.print(f"[red]Registration failed: {exc}[/red]")
         sys.exit(1)
 
+    # Copy custom failure categories to knowledge directory
+    if args.failure_categories:
+        import shutil
+        fc_path = Path(args.failure_categories)
+        if not fc_path.is_absolute():
+            fc_path = repo_root / fc_path
+        if fc_path.exists():
+            dest = repo_root / knowledge_path / "failure_categories.toml"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(fc_path, dest)
+            console.print(f"  Custom failure categories: {dest}")
+        else:
+            console.print(f"[yellow]Warning: failure categories file not found: {fc_path}[/yellow]")
+
     # Run baseline eval for deterministic targets
     if eval_mode is EvalMode.DETERMINISTIC and deterministic_eval is not None:
         from anneal.engine.eval import DeterministicEvaluator
@@ -490,19 +504,40 @@ def _handle_run(args: argparse.Namespace) -> None:
         notifier = NotificationManager(target.notifications)
 
         # Select search strategy
-        if getattr(args, "search", None) == "annealing":
+        search_choice = getattr(args, "search", None)
+        if search_choice == "annealing":
             from anneal.engine.search import SimulatedAnnealingSearch  # noqa: F811
             search_strategy = SimulatedAnnealingSearch()
-        elif getattr(args, "search", None) == "population":
+        elif search_choice == "population":
             from anneal.engine.search import PopulationSearch  # noqa: F811
             pop_size = getattr(args, "population_size", None) or 4
             search_strategy = PopulationSearch(population_size=pop_size)
+        elif search_choice == "ucb_tree":
+            from anneal.engine.tree_search import UCBTreeSearch
+            tree_path = repo_root / target.knowledge_path / "search_tree.json"
+            if tree_path.exists():
+                search_strategy = UCBTreeSearch.load(tree_path)
+            else:
+                search_strategy = UCBTreeSearch()
+                records = knowledge.load_records()
+                if records:
+                    search_strategy.bootstrap_from_history(records)
         else:
             search_strategy = GreedySearch()
 
         # F6: Set approval callback for deployment-tier targets
         if target.domain_tier is DomainTier.DEPLOYMENT and target.approval_callback is None:
             target.approval_callback = lambda diff: input("Apply changes? [y/N] ").lower() == "y"
+
+        # Initialize failure taxonomy (with custom categories if registered)
+        from anneal.engine.taxonomy import FailureTaxonomy
+        custom_cats = None
+        fc_file = repo_root / target.knowledge_path / "failure_categories.toml"
+        if fc_file.exists():
+            import tomllib
+            fc_data = tomllib.loads(fc_file.read_text(encoding="utf-8"))
+            custom_cats = fc_data.get("categories", [])
+        taxonomy = FailureTaxonomy(custom_categories=custom_cats)
 
         runner = ExperimentRunner(
             git=git,
@@ -514,6 +549,7 @@ def _handle_run(args: argparse.Namespace) -> None:
             knowledge=knowledge,
             notifications=notifier,
             learning_pool=learning_pool,
+            taxonomy=taxonomy,
         )
 
         max_exp = args.experiments or 0

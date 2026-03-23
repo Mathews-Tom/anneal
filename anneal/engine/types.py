@@ -77,6 +77,7 @@ class AgentConfig(BaseModel):
     max_context_tokens: int = Field(default=80_000, gt=0)
     temperature: float = Field(default=0.7, ge=0, le=2.0)
     sandbox: bool = False
+    n_drafts: int = Field(default=1, ge=1, le=10)
 
 
 class DeterministicEval(BaseModel):
@@ -301,6 +302,19 @@ class ScopeViolationResult(BaseModel):
     all_blocked: bool
 
 
+class FailureClassification(BaseModel):
+    """Structured failure mode label for a DISCARDED or BLOCKED experiment.
+
+    Produced by the failure taxonomy classifier after each failed experiment.
+    Provides category, description, and suggested fix direction.
+    """
+
+    category: str
+    description: str
+    fix_direction: str
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
 class ExperimentRecord(BaseModel):
     """One experiment's complete record. Written by runner, read by
     knowledge store, cost tracker, and consolidation."""
@@ -329,6 +343,9 @@ class ExperimentRecord(BaseModel):
     held_out_score: float | None = None
     criterion_names: list[str] | None = None
     per_criterion_scores: dict[str, float] | None = None
+    failure_classification: FailureClassification | None = None
+    drafts_generated: int = Field(default=1)
+    drafts_survived: int = Field(default=1)
 
 
 class CostEstimate(BaseModel):
@@ -357,6 +374,8 @@ class ConsolidationRecord(BaseModel):
     criterion_variances: dict[str, float] = Field(default_factory=dict)
     score_variance: float = 0.0
     verifier_block_rates: dict[str, float] = Field(default_factory=dict)
+    failure_distribution: dict[str, int] = Field(default_factory=dict)
+    blind_spots: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

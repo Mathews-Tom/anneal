@@ -250,6 +250,45 @@ class GitEnvironment:
         _, stderr = await proc.communicate()
         return proc.returncode == 0
 
+    # ------------------------------------------------------------------
+    # Diff capture / apply (multi-draft support)
+    # ------------------------------------------------------------------
+
+    async def capture_diff(self, worktree: Path) -> str:
+        """Capture the current uncommitted changes as a unified diff.
+
+        Returns the diff text. Used for multi-draft isolation:
+        capture each draft's changes before resetting.
+        """
+        return await self._run_git(["diff", "HEAD"], worktree)
+
+    async def apply_diff(self, worktree: Path, diff_text: str) -> bool:
+        """Apply a previously captured diff to the worktree.
+
+        Returns True if applied cleanly, False on failure.
+        """
+        if not diff_text.strip():
+            return False
+        proc = await asyncio.create_subprocess_exec(
+            "git", "apply", "--allow-empty",
+            cwd=str(worktree.resolve()),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr_bytes = await proc.communicate(input=diff_text.encode())
+        if proc.returncode != 0:
+            logger.warning(
+                "Failed to apply diff: %s",
+                stderr_bytes.decode(errors="replace").strip()[:200],
+            )
+            return False
+        return True
+
+    # ------------------------------------------------------------------
+    # Index lock cleanup
+    # ------------------------------------------------------------------
+
     async def cleanup_index_lock(self, worktree_path: Path) -> bool:
         """Remove ``.git/index.lock`` if it exists (for KILLED recovery).
 

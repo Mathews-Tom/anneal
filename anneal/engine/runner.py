@@ -30,6 +30,7 @@ from anneal.engine.registry import Registry
 from anneal.engine.safety import pre_experiment_check
 from anneal.engine.scope import enforce_scope, load_scope, verify_scope_hash
 from anneal.engine.search import GreedySearch, SearchStrategy, SimulatedAnnealingSearch
+from anneal.engine.taxonomy import FailureTaxonomy
 from anneal.engine.types import (
     AgentInvocationResult,
     DeterministicEval,
@@ -153,6 +154,7 @@ class ExperimentRunner:
         knowledge: KnowledgeStore | None = None,
         notifications: NotificationManager | None = None,
         learning_pool: LearningPool | None = None,
+        taxonomy: FailureTaxonomy | None = None,
     ) -> None:
         self._git = git
         self._agent = agent_invoker
@@ -163,6 +165,7 @@ class ExperimentRunner:
         self._knowledge = knowledge
         self._notifications = notifications
         self._learning_pool = learning_pool
+        self._taxonomy = taxonomy
         self._stop_flags: set[str] = set()
         self._stop_lock = threading.Lock()
 
@@ -618,6 +621,20 @@ class ExperimentRunner:
             criterion_names=eval_result.criterion_names,
             per_criterion_scores=eval_result.per_criterion_scores,
         )
+
+        # Classify failures for diagnostic tracking
+        if self._taxonomy and outcome in (Outcome.DISCARDED, Outcome.BLOCKED):
+            try:
+                classification, classify_cost = await self._taxonomy.classify(
+                    hypothesis=hypothesis,
+                    failure_mode=record.failure_mode,
+                    score=eval_result.score,
+                    model=target.agent_config.evaluator_model,
+                )
+                record.failure_classification = classification
+                record.cost_usd += classify_cost
+            except Exception as exc:
+                logger.warning("Failure classification failed for %s: %s", target.id, exc)
 
         if self._knowledge:
             self._knowledge.append_record(record)

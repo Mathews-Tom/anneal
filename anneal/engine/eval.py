@@ -13,14 +13,11 @@ import openai
 
 from anneal.engine.client import compute_cost, make_client, strip_provider_prefix
 from anneal.engine.types import (
-    AgentConfig,
     BinaryCriterion,
-    ConstraintCommand,
     DeterministicEval,
     Direction,
     EvalConfig,
     EvalResult,
-    MetricConstraint,
     StochasticEval,
 )
 
@@ -32,9 +29,6 @@ _API_SEMAPHORE = asyncio.Semaphore(10)
 class EvalError(Exception):
     """Raised on evaluation failures."""
 
-
-# Keep _make_client as an alias for backward compatibility (gate scripts import it)
-_make_client = make_client
 
 
 def _bootstrap_ci(

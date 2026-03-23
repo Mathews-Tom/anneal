@@ -15,7 +15,7 @@ import signal
 from pathlib import Path
 
 from anneal.engine.client import compute_cost, make_client, strip_provider_prefix
-from anneal.engine.types import AgentConfig, AgentInvocationResult, DomainTier
+from anneal.engine.types import AgentConfig, AgentInvocationResult
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +48,6 @@ def _extract_tags(text: str) -> list[str]:
             return [tag.strip() for tag in raw.split(",") if tag.strip()]
     return []
 
-
-# Backward compatibility aliases (gate scripts import these)
-_make_api_client = make_client
-_compute_cost = compute_cost
 
 
 class AgentInvoker:

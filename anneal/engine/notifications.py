@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import sys
 import time
 from pathlib import Path
 
@@ -18,10 +17,6 @@ import httpx
 from anneal.engine.types import NotificationConfig, RunnerState
 
 logger = logging.getLogger(__name__)
-_stderr_handler = logging.StreamHandler(sys.stderr)
-_stderr_handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-logger.addHandler(_stderr_handler)
-logger.setLevel(logging.WARNING)
 
 
 class NotificationManager:

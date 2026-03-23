@@ -268,35 +268,37 @@ class TestPersistentLearningPool:
 # ---------------------------------------------------------------------------
 
 
-def test_eviction_breaks_ties_randomly_varies_across_runs(tmp_path: Path) -> None:
-    """Eviction with identical scores does not always keep the same subset."""
+def test_eviction_sort_key_includes_random_tiebreaker() -> None:
+    """Eviction sort key includes random.random() for tiebreaking."""
+    import random as random_mod
+    from unittest.mock import patch
     from datetime import UTC, datetime
 
     fixed_ts = datetime(2026, 1, 1, tzinfo=UTC)
 
-    surviving_sets: list[frozenset[str]] = []
-    for _ in range(10):
-        pool = LearningPool(max_size=10)
-        for i in range(20):
-            pool.add(
-                Learning(
-                    observation=f"obs-{i}",
-                    signal=LearningSignal.POSITIVE,
-                    source_condition="guided",
-                    source_target="target-1",
-                    source_experiment_ids=[i],
-                    score_delta=0.1,
-                    criterion_deltas={},
-                    confidence=1.0,
-                    tags=[],
-                    created_at=fixed_ts,
-                )
-            )
-        surviving = frozenset(l.observation for l in pool._learnings)  # noqa: SLF001
-        surviving_sets.append(surviving)
+    pool = LearningPool(max_size=5)
+    pool._learnings = [  # noqa: SLF001
+        Learning(
+            observation=f"obs-{i}",
+            signal=LearningSignal.POSITIVE,
+            source_condition="guided",
+            source_target="target-1",
+            source_experiment_ids=[i],
+            score_delta=0.1,
+            criterion_deltas={},
+            confidence=1.0,
+            tags=[],
+            created_at=fixed_ts,
+        )
+        for i in range(10)
+    ]
 
-    # With random tiebreaking, not all 10 runs can produce the same survivor set
-    assert len(set(surviving_sets)) > 1
+    # random.random() is called once per item during sorted() key evaluation
+    with patch.object(random_mod, "random", wraps=random_mod.random) as mock_random:
+        pool._evict()  # noqa: SLF001
+        assert mock_random.call_count == 10  # one per item in the sort key
+
+    assert len(pool._learnings) == 5  # noqa: SLF001
 
 
 # ---------------------------------------------------------------------------

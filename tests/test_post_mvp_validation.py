@@ -25,7 +25,6 @@ from anneal.engine.learning_pool import (
     extract_learning,
 )
 from anneal.engine.registry import (
-    _parse_eval_config,
     _parse_target,
     _serialize_target_toml,
 )
@@ -148,18 +147,18 @@ class TestRegistryRoundTripEvalConfig:
         target = _make_target(held_out_interval=7)
         toml_str = _serialize_target_toml(target)
         data = tomllib.loads(toml_str)["targets"]["val-target"]
-        parsed = _parse_eval_config(data["eval_config"])
+        parsed = EvalConfig.model_validate(data["eval_config"])
         assert parsed.held_out_interval == 7
 
     def test_constraints_roundtrip(self) -> None:
         constraints = [
-            MetricConstraint("clarity", 0.5, Direction.HIGHER_IS_BETTER),
-            MetricConstraint("latency", 100.0, Direction.LOWER_IS_BETTER),
+            MetricConstraint(metric_name="clarity", threshold=0.5, direction=Direction.HIGHER_IS_BETTER),
+            MetricConstraint(metric_name="latency", threshold=100.0, direction=Direction.LOWER_IS_BETTER),
         ]
         target = _make_target(constraints=constraints)
         toml_str = _serialize_target_toml(target)
         data = tomllib.loads(toml_str)["targets"]["val-target"]
-        parsed = _parse_eval_config(data["eval_config"])
+        parsed = EvalConfig.model_validate(data["eval_config"])
         assert len(parsed.constraints) == 2
         assert parsed.constraints[0].metric_name == "clarity"
         assert parsed.constraints[0].threshold == 0.5
@@ -181,7 +180,7 @@ class TestRegistryRoundTripEvalConfig:
         target = _make_target(constraint_commands=cmds)
         toml_str = _serialize_target_toml(target)
         data = tomllib.loads(toml_str)["targets"]["val-target"]
-        parsed = _parse_eval_config(data["eval_config"])
+        parsed = EvalConfig.model_validate(data["eval_config"])
         assert len(parsed.constraint_commands) == 1
         assert parsed.constraint_commands[0].name == "lint"
         assert parsed.constraint_commands[0].run_command == "bash lint.sh"
@@ -190,7 +189,7 @@ class TestRegistryRoundTripEvalConfig:
         target = _make_target()
         toml_str = _serialize_target_toml(target)
         data = tomllib.loads(toml_str)["targets"]["val-target"]
-        parsed = _parse_eval_config(data["eval_config"])
+        parsed = EvalConfig.model_validate(data["eval_config"])
         assert parsed.constraints == []
         assert parsed.constraint_commands == []
 

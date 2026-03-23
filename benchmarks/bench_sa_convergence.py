@@ -1,4 +1,4 @@
-"""Phase 3 Gate: SA-adaptive vs SA-fixed convergence on Rastrigin.
+"""Gate: SA-adaptive vs SA-fixed convergence on Rastrigin.
 
 Simulates 100-step optimization runs on the Rastrigin function.
 Adaptive SA (with reheat) should reach a >=15% lower best Rastrigin
@@ -13,7 +13,7 @@ the final converged value.
 Parameters are calibrated so fixed SA cools too fast and gets stuck
 while adaptive SA can reheat and explore further local optima.
 
-Usage: uv run python benchmarks/bench_phase3_sa_convergence.py
+Usage: uv run python benchmarks/bench_sa_convergence.py
 """
 from __future__ import annotations
 

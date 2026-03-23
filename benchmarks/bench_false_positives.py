@@ -1,10 +1,10 @@
-"""Phase 2 Gate: Verify Holm-Bonferroni correction reduces false positive rate.
+"""Gate: Verify Holm-Bonferroni correction reduces false positive rate.
 
 Runs 100 synthetic 50-experiment windows with known null distribution
 (no real improvement). Counts how many false positives occur with and
 without the correction. Expected: correction reduces FP rate by >50%.
 
-Usage: uv run python benchmarks/bench_phase2_false_positives.py
+Usage: uv run python benchmarks/bench_false_positives.py
 """
 from __future__ import annotations
 

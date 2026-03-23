@@ -13,16 +13,22 @@ dependencies = [
     "pyyaml>=6.0.3",
     "filelock>=3.25.2",
     "httpx>=0.28.1",
-    "aiohttp>=3.13.3",
+    "pydantic>=2.11",
+    "tomli-w>=1.1",
 ]
 
 [project.scripts]
 anneal = "anneal.cli:main"
 
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
 [tool.setuptools.packages.find]
 include = ["anneal*"]
 
 [project.optional-dependencies]
+dashboard = ["aiohttp>=3.13.3"]
 ml = ["scikit-learn>=1.5"]
 
 [dependency-groups]

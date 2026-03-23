@@ -160,22 +160,11 @@ class TestInvokeMeta:
             stdin_text = stdin_bytes.decode()
             assert "meta-optimizing" in stdin_text
 
-    @pytest.mark.asyncio
-    async def test_meta_unknown_mode_raises(self, tmp_path: Path) -> None:
-        invoker = AgentInvoker()
-        config = _make_config(mode="unknown")
+    def test_meta_unknown_mode_raises(self) -> None:
+        from pydantic import ValidationError
 
-        program_md = tmp_path / "program.md"
-        program_md.write_text("content")
-
-        with pytest.raises(AgentInvocationError, match="Unknown agent mode"):
-            await invoker.invoke_meta(
-                config,
-                meta_prompt="improve",
-                worktree_path=tmp_path,
-                time_budget_seconds=60,
-                program_md_path=program_md,
-            )
+        with pytest.raises(ValidationError, match="Input should be 'claude_code' or 'api'"):
+            _make_config(mode="unknown")
 
     @pytest.mark.asyncio
     async def test_meta_bash_excluded(self, tmp_path: Path) -> None:

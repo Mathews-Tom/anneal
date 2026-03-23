@@ -11,7 +11,6 @@ import logging
 import math
 import os
 from collections import Counter
-from dataclasses import asdict
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -59,7 +58,7 @@ def _serialize_value(obj: object) -> object:
 
 def _record_to_json(record: ExperimentRecord) -> str:
     """Serialize an ExperimentRecord to a single JSON line."""
-    data = asdict(record)
+    data = record.model_dump(mode="python")
     return json.dumps(data, default=_serialize_value, separators=(",", ":"))
 
 
@@ -73,7 +72,7 @@ def _json_to_record(line: str) -> ExperimentRecord:
 
 def _consolidation_to_json(record: ConsolidationRecord) -> str:
     """Serialize a ConsolidationRecord to a single JSON line."""
-    data = asdict(record)
+    data = record.model_dump(mode="python")
     return json.dumps(data, default=_serialize_value, separators=(",", ":"))
 
 

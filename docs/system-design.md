@@ -810,9 +810,9 @@ For cross-condition retrieval, the guided agent calls `retrieve(scope=TARGET, ex
 
 Cross-condition insights are injected as a separate context section at priority 4 (after same-condition history, before eval criteria):
 
-| Slot | Budget | Priority |
-|------|--------|----------|
-| Cross-condition insights (top 5 learnings) | ~800 tokens | 4 |
+| Slot                                       | Budget      | Priority |
+| ------------------------------------------ | ----------- | -------- |
+| Cross-condition insights (top 5 learnings) | ~800 tokens | 4        |
 
 If context budget is tight, this slot reduces K before other slots are truncated.
 
@@ -1034,10 +1034,10 @@ Maps experiment history to a tree where each node is a git commit. `select_paren
 
 A dedicated meta-optimizer that rewrites mutation instructions between experiments. Analyzes recent experiment outcomes (hypotheses, scores, failure classifications) and generates refined guidance injected at context priority 2 (after system prompt, before artifact). Operates at a faster cadence than plateau-triggered program.md rewriting.
 
-| Mechanism | Trigger | Target | Timescale |
-|-----------|---------|--------|-----------|
-| Policy agent | Every N experiments | In-context instructions | Continuous |
-| Plateau meta | M consecutive non-KEPT | program.md file | Episodic |
+| Mechanism    | Trigger                | Target                  | Timescale  |
+| ------------ | ---------------------- | ----------------------- | ---------- |
+| Policy agent | Every N experiments    | In-context instructions | Continuous |
+| Plateau meta | M consecutive non-KEPT | program.md file         | Episodic   |
 
 ## Per-Experiment Cycle
 

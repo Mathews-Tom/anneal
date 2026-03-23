@@ -29,6 +29,7 @@ from anneal.engine.safety import pre_experiment_check
 from anneal.engine.scope import enforce_scope, load_scope, verify_scope_hash
 from anneal.engine.search import GreedySearch, SearchStrategy
 from anneal.engine.types import (
+    AgentInvocationResult,
     DeterministicEval,
     Direction,
     DomainTier,
@@ -37,6 +38,7 @@ from anneal.engine.types import (
     OptimizationTarget,
     Outcome,
     RunnerState,
+    ScopeConfig,
 )
 
 logger = logging.getLogger(__name__)
@@ -142,12 +144,9 @@ class ExperimentRunner:
         worktree = Path(target.worktree_path)
         start_time = time.monotonic()
         experiment_id = str(uuid.uuid4())
-        cost_usd = 0.0
 
-        # 1. Record pre-experiment state
-        pre_experiment_sha = await self._git.rev_parse(worktree, "HEAD")
-
-        # 2. Verify scope integrity (scope lives in repo root, not worktree)
+        # 1. Record pre-experiment state and verify scope integrity
+        pre_sha = await self._git.rev_parse(worktree, "HEAD")
         base = self._repo_root if self._repo_root else worktree
         scope_path = base / target.scope_path
         if not verify_scope_hash(scope_path, target.scope_hash):
@@ -156,88 +155,136 @@ class ExperimentRunner:
                 f"Re-register with: anneal re-register --target {target.id}"
             )
         scope = load_scope(scope_path)
-
-        # Read artifact content for prompt building and stochastic eval
         artifact_content = self._read_artifacts(worktree, target.artifact_paths)
-
-        # Snapshot pre-agent git status to distinguish agent changes from pre-existing content
         pre_agent_status = set(
             path for _, path in await self._git.status_porcelain(worktree)
         )
 
-        # Load recent history and knowledge context (opt-in per target)
-        # Gate 3 validated that knowledge context injection does not improve
-        # convergence at small scale. Structured logging (append_record,
-        # consolidation) is always active; context injection is opt-in.
+        # 2. Build prompt with optional knowledge context
         history: list[ExperimentRecord] = []
         knowledge_context = ""
         if self._knowledge and target.inject_knowledge_context:
             history = self._knowledge.load_records(limit=10)
             knowledge_context = self._knowledge.get_context()
 
-        prompt, context_tokens = build_target_context(
+        prompt, _context_tokens = build_target_context(
             target=target,
             worktree_path=worktree,
             repo_root=self._repo_root or worktree,
             history=history,
             knowledge_context=knowledge_context,
         )
-        # F6: Use deployment-mode invocation for DEPLOYMENT-tier targets
+
+        # 3. Invoke mutation agent
+        result = await self._invoke_agent(
+            target, worktree, prompt, pre_sha, start_time, experiment_id,
+        )
+        if isinstance(result, ExperimentRecord):
+            return result
+        agent_result = result
+        cost_usd = agent_result.cost_usd
+        hypothesis = agent_result.hypothesis or "No hypothesis provided"
+        hypothesis_source = agent_result.hypothesis_source
+        tags = agent_result.tags
+
+        # 4. Enforce scope and commit valid edits
+        commit_or_record = await self._enforce_and_commit(
+            target, worktree, scope, pre_agent_status, pre_sha,
+            start_time, experiment_id, cost_usd,
+            hypothesis, hypothesis_source, tags,
+        )
+        if isinstance(commit_or_record, ExperimentRecord):
+            return commit_or_record
+        commit_sha = commit_or_record
+
+        # Re-read artifact content after mutation
+        artifact_content = self._read_artifacts(worktree, target.artifact_paths)
+
+        # 5. Run pre-checks (constraints + fidelity stages)
+        pre_check = await self._run_pre_checks(
+            target, worktree, artifact_content, pre_sha,
+            start_time, experiment_id, cost_usd,
+            hypothesis, hypothesis_source, tags,
+        )
+        if pre_check is not None:
+            return pre_check
+
+        # 6. Evaluate and decide
+        return await self._evaluate_and_decide(
+            target, worktree, artifact_content, pre_sha, commit_sha,
+            start_time, experiment_id, cost_usd,
+            hypothesis, hypothesis_source, tags,
+        )
+
+    # ------------------------------------------------------------------
+    # Pipeline stages
+    # ------------------------------------------------------------------
+
+    async def _invoke_agent(
+        self,
+        target: OptimizationTarget,
+        worktree: Path,
+        prompt: str,
+        pre_sha: str,
+        start_time: float,
+        experiment_id: str,
+    ) -> AgentInvocationResult | ExperimentRecord:
+        """Invoke the mutation agent. Returns AgentInvocationResult on success
+        or ExperimentRecord on early exit (timeout, crash, approval rejection)."""
         try:
             if target.domain_tier is DomainTier.DEPLOYMENT:
                 agent_result = await self._agent.invoke_deployment(
-                    target.agent_config,
-                    prompt,
-                    worktree,
-                    target.time_budget_seconds,
+                    target.agent_config, prompt, worktree, target.time_budget_seconds,
                 )
-                # Approval gate: require callback for DEPLOYMENT targets
                 if target.approval_callback is None:
                     raise ValueError(
                         f"DEPLOYMENT target {target.id} requires approval_callback. "
                         f"Set approval_callback during registration."
                     )
                 if not target.approval_callback(agent_result.raw_output):
-                        return _make_early_record(
-                            experiment_id, target, pre_experiment_sha, start_time,
-                            Outcome.DISCARDED,
-                            hypothesis=agent_result.hypothesis or "Deployment change rejected",
-                            hypothesis_source=agent_result.hypothesis_source,
-                            tags=agent_result.tags,
-                            failure_mode="approval_rejected",
-                            cost_usd=agent_result.cost_usd,
-                        )
+                    return _make_early_record(
+                        experiment_id, target, pre_sha, start_time,
+                        Outcome.DISCARDED,
+                        hypothesis=agent_result.hypothesis or "Deployment change rejected",
+                        hypothesis_source=agent_result.hypothesis_source,
+                        tags=agent_result.tags,
+                        failure_mode="approval_rejected",
+                        cost_usd=agent_result.cost_usd,
+                    )
             else:
                 agent_result = await self._agent.invoke(
-                    target.agent_config,
-                    prompt,
-                    worktree,
-                    target.time_budget_seconds,
+                    target.agent_config, prompt, worktree, target.time_budget_seconds,
                 )
         except AgentTimeoutError as exc:
-            # KILLED recovery: clean up index.lock, restore worktree
-            await self._handle_killed(worktree, pre_experiment_sha)
+            await self._handle_killed(worktree, pre_sha)
             return _make_early_record(
-                experiment_id, target, pre_experiment_sha, start_time,
-                Outcome.KILLED,
-                hypothesis="Agent timed out",
-                failure_mode=str(exc),
+                experiment_id, target, pre_sha, start_time,
+                Outcome.KILLED, hypothesis="Agent timed out", failure_mode=str(exc),
             )
         except AgentInvocationError as exc:
-            await self._safe_restore(worktree, pre_experiment_sha)
+            await self._safe_restore(worktree, pre_sha)
             return _make_early_record(
-                experiment_id, target, pre_experiment_sha, start_time,
-                Outcome.CRASHED,
-                hypothesis="Agent invocation failed",
-                failure_mode=str(exc),
+                experiment_id, target, pre_sha, start_time,
+                Outcome.CRASHED, hypothesis="Agent invocation failed", failure_mode=str(exc),
             )
+        return agent_result
 
-        cost_usd += agent_result.cost_usd
-        hypothesis = agent_result.hypothesis or "No hypothesis provided"
-        hypothesis_source = agent_result.hypothesis_source
-        tags = agent_result.tags
-
-        # 4. Validate scope — only check changes the agent made (delta from pre-agent state)
+    async def _enforce_and_commit(
+        self,
+        target: OptimizationTarget,
+        worktree: Path,
+        scope: ScopeConfig,
+        pre_agent_status: set[str],
+        pre_sha: str,
+        start_time: float,
+        experiment_id: str,
+        cost_usd: float,
+        hypothesis: str,
+        hypothesis_source: Literal["agent", "synthesized"],
+        tags: list[str],
+    ) -> str | ExperimentRecord:
+        """Enforce scope, reset violations, commit valid edits.
+        Returns commit SHA on success or ExperimentRecord on early exit."""
         _INTERNAL_FILES = {".anneal-status", ".anneal.lock"}
         git_status = [
             (code, path) for code, path in await self._git.status_porcelain(worktree)
@@ -247,80 +294,65 @@ class ExperimentRunner:
 
         logger.info(
             "Scope check for %s: status=%s valid=%s violated=%s all_blocked=%s",
-            target.id,
-            git_status,
-            scope_result.valid_paths,
-            scope_result.violated_paths,
-            scope_result.all_blocked,
+            target.id, git_status, scope_result.valid_paths,
+            scope_result.violated_paths, scope_result.all_blocked,
         )
 
         if scope_result.all_blocked:
-            # Reset all violating files
             await self._reset_violated(worktree, scope_result.violated_paths, git_status)
             await self._git.clean_untracked(worktree)
             return _make_early_record(
-                experiment_id, target, pre_experiment_sha, start_time,
-                Outcome.BLOCKED,
-                hypothesis=hypothesis,
-                hypothesis_source=hypothesis_source,
-                tags=tags,
-                failure_mode=f"All changes violated scope: {scope_result.violated_paths}",
+                experiment_id, target, pre_sha, start_time,
+                Outcome.BLOCKED, hypothesis=hypothesis, hypothesis_source=hypothesis_source,
+                tags=tags, failure_mode=f"All changes violated scope: {scope_result.violated_paths}",
                 cost_usd=cost_usd,
             )
 
-        # Reset violations, keep valid edits
         if scope_result.has_violations:
             await self._reset_violated(worktree, scope_result.violated_paths, git_status)
-            logger.warning(
-                "Scope violations reset for target %s: %s",
-                target.id,
-                scope_result.violated_paths,
-            )
+            logger.warning("Scope violations reset for target %s: %s", target.id, scope_result.violated_paths)
 
-        # 5. Commit valid edits (skip if agent made no changes)
         if not scope_result.valid_paths:
             return _make_early_record(
-                experiment_id, target, pre_experiment_sha, start_time,
-                Outcome.BLOCKED,
-                hypothesis=hypothesis,
-                hypothesis_source=hypothesis_source,
-                tags=tags,
-                failure_mode="Agent made no file changes",
-                cost_usd=cost_usd,
+                experiment_id, target, pre_sha, start_time,
+                Outcome.BLOCKED, hypothesis=hypothesis, hypothesis_source=hypothesis_source,
+                tags=tags, failure_mode="Agent made no file changes", cost_usd=cost_usd,
             )
 
-        commit_sha = await self._git.commit(
-            worktree,
-            f"hypothesis: {hypothesis}",
-            scope_result.valid_paths,
-        )
+        return await self._git.commit(worktree, f"hypothesis: {hypothesis}", scope_result.valid_paths)
 
-        # Re-read artifact content after mutation for stochastic eval
-        artifact_content = self._read_artifacts(worktree, target.artifact_paths)
-
-        # 5b. Fast constraint pre-check (before expensive eval)
+    async def _run_pre_checks(
+        self,
+        target: OptimizationTarget,
+        worktree: Path,
+        artifact_content: str,
+        pre_sha: str,
+        start_time: float,
+        experiment_id: str,
+        cost_usd: float,
+        hypothesis: str,
+        hypothesis_source: Literal["agent", "synthesized"],
+        tags: list[str],
+    ) -> ExperimentRecord | None:
+        """Run constraint commands and fidelity stages.
+        Returns ExperimentRecord if a check fails, None if all pass."""
         if target.eval_config.constraint_commands:
             fast_results = await self._eval.check_constraints(
                 worktree, target.eval_config, artifact_content,
             )
             for name, passed, actual in fast_results:
                 if not passed:
-                    await self._git.reset_hard(worktree, pre_experiment_sha)
+                    await self._git.reset_hard(worktree, pre_sha)
                     logger.warning("Fast constraint %s failed for target %s: actual=%.4f", name, target.id, actual)
                     early_record = _make_early_record(
-                        experiment_id, target, pre_experiment_sha, start_time,
-                        Outcome.DISCARDED,
-                        hypothesis=hypothesis,
-                        hypothesis_source=hypothesis_source,
-                        tags=tags,
-                        failure_mode=f"constraint_violated:{name}",
-                        cost_usd=cost_usd,
+                        experiment_id, target, pre_sha, start_time,
+                        Outcome.DISCARDED, hypothesis=hypothesis, hypothesis_source=hypothesis_source,
+                        tags=tags, failure_mode=f"constraint_violated:{name}", cost_usd=cost_usd,
                     )
                     if self._learning_pool is not None:
                         self._learning_pool.add(extract_learning(early_record, source_target=target.id))
                     return early_record
 
-        # 5c. Multi-fidelity pre-filter (cheap deterministic stages before expensive eval)
         if target.eval_config.fidelity_stages:
             for stage in target.eval_config.fidelity_stages:
                 stage_config = EvalConfig(
@@ -333,12 +365,10 @@ class ExperimentRunner:
                     ),
                 )
                 try:
-                    stage_result = await self._eval.evaluate(
-                        worktree, stage_config, artifact_content,
-                    )
+                    stage_result = await self._eval.evaluate(worktree, stage_config, artifact_content)
                 except EvalError as exc:
                     logger.warning("Fidelity stage %s failed: %s", stage.name, exc)
-                    continue  # Skip failed stages, don't block
+                    continue
 
                 if target.eval_config.direction is Direction.HIGHER_IS_BETTER:
                     passed = stage_result.score >= stage.min_pass_score
@@ -346,47 +376,51 @@ class ExperimentRunner:
                     passed = stage_result.score <= stage.min_pass_score
 
                 if not passed:
-                    await self._git.reset_hard(worktree, pre_experiment_sha)
+                    await self._git.reset_hard(worktree, pre_sha)
                     logger.info(
                         "Fidelity stage %s rejected mutation for %s: score=%.4f (min=%.4f)",
                         stage.name, target.id, stage_result.score, stage.min_pass_score,
                     )
                     fidelity_record = _make_early_record(
-                        experiment_id, target, pre_experiment_sha, start_time,
-                        Outcome.DISCARDED,
-                        hypothesis=hypothesis,
-                        hypothesis_source=hypothesis_source,
-                        tags=tags,
-                        failure_mode=f"fidelity_stage:{stage.name}",
-                        cost_usd=cost_usd,
-                        score=stage_result.score,
+                        experiment_id, target, pre_sha, start_time,
+                        Outcome.DISCARDED, hypothesis=hypothesis, hypothesis_source=hypothesis_source,
+                        tags=tags, failure_mode=f"fidelity_stage:{stage.name}",
+                        cost_usd=cost_usd, score=stage_result.score,
                     )
                     if self._learning_pool is not None:
                         self._learning_pool.add(extract_learning(fidelity_record, source_target=target.id))
                     return fidelity_record
 
-        # 6. Evaluate
+        return None
+
+    async def _evaluate_and_decide(
+        self,
+        target: OptimizationTarget,
+        worktree: Path,
+        artifact_content: str,
+        pre_sha: str,
+        commit_sha: str,
+        start_time: float,
+        experiment_id: str,
+        cost_usd: float,
+        hypothesis: str,
+        hypothesis_source: Literal["agent", "synthesized"],
+        tags: list[str],
+    ) -> ExperimentRecord:
+        """Evaluate mutation, decide keep/discard, persist record."""
         try:
-            eval_result = await self._eval.evaluate(
-                worktree,
-                target.eval_config,
-                artifact_content,
-            )
+            eval_result = await self._eval.evaluate(worktree, target.eval_config, artifact_content)
         except EvalError as exc:
-            await self._safe_restore(worktree, pre_experiment_sha)
+            await self._safe_restore(worktree, pre_sha)
             return _make_early_record(
-                experiment_id, target, pre_experiment_sha, start_time,
-                Outcome.CRASHED,
-                hypothesis=hypothesis,
-                hypothesis_source=hypothesis_source,
-                tags=tags,
-                failure_mode=str(exc),
-                cost_usd=cost_usd,
+                experiment_id, target, pre_sha, start_time,
+                Outcome.CRASHED, hypothesis=hypothesis, hypothesis_source=hypothesis_source,
+                tags=tags, failure_mode=str(exc), cost_usd=cost_usd,
             )
 
         cost_usd += eval_result.cost_usd
 
-        # 7. Decide: keep or discard
+        # Decide: keep or discard
         stochastic_conf = target.eval_config.stochastic
         confidence = stochastic_conf.confidence_level if stochastic_conf else 0.95
 
@@ -398,26 +432,19 @@ class ExperimentRunner:
             )
             confidence = 1 - adjusted_alpha
 
-        if (
-            target.eval_config.stochastic is not None
-            and (not target.baseline_raw_scores)
-        ):
-            logger.info(
-                "Cold-start for stochastic target %s: accepting first evaluation as baseline",
-                target.id,
-            )
+        if target.eval_config.stochastic is not None and not target.baseline_raw_scores:
+            logger.info("Cold-start for stochastic target %s: accepting first evaluation as baseline", target.id)
             keep = True
         else:
             keep = self._search.should_keep(
-                eval_result,
-                target.baseline_score,
+                eval_result, target.baseline_score,
                 target.baseline_raw_scores or None,
                 target.eval_config.direction,
                 target.eval_config.min_improvement_threshold,
                 confidence,
             )
 
-        # F2: Check constraints before finalizing KEEP
+        # Check constraints before finalizing KEEP
         constraint_failure: str | None = None
         if keep:
             constraint_results = await self._eval.check_constraints(
@@ -426,15 +453,11 @@ class ExperimentRunner:
             for name, passed, actual in constraint_results:
                 if not passed:
                     constraint_failure = f"constraint_violated:{name}"
-                    logger.warning(
-                        "Constraint %s failed for target %s: actual=%.4f",
-                        name, target.id, actual,
-                    )
+                    logger.warning("Constraint %s failed for target %s: actual=%.4f", name, target.id, actual)
                     break
 
         if keep and constraint_failure is None:
             outcome = Outcome.KEPT
-            # Update baseline in target and persist
             target.baseline_score = eval_result.score
             if eval_result.raw_scores is not None:
                 target.baseline_raw_scores = list(eval_result.raw_scores)
@@ -442,17 +465,14 @@ class ExperimentRunner:
             git_sha = commit_sha
         else:
             outcome = Outcome.DISCARDED
-            await self._git.reset_hard(worktree, pre_experiment_sha)
-            git_sha = pre_experiment_sha
+            await self._git.reset_hard(worktree, pre_sha)
+            git_sha = pre_sha
 
-        duration = time.monotonic() - start_time
-
-        # 8. Build ExperimentRecord
         record = ExperimentRecord(
             id=experiment_id,
             target_id=target.id,
             git_sha=git_sha,
-            pre_experiment_sha=pre_experiment_sha,
+            pre_experiment_sha=pre_sha,
             timestamp=datetime.now(tz=timezone.utc),
             hypothesis=hypothesis,
             hypothesis_source=hypothesis_source,
@@ -464,7 +484,7 @@ class ExperimentRunner:
             baseline_score=target.baseline_score,
             outcome=outcome,
             failure_mode=constraint_failure,
-            duration_seconds=duration,
+            duration_seconds=time.monotonic() - start_time,
             tags=tags,
             learnings="",
             cost_usd=cost_usd,
@@ -474,18 +494,13 @@ class ExperimentRunner:
             per_criterion_scores=eval_result.per_criterion_scores,
         )
 
-        # 9. Persist to knowledge store + check consolidation
         if self._knowledge:
             self._knowledge.append_record(record)
             self._knowledge.update_index(record)
             self._knowledge.consolidate_if_due()
 
-        # F5: Extract and store cross-project learning
         if self._learning_pool is not None:
-            learning = extract_learning(
-                record, source_target=target.id,
-            )
-            self._learning_pool.add(learning)
+            self._learning_pool.add(extract_learning(record, source_target=target.id))
 
         return record
 

@@ -226,6 +226,21 @@ class EvalEnvironment(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# PolicyConfig (meta-optimizer for mutation instruction rewriting)
+# ---------------------------------------------------------------------------
+
+
+class PolicyConfig(BaseModel):
+    """Configuration for the policy agent (continuous meta-optimizer)."""
+
+    enabled: bool = False
+    model: str = ""
+    max_budget_usd: float = Field(default=0.02, gt=0)
+    lookback_window: int = Field(default=10, gt=0)
+    rewrite_interval: int = Field(default=3, gt=0)
+
+
+# ---------------------------------------------------------------------------
 # OptimizationTarget — the full target registration record
 # ---------------------------------------------------------------------------
 
@@ -257,6 +272,7 @@ class OptimizationTarget(BaseModel):
     notifications: NotificationConfig = Field(default_factory=NotificationConfig)
     approval_callback: Callable[[str], bool] | None = Field(default=None, exclude=True)
     restart_probability: float = Field(default=0.0, ge=0.0, le=1.0)
+    policy_config: PolicyConfig | None = None
     population_config: PopulationConfig | None = None
     eval_environment: EvalEnvironment | None = None
 

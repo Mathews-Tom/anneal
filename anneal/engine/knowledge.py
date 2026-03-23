@@ -83,6 +83,8 @@ def _json_to_consolidation(line: str) -> ConsolidationRecord:
     data["experiment_range"] = tuple(data["experiment_range"])
     data.setdefault("criterion_variances", {})
     data.setdefault("score_variance", 0.0)
+    data.setdefault("failure_distribution", {})
+    data.setdefault("blind_spots", [])
     return ConsolidationRecord(**data)
 
 
@@ -464,6 +466,12 @@ class KnowledgeStore:
             v_name: count / len(window) for v_name, count in verifier_counts.items()
         }
 
+        # Failure distribution and blind spots
+        from anneal.engine.taxonomy import FailureTaxonomy
+        failure_distribution = FailureTaxonomy.distribution(window)
+        taxonomy = FailureTaxonomy()
+        blind_spots = taxonomy.blind_spot_check(window)
+
         record = ConsolidationRecord(
             experiment_range=(start_idx, total),
             timestamp=datetime.now(),
@@ -479,6 +487,8 @@ class KnowledgeStore:
             criterion_variances=criterion_variances,
             score_variance=score_variance,
             verifier_block_rates=verifier_block_rates,
+            failure_distribution=failure_distribution,
+            blind_spots=blind_spots,
         )
 
         drifting = [name for name, var in criterion_variances.items() if var > 0.1]

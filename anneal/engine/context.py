@@ -280,6 +280,50 @@ def _build_verifier_warning(history: list[ExperimentRecord]) -> str:
     )
 
 
+FAILURE_DISTRIBUTION_MIN_EXPERIMENTS = 10
+
+
+def _build_failure_distribution_summary(history: list[ExperimentRecord]) -> str:
+    """Build failure distribution summary for agent context."""
+    from anneal.engine.taxonomy import FailureTaxonomy
+
+    if len(history) < FAILURE_DISTRIBUTION_MIN_EXPERIMENTS:
+        return ""
+
+    dist = FailureTaxonomy.distribution(history)
+    if not dist:
+        return ""
+
+    total_failures = sum(dist.values())
+    if total_failures == 0:
+        return ""
+
+    lines = ["# Recent Failure Distribution\n"]
+    sorted_dist = sorted(dist.items(), key=lambda x: x[1], reverse=True)
+    for cat, count in sorted_dist:
+        pct = count / total_failures * 100
+        suffix = " ← most common" if cat == sorted_dist[0][0] and len(sorted_dist) > 1 else ""
+        lines.append(f"- {cat}: {count} ({pct:.0f}%){suffix}")
+
+    # Blind spot check
+    taxonomy = FailureTaxonomy()
+    blind_spots = taxonomy.blind_spot_check(history)
+    if blind_spots:
+        for bs in blind_spots:
+            lines.append(f"- [blind spot] {bs}: 0 attributions across {total_failures} failures")
+
+    if sorted_dist:
+        top_cat = sorted_dist[0][0]
+        lines.append(f"\nFocus mutations on avoiding {top_cat} errors.")
+        if blind_spots:
+            lines.append(
+                "Consider whether blind spot categories are genuinely absent "
+                "or structurally invisible to the mutation agent."
+            )
+
+    return "\n".join(lines)
+
+
 def build_target_context(
     target: OptimizationTarget,
     worktree_path: Path,
@@ -360,10 +404,18 @@ def build_target_context(
                 "verifier_warnings", verifier_warning, priority=5, required=False
             )
 
-    # Slot 6: Global cross-project learnings
+    # Slot 6: Failure distribution summary (when enough experiments exist)
+    if history:
+        failure_summary = _build_failure_distribution_summary(history)
+        if failure_summary:
+            budget.add_slot(
+                "failure_distribution", failure_summary, priority=6, required=False
+            )
+
+    # Slot 7: Global cross-project learnings
     if global_learnings:
         budget.add_slot(
-            "global_learnings", global_learnings, priority=6, required=False
+            "global_learnings", global_learnings, priority=7, required=False
         )
 
     assembled = budget.assemble()

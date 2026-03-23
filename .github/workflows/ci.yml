@@ -1,0 +1,37 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv python install ${{ matrix.python-version }}
+      - run: uv sync --dev
+      - run: uv run pytest tests/ -x -q --tb=short
+      - run: uv run pytest tests/ --cov=anneal --cov-report=xml
+      - name: Upload coverage
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  benchmark:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --dev
+      - run: uv run python benchmarks/bench_phase2_false_positives.py
+      - run: uv run python benchmarks/bench_phase3_sa_convergence.py
+      - run: uv run python benchmarks/bench_phase5_retrieval_precision.py

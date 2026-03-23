@@ -196,7 +196,7 @@ class UCBTreeSearch:
                 break
         return depth
 
-    def get_tree_info(self) -> dict[str, object]:
+    def get_tree_info(self) -> dict[str, int]:
         """Return tree statistics for context injection."""
         if not self._nodes:
             return {"nodes": 0, "depth": 0, "pruned": 0}

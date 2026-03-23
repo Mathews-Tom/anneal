@@ -329,6 +329,7 @@ def build_target_context(
     knowledge_context: str = "",
     global_learnings: str = "",
     policy_instructions: str = "",
+    tree_info: dict[str, int] | None = None,
 ) -> tuple[str, int]:
     """Build the complete agent context for a target.
 
@@ -418,10 +419,21 @@ def build_target_context(
                 "failure_distribution", failure_summary, priority=7, required=False
             )
 
-    # Slot 8: Global cross-project learnings
+    # Slot 8: Tree search info (when UCB tree search is active)
+    if tree_info and tree_info.get("nodes", 0) > 0:
+        tree_summary = (
+            f"# Search Tree Status\n\n"
+            f"- Nodes: {tree_info['nodes']}\n"
+            f"- Max depth: {tree_info['depth']}\n"
+            f"- Pruned: {tree_info['pruned']}\n"
+            f"- Total visits: {tree_info.get('total_visits', 0)}\n"
+        )
+        budget.add_slot("tree_info", tree_summary, priority=8, required=False)
+
+    # Slot 9: Global cross-project learnings
     if global_learnings:
         budget.add_slot(
-            "global_learnings", global_learnings, priority=8, required=False
+            "global_learnings", global_learnings, priority=9, required=False
         )
 
     assembled = budget.assemble()

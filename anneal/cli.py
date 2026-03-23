@@ -238,6 +238,7 @@ def _handle_register(args: argparse.Namespace) -> None:
         model=args.agent_model,
         evaluator_model=args.evaluator_model,
         max_budget_usd=1.00,
+        n_drafts=args.n_drafts,
     )
 
     # Build budget cap
@@ -1172,6 +1173,8 @@ def _build_parser() -> argparse.ArgumentParser:
     reg.add_argument("--meta-depth", type=int, help="Meta-optimization depth (0=disabled, 1=enabled)")
     reg.add_argument("--verifier", action="append", metavar="NAME:COMMAND", help="Binary pass/fail verifier gate (repeatable, format: name:command)")
     reg.add_argument("--restart-probability", type=float, default=0.0, help="Probability of restart experiment per cycle (0.0-1.0, default: 0.0)")
+    reg.add_argument("--failure-categories", help="Path to TOML file with custom failure categories (optional)")
+    reg.add_argument("--n-drafts", type=int, default=1, help="Number of draft mutations per experiment cycle (1-10, default: 1)")
 
     # -- run (stub) --
     run = subparsers.add_parser("run", help="Run optimization loop")

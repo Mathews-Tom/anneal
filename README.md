@@ -105,6 +105,9 @@ anneal/engine/
   safety.py            # Budget caps, failure limits, disk checks, process time-boxing
   client.py            # Multi-provider LLM client with configurable pricing (TOML overlay)
   scheduler.py         # Sequential target scheduler with stale lock recovery
+  taxonomy.py          # Failure classification: LLM-based categorization, distribution, blind spots
+  tree_search.py       # UCB tree search: backtracking, pruning, persistence, history bootstrap
+  policy_agent.py      # Policy agent: continuous instruction rewriting, reward tracking
   registry.py          # Target configuration (config.toml persistence)
   dashboard.py         # File-based SSE live dashboard
 ```
@@ -118,6 +121,11 @@ anneal/engine/
 - **Cost control** — per-experiment and daily budget caps. Pricing loaded from `~/.anneal/pricing.toml` with hardcoded defaults. Local models tracked at $0.
 - **Safety** — process group time-boxing (SIGKILL), consecutive failure halting, disk space checks, JSONL corruption recovery, git fsck integrity checks after kill recovery.
 - **Graceful shutdown** — `anneal stop --target <id>` writes a stop file; the runner exits cleanly after the current experiment.
+- **Verification gates** — binary pass/fail commands that run after scope enforcement, before eval. Discard mutations that fail structural checks without spending eval budget. Stderr captured for diagnosis.
+- **Failure taxonomy** — LLM-based classification of failed experiments into structured categories (output_format, logic_error, regression, etc.) with blind spot detection for unattributed failure modes.
+- **Multi-draft mutation** — generate N candidate mutations per cycle with temperature variation. Per-draft verifier pruning selects the best survivor. Budget split evenly across drafts.
+- **Random restart** — probabilistic fresh-start experiments that escape local optima. SA temperature-linked decay reduces restart probability as search converges.
+- **Policy agent** — continuous meta-optimizer that rewrites mutation instructions between experiments based on failure patterns. Complements the plateau-triggered program.md rewriting at a faster cadence (~$0.001/call).
 
 ### Statistical Rigor
 
@@ -135,6 +143,7 @@ anneal/engine/
 - **Pareto** — multi-objective search over per-criterion score vectors. Maintains a Pareto front; non-dominated trade-off solutions are preserved.
 - **Thompson Sampling** — contextual bandit meta-strategy that adaptively selects between search algorithms based on observed reward.
 - **Bayesian surrogate** — Gaussian Process model predicts mutation quality from experiment history. Expected Improvement acquisition balances exploration and exploitation. Requires optional `scikit-learn` dependency.
+- **UCB tree search** — maps experiment history to a tree of git commits. Selects the most promising ancestor to branch from via UCB1 (balancing exploitation and exploration). Supports subtree pruning and crash recovery via JSON persistence.
 
 ### Evaluation Intelligence
 
@@ -154,7 +163,7 @@ anneal/engine/
 
 ### Operations
 
-- **Meta-optimization** — on plateau, the agent revises its own optimization strategy (program.md).
+- **Meta-optimization** — two complementary timescales: (1) policy agent rewrites mutation instructions every N experiments (continuous, ~$0.001/call), (2) plateau-triggered program.md rewriting when M consecutive experiments fail (episodic).
 - **Stale lock recovery** — scheduler detects and removes lock files older than 1 hour from crashed runners.
 - **Concurrent consolidation safety** — check-and-act consolidation is atomic under FileLock.
 - **Live dashboard** — `anneal dashboard` reads from `.anneal/` directory. No coupling to the runner process.
@@ -181,6 +190,21 @@ anneal register \
   --direction maximize \
   --scope scope.yaml
 
+# Register with verification gates and restart
+anneal register \
+  --name my-target \
+  --artifact path/to/file.py \
+  --eval-mode deterministic \
+  --run-cmd "python benchmark.py" \
+  --parse-cmd "grep 'score' | awk '{print \$2}'" \
+  --direction maximize \
+  --scope scope.yaml \
+  --verifier "typecheck:python -m mypy path/to/file.py" \
+  --verifier "lint:ruff check path/to/file.py" \
+  --restart-probability 0.05 \
+  --n-drafts 3 \
+  --policy-model gpt-4.1-mini
+
 # Run 20 experiments
 anneal run --target my-target --experiments 20
 
@@ -196,7 +220,7 @@ anneal dashboard --open
 ## Testing
 
 ```bash
-# Run all tests (391 tests)
+# Run all tests (492 tests)
 uv run pytest tests/ -x -q
 
 # Run with coverage
@@ -213,7 +237,7 @@ uv run python benchmarks/bench_retrieval_precision.py
 
 ## Project Status
 
-391 tests passing. 3 validation benchmarks passing.
+492 tests passing. 3 validation benchmarks passing.
 
 ### Complete
 
@@ -228,7 +252,10 @@ uv run python benchmarks/bench_retrieval_precision.py
 - Quality-diversity archive (MAP-Elites), stale lock recovery, concurrent consolidation safety
 - File-based live dashboard, deployment-tier approval gates, meta-optimization
 - End-to-end test suite, validation benchmark suite
+- Research-driven enhancements: verification gates, failure taxonomy, multi-draft mutation, random restart, UCB tree search, policy agent
 
 ### Planned
 
-- Experiment scaffolding — `anneal suggest` generates experiment configs from natural-language problem descriptions
+- Adaptive draft count — auto-adjust `n_drafts` based on per-draft survival rate
+- Population immigration — restart mutations enter population search via tournament selection
+- Cross-enhancement runner integration tests for multi-draft + tree search + policy agent running simultaneously

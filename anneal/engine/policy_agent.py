@@ -6,7 +6,7 @@ import logging
 import openai
 
 from anneal.engine.client import compute_cost, make_client, strip_provider_prefix
-from anneal.engine.types import ExperimentRecord, Outcome, PolicyConfig
+from anneal.engine.types import ExperimentRecord, PolicyConfig
 
 logger = logging.getLogger(__name__)
 

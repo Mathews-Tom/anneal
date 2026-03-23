@@ -839,7 +839,7 @@ class ExperimentRunner:
                 recent = self._knowledge.load_records(limit=target.policy_config.lookback_window) if self._knowledge else []
                 failure_dist = FailureTaxonomy.distribution(recent) if self._taxonomy else None
                 try:
-                    new_instructions, rewrite_cost = await self._policy_agent.rewrite_instructions(
+                    _, rewrite_cost = await self._policy_agent.rewrite_instructions(
                         recent_records=recent,
                         current_instructions=self._policy_agent.current_instructions,
                         target_description=f"Target '{target.id}': optimize {target.eval_config.metric_name} ({target.eval_config.direction.value})",

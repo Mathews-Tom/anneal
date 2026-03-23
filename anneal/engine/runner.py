@@ -51,6 +51,52 @@ class ScopeIntegrityError(Exception):
     """Raised when scope.yaml hash has drifted since registration."""
 
 
+class RunLoopState:
+    """Persisted loop counters restored across process restarts."""
+
+    def __init__(
+        self,
+        consecutive_failures: int = 0,
+        kept_count: int = 0,
+        consecutive_no_kept: int = 0,
+        total_experiments: int = 0,
+        cumulative_cost_usd: float = 0.0,
+    ) -> None:
+        self.consecutive_failures = consecutive_failures
+        self.kept_count = kept_count
+        self.consecutive_no_kept = consecutive_no_kept
+        self.total_experiments = total_experiments
+        self.cumulative_cost_usd = cumulative_cost_usd
+
+    def save(self, path: Path) -> None:
+        """Persist loop state to JSON file."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({
+                "consecutive_failures": self.consecutive_failures,
+                "kept_count": self.kept_count,
+                "consecutive_no_kept": self.consecutive_no_kept,
+                "total_experiments": self.total_experiments,
+                "cumulative_cost_usd": self.cumulative_cost_usd,
+            }),
+            encoding="utf-8",
+        )
+
+    @classmethod
+    def load(cls, path: Path) -> RunLoopState:
+        """Load loop state from JSON file, or return defaults if absent."""
+        if not path.exists():
+            return cls()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return cls(
+            consecutive_failures=int(data.get("consecutive_failures", 0)),
+            kept_count=int(data.get("kept_count", 0)),
+            consecutive_no_kept=int(data.get("consecutive_no_kept", 0)),
+            total_experiments=int(data.get("total_experiments", 0)),
+            cumulative_cost_usd=float(data.get("cumulative_cost_usd", 0.0)),
+        )
+
+
 def _make_early_record(
     experiment_id: str,
     target: OptimizationTarget,
@@ -161,9 +207,24 @@ class ExperimentRunner:
         )
 
         # 2. Build prompt with optional knowledge context
+        # Auto-enable knowledge injection after sufficient KEPT experiments
+        KNOWLEDGE_ACTIVATION_THRESHOLD = 20
+        inject_knowledge = target.inject_knowledge_context
+        if not inject_knowledge and self._knowledge:
+            kept_total = sum(
+                1 for r in self._knowledge.load_records()
+                if r.outcome is Outcome.KEPT
+            )
+            if kept_total >= KNOWLEDGE_ACTIVATION_THRESHOLD:
+                inject_knowledge = True
+                logger.info(
+                    "Auto-enabling knowledge context for %s (%d KEPT experiments)",
+                    target.id, kept_total,
+                )
+
         history: list[ExperimentRecord] = []
         knowledge_context = ""
-        if self._knowledge and target.inject_knowledge_context:
+        if self._knowledge and inject_knowledge:
             history = self._knowledge.load_records(limit=10)
             knowledge_context = self._knowledge.get_context()
 
@@ -186,6 +247,21 @@ class ExperimentRunner:
         hypothesis = agent_result.hypothesis or "No hypothesis provided"
         hypothesis_source = agent_result.hypothesis_source
         tags = agent_result.tags
+
+        # Ablation logging: track whether knowledge context influenced the hypothesis
+        if knowledge_context and hypothesis != "No hypothesis provided":
+            # Check if any retrieved hypothesis keywords appear in the agent's hypothesis
+            retrieved_hypotheses = [r.hypothesis for r in history if r.hypothesis]
+            referenced = any(
+                keyword in hypothesis.lower()
+                for rh in retrieved_hypotheses
+                for keyword in rh.lower().split()
+                if len(keyword) > 5  # skip short common words
+            )
+            logger.info(
+                "Knowledge ablation for %s: injected=%d records, hypothesis_references_knowledge=%s",
+                target.id, len(history), referenced,
+            )
 
         # 4. Enforce scope and commit valid edits
         commit_or_record = await self._enforce_and_commit(
@@ -518,9 +594,15 @@ class ExperimentRunner:
         """Run experiments in a loop until stopped."""
         self._clear_stop(target.id)
         records: list[ExperimentRecord] = []
-        consecutive_failures = 0
-        kept_count = 0
-        consecutive_no_kept = 0
+
+        # Restore loop state from previous run (crash recovery)
+        state_path = Path(target.knowledge_path) / ".loop-state.json"
+        loop = RunLoopState.load(state_path)
+        if loop.total_experiments > 0:
+            logger.info(
+                "Restored loop state for %s: %d experiments, %d kept, %d consecutive failures",
+                target.id, loop.total_experiments, loop.kept_count, loop.consecutive_failures,
+            )
 
         while True:
             # Check stop conditions
@@ -541,17 +623,17 @@ class ExperimentRunner:
             if stop_score is not None and target.baseline_score >= stop_score:
                 break
 
-            if consecutive_failures >= target.max_consecutive_failures:
+            if loop.consecutive_failures >= target.max_consecutive_failures:
                 logger.warning(
                     "Target %s halted: %d consecutive failures",
                     target.id,
-                    consecutive_failures,
+                    loop.consecutive_failures,
                 )
                 await self._write_status(target, RunnerState.HALTED, records[-1] if records else None)
                 if self._notifications:
                     await self._notifications.notify_state(
                         target.id, RunnerState.HALTED,
-                        f"{consecutive_failures} consecutive failures",
+                        f"{loop.consecutive_failures} consecutive failures",
                         score=target.baseline_score,
                         experiment_count=len(records),
                     )
@@ -579,16 +661,20 @@ class ExperimentRunner:
 
             # Track consecutive failures
             if record.outcome in (Outcome.KILLED, Outcome.CRASHED):
-                consecutive_failures += 1
+                loop.consecutive_failures += 1
             else:
-                consecutive_failures = 0
+                loop.consecutive_failures = 0
 
             # Track kept count for held-out eval and plateau detection
             if record.outcome is Outcome.KEPT:
-                kept_count += 1
-                consecutive_no_kept = 0
+                loop.kept_count += 1
+                loop.consecutive_no_kept = 0
             else:
-                consecutive_no_kept += 1
+                loop.consecutive_no_kept += 1
+
+            loop.total_experiments += 1
+            loop.cumulative_cost_usd += record.cost_usd
+            loop.save(state_path)
 
             # F1: Held-out evaluation at regular intervals
             held_out_interval = target.eval_config.held_out_interval
@@ -597,7 +683,7 @@ class ExperimentRunner:
                 record.outcome is Outcome.KEPT
                 and stochastic_conf is not None
                 and stochastic_conf.held_out_prompts
-                and kept_count % held_out_interval == 0
+                and loop.kept_count % held_out_interval == 0
             ):
                 worktree = Path(target.worktree_path)
                 artifact_content = self._read_artifacts(worktree, target.artifact_paths)
@@ -630,18 +716,18 @@ class ExperimentRunner:
             meta_m = min(target.max_consecutive_failures, 10)
             if (
                 target.meta_depth > 0
-                and consecutive_no_kept >= meta_m
+                and loop.consecutive_no_kept >= meta_m
                 and len(records) >= meta_m
             ):
                 logger.info(
                     "Plateau detected for %s (%d consecutive non-KEPT). Triggering meta-optimization.",
-                    target.id, consecutive_no_kept,
+                    target.id, loop.consecutive_no_kept,
                 )
                 recent_scores = [r.score for r in records[-meta_m:]]
                 trajectory = ", ".join(f"{s:.4f}" for s in recent_scores)
                 meta_prompt = (
                     f"The optimization for target '{target.id}' has plateaued. "
-                    f"No improvements in the last {consecutive_no_kept} experiments. "
+                    f"No improvements in the last {loop.consecutive_no_kept} experiments. "
                     f"Recent score trajectory: [{trajectory}]. "
                     f"Current baseline: {target.baseline_score:.4f}. "
                     f"Revise the optimization strategy in program.md to break through."
@@ -658,7 +744,7 @@ class ExperimentRunner:
                             program_md,
                         )
                         logger.info("Meta-optimization completed for %s", target.id)
-                        consecutive_no_kept = 0  # Reset plateau counter
+                        loop.consecutive_no_kept = 0  # Reset plateau counter
                     except (AgentTimeoutError, AgentInvocationError) as exc:
                         logger.warning("Meta-optimization failed for %s: %s", target.id, exc)
 
@@ -669,7 +755,7 @@ class ExperimentRunner:
             # Milestone notification
             if self._notifications and record.outcome is Outcome.KEPT:
                 await self._notifications.notify_milestone(
-                    target.id, kept_count, record.score,
+                    target.id, loop.kept_count, record.score,
                 )
 
             # Update status

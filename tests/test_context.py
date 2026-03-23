@@ -7,9 +7,16 @@ from anneal.engine.types import ExperimentRecord, Outcome
 
 
 class TestEstimateTokens:
-    def test_400_chars_returns_approx_100(self) -> None:
-        text = "a" * 400
-        assert estimate_tokens(text) == 100
+    def test_english_text_tokenizes_accurately(self) -> None:
+        text = "The quick brown fox jumps over the lazy dog"
+        tokens = estimate_tokens(text)
+        # tiktoken cl100k_base: 9 tokens for this sentence
+        assert tokens == 9
+
+    def test_code_tokenizes(self) -> None:
+        text = "def hello():\n    return 'world'"
+        tokens = estimate_tokens(text)
+        assert tokens > 0
 
     def test_empty_string_returns_zero(self) -> None:
         assert estimate_tokens("") == 0
@@ -17,56 +24,64 @@ class TestEstimateTokens:
 
 class TestContextBudgetAddAndAssemble:
     def test_required_slots_always_included(self) -> None:
-        budget = ContextBudget(max_tokens=50)
-        budget.add_slot("sys", "x" * 80, priority=1, required=True)
-        budget.add_slot("artifact", "y" * 80, priority=2, required=True)
+        sys_text = "System prompt with instructions for the agent."
+        art_text = "Artifact content that must always be included."
+        budget = ContextBudget(max_tokens=5)  # Tiny budget — required still included
+        budget.add_slot("sys", sys_text, priority=1, required=True)
+        budget.add_slot("artifact", art_text, priority=2, required=True)
         result = budget.assemble()
-        assert "x" * 80 in result
-        assert "y" * 80 in result
+        assert sys_text in result
+        assert art_text in result
 
     def test_optional_slots_added_in_priority_order(self) -> None:
         budget = ContextBudget(max_tokens=10_000)
-        budget.add_slot("req", "r" * 40, priority=1, required=True)
-        budget.add_slot("low_pri", "L" * 40, priority=5, required=False)
-        budget.add_slot("high_pri", "H" * 40, priority=3, required=False)
+        budget.add_slot("req", "Required content here.", priority=1, required=True)
+        low_text = "Low priority optional content for the agent."
+        high_text = "High priority optional content for the agent."
+        budget.add_slot("low_pri", low_text, priority=5, required=False)
+        budget.add_slot("high_pri", high_text, priority=3, required=False)
         result = budget.assemble()
-        # Both optional slots fit; verify priority ordering in output
-        h_pos = result.index("H" * 40)
-        l_pos = result.index("L" * 40)
+        h_pos = result.index(high_text)
+        l_pos = result.index(low_text)
         assert h_pos < l_pos
 
     def test_optional_slot_skipped_when_budget_exhausted(self) -> None:
-        budget = ContextBudget(max_tokens=30)
-        # Required slot uses 25 tokens (100 chars / 4)
-        budget.add_slot("req", "r" * 100, priority=1, required=True)
-        # Optional slot needs 25 tokens — only 5 remain, but truncation will
-        # partially fit. Use a very large optional to prove skip after budget gone.
-        budget.add_slot("opt1", "a" * 20, priority=2, required=False)  # 5 tokens, fits
-        budget.add_slot("opt2", "b" * 400, priority=3, required=False)  # 100 tokens, won't fully fit
-        budget.add_slot("opt3", "c" * 400, priority=4, required=False)  # should be skipped entirely
+        req_text = "This is a required prompt that takes up most of the token budget for this test."
+        req_tokens = estimate_tokens(req_text)
+        small_text = "Fits."
+        large_text = "This optional content is very long and will not fit. " * 20
+        huge_text = "This should be entirely skipped because no budget remains. " * 20
+        budget = ContextBudget(max_tokens=req_tokens + 5)
+        budget.add_slot("req", req_text, priority=1, required=True)
+        budget.add_slot("opt1", small_text, priority=2, required=False)
+        budget.add_slot("opt2", large_text, priority=3, required=False)
+        budget.add_slot("opt3", huge_text, priority=4, required=False)
         result = budget.assemble()
-        assert "a" * 20 in result
-        assert "c" * 400 not in result
+        assert small_text in result
+        assert huge_text not in result
 
     def test_partial_truncation_of_last_fitting_optional(self) -> None:
-        budget = ContextBudget(max_tokens=30)
-        # Required: 25 tokens
-        budget.add_slot("req", "r" * 100, priority=1, required=True)
-        # Optional needs 100 tokens but only 5 remain → truncated to ~20 chars
-        budget.add_slot("opt", "abcd" * 100, priority=2, required=False)
+        req_text = "Required content that fills most of the budget for testing truncation behavior."
+        req_tokens = estimate_tokens(req_text)
+        opt_text = "Repeated optional content. " * 50
+        budget = ContextBudget(max_tokens=req_tokens + 10)
+        budget.add_slot("req", req_text, priority=1, required=True)
+        budget.add_slot("opt", opt_text, priority=2, required=False)
         result = budget.assemble()
-        # The optional content should be present but truncated
-        assert "abcd" in result
-        assert "abcd" * 100 not in result
+        # Optional should be present but truncated
+        assert "Repeated optional" in result
+        assert opt_text not in result
 
 
 class TestContextBudgetProperties:
     def test_total_tokens_and_budget_remaining(self) -> None:
-        budget = ContextBudget(max_tokens=200)
-        budget.add_slot("a", "x" * 400, priority=1, required=True)  # 100 tokens
+        content = "The quick brown fox jumps over the lazy dog near the river bank."
+        tokens = estimate_tokens(content)
+        budget = ContextBudget(max_tokens=tokens * 3)
+        budget.add_slot("a", content, priority=1, required=True)
         budget.assemble()
-        assert budget.total_tokens == 100
-        assert budget.budget_remaining == 100
+        assert budget.total_tokens == tokens
+        assert budget.budget_remaining == tokens * 3 - tokens
 
     def test_summary_returns_readable_breakdown(self) -> None:
         budget = ContextBudget(max_tokens=1000)

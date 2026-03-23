@@ -114,18 +114,22 @@ name = "anneal-cli"
 version = "0.1.1"
 source = { virtual = "." }
 dependencies = [
-    { name = "aiohttp" },
     { name = "filelock" },
     { name = "httpx" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "openai" },
+    { name = "pydantic" },
     { name = "pyyaml" },
     { name = "rich" },
     { name = "scipy" },
+    { name = "tomli-w" },
 ]
 
 [package.optional-dependencies]
+dashboard = [
+    { name = "aiohttp" },
+]
 ml = [
     { name = "scikit-learn" },
 ]
@@ -139,18 +143,20 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiohttp", specifier = ">=3.13.3" },
+    { name = "aiohttp", marker = "extra == 'dashboard'", specifier = ">=3.13.3" },
     { name = "filelock", specifier = ">=3.25.2" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "matplotlib", specifier = ">=3.9" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "openai", specifier = ">=2.28.0" },
+    { name = "pydantic", specifier = ">=2.11" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rich", specifier = ">=14.3.3" },
     { name = "scikit-learn", marker = "extra == 'ml'", specifier = ">=1.5" },
     { name = "scipy", specifier = ">=1.14" },
+    { name = "tomli-w", specifier = ">=1.1" },
 ]
-provides-extras = ["ml"]
+provides-extras = ["dashboard", "ml"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1506,6 +1512,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b7/4d/08c89e34946fce2aec4fbb45c9016efd5f4d7f24af8e5d93296e935631d8/threadpoolctl-3.6.0.tar.gz", hash = "sha256:8ab8b4aa3491d812b623328249fab5302a68d2d71745c8a4c719a2fcaba9f44e", size = 21274 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/32/d5/f9a850d79b0851d1d4ef6456097579a9005b31fea68726a4ae5f2d82ddd9/threadpoolctl-3.6.0-py3-none-any.whl", hash = "sha256:43a0b8fd5a2928500110039e43a5eed8480b918967083ea48dc3ab9f13c4a7fb", size = 18638 },
+]
+
+[[package]]
+name = "tomli-w"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/75/241269d1da26b624c0d5e110e8149093c759b7a286138f4efd61a60e75fe/tomli_w-1.2.0.tar.gz", hash = "sha256:2dd14fac5a47c27be9cd4c976af5a12d87fb1f0b4512f81d69cce3b35ae25021", size = 7184 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c7/18/c86eb8e0202e32dd3df50d43d7ff9854f8e0603945ff398974c1d91ac1ef/tomli_w-1.2.0-py3-none-any.whl", hash = "sha256:188306098d013b691fcadc011abd66727d3c414c571bb01b1a174ba8c983cf90", size = 6675 },
 ]
 
 [[package]]

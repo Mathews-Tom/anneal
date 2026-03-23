@@ -270,6 +270,10 @@ class ExperimentRunner:
             if self._policy_agent is not None:
                 policy_instructions = self._policy_agent.current_instructions
 
+            tree_info = None
+            if isinstance(self._search, UCBTreeSearch):
+                tree_info = self._search.get_tree_info()
+
             prompt, _context_tokens = build_target_context(
                 target=target,
                 worktree_path=worktree,
@@ -277,31 +281,91 @@ class ExperimentRunner:
                 history=history,
                 knowledge_context=knowledge_context,
                 policy_instructions=policy_instructions,
+                tree_info=tree_info,
             )
 
-        # 3. Invoke mutation agent
-        result = await self._invoke_agent(
-            target, worktree, prompt, pre_sha, start_time, experiment_id,
-        )
-        if isinstance(result, ExperimentRecord):
-            return result
-        agent_result = result
-        cost_usd = agent_result.cost_usd
-        hypothesis = agent_result.hypothesis or "No hypothesis provided"
-        hypothesis_source = agent_result.hypothesis_source
-        tags = list(agent_result.tags)
+        # 3. Invoke mutation agent (single-draft or multi-draft)
+        n_drafts = target.agent_config.n_drafts
+        drafts_generated = 1
+        drafts_survived = 1
+
+        if n_drafts > 1 and target.agent_config.mode == "claude_code":
+            # Multi-draft path: generate N drafts, verify each, select best
+            drafts = await self._agent.generate_drafts(
+                target.agent_config, prompt, worktree, target.time_budget_seconds,
+                n_drafts=n_drafts, git=self._git,
+            )
+            drafts_generated = len(drafts)
+            if not drafts:
+                return _make_early_record(
+                    experiment_id, target, pre_sha, start_time,
+                    Outcome.BLOCKED, failure_mode="all_drafts_failed_generation",
+                )
+
+            # Verify each draft: apply diff, run verifiers, reset
+            surviving: list[tuple[AgentInvocationResult, str]] = []
+            total_cost = sum(d[0].cost_usd for d in drafts)
+            for agent_result, diff_text in drafts:
+                if not diff_text.strip():
+                    continue
+                applied = await self._git.apply_diff(worktree, diff_text)
+                if not applied:
+                    continue
+                if target.eval_config.verifiers:
+                    v_results = await run_verifiers(worktree, target.eval_config.verifiers)
+                    passed = all(v_passed for _, v_passed, _ in v_results)
+                    await self._git.reset_hard(worktree, pre_sha)
+                    if not passed:
+                        continue
+                else:
+                    await self._git.reset_hard(worktree, pre_sha)
+                surviving.append((agent_result, diff_text))
+
+            drafts_survived = len(surviving)
+            if not surviving:
+                blocked = _make_early_record(
+                    experiment_id, target, pre_sha, start_time,
+                    Outcome.BLOCKED, failure_mode="all_drafts_failed_verifiers",
+                    cost_usd=total_cost,
+                )
+                blocked.drafts_generated = drafts_generated
+                blocked.drafts_survived = 0
+                if self._knowledge:
+                    self._knowledge.append_record(blocked)
+                    self._knowledge.update_index(blocked)
+                return blocked
+
+            # Select best: apply winner permanently
+            best_result, best_diff = surviving[0]
+            await self._git.apply_diff(worktree, best_diff)
+            cost_usd = total_cost
+            hypothesis = best_result.hypothesis or "No hypothesis provided"
+            hypothesis_source = best_result.hypothesis_source
+            tags = list(best_result.tags)
+        else:
+            # Single-draft path (existing behavior)
+            result = await self._invoke_agent(
+                target, worktree, prompt, pre_sha, start_time, experiment_id,
+            )
+            if isinstance(result, ExperimentRecord):
+                return result
+            agent_result = result
+            cost_usd = agent_result.cost_usd
+            hypothesis = agent_result.hypothesis or "No hypothesis provided"
+            hypothesis_source = agent_result.hypothesis_source
+            tags = list(agent_result.tags)
+
         if is_restart:
             tags.append("restart")
 
         # Ablation logging: track whether knowledge context influenced the hypothesis
         if knowledge_context and hypothesis != "No hypothesis provided":
-            # Check if any retrieved hypothesis keywords appear in the agent's hypothesis
             retrieved_hypotheses = [r.hypothesis for r in history if r.hypothesis]
             referenced = any(
                 keyword in hypothesis.lower()
                 for rh in retrieved_hypotheses
                 for keyword in rh.lower().split()
-                if len(keyword) > 5  # skip short common words
+                if len(keyword) > 5
             )
             logger.info(
                 "Knowledge ablation for %s: injected=%d records, hypothesis_references_knowledge=%s",
@@ -321,8 +385,8 @@ class ExperimentRunner:
         # Re-read artifact content after mutation
         artifact_content = self._read_artifacts(worktree, target.artifact_paths)
 
-        # 4b. Run verifiers (binary gates before eval)
-        if target.eval_config.verifiers:
+        # 4b. Run verifiers (single-draft only — multi-draft already verified per-draft)
+        if n_drafts <= 1 and target.eval_config.verifiers:
             verifier_results = await run_verifiers(worktree, target.eval_config.verifiers)
             for v_name, v_passed, v_stderr in verifier_results:
                 if not v_passed:
@@ -355,11 +419,14 @@ class ExperimentRunner:
             return pre_check
 
         # 6. Evaluate and decide
-        return await self._evaluate_and_decide(
+        record = await self._evaluate_and_decide(
             target, worktree, artifact_content, pre_sha, commit_sha,
             start_time, experiment_id, cost_usd,
             hypothesis, hypothesis_source, tags,
         )
+        record.drafts_generated = drafts_generated
+        record.drafts_survived = drafts_survived
+        return record
 
     # ------------------------------------------------------------------
     # Pipeline stages

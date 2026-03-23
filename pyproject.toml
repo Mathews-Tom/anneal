@@ -32,6 +32,9 @@ include = ["anneal*"]
 dashboard = ["aiohttp>=3.13.3"]
 mcp = ["mcp>=1.9"]
 ml = ["scikit-learn>=1.5"]
+dev = [
+    "scikit-learn>=1.8.0",
+]
 
 [dependency-groups]
 dev = [

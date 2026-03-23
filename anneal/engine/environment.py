@@ -165,6 +165,14 @@ class GitEnvironment:
         """``git reset --hard <sha>``."""
         await self._run_git(["reset", "--hard", sha], cwd=worktree_path)
 
+    async def checkout(self, worktree: Path, sha: str) -> None:
+        """Checkout a specific commit in the worktree.
+
+        Used by tree search to explore non-HEAD ancestors.
+        Wraps reset_hard — the worktree moves to the specified SHA.
+        """
+        await self.reset_hard(worktree, sha)
+
     async def checkout_paths(
         self, worktree_path: Path, paths: list[str]
     ) -> None:

@@ -13,7 +13,6 @@ dependencies = [
     "pyyaml>=6.0.3",
     "filelock>=3.25.2",
     "httpx>=0.28.1",
-    "aiohttp>=3.13.3",
 ]
 
 [project.scripts]
@@ -23,6 +22,7 @@ anneal = "anneal.cli:main"
 include = ["anneal*"]
 
 [project.optional-dependencies]
+dashboard = ["aiohttp>=3.13.3"]
 ml = ["scikit-learn>=1.5"]
 
 [dependency-groups]

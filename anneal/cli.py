@@ -734,7 +734,12 @@ def _handle_drift(args: argparse.Namespace) -> None:
 
 def _handle_dashboard(args: argparse.Namespace) -> None:
     """Handle ``anneal dashboard``."""
-    from anneal.engine.dashboard import DashboardServer
+    try:
+        from anneal.engine.dashboard import DashboardServer
+    except ImportError:
+        raise SystemExit(
+            "Dashboard requires aiohttp. Install with: uv add 'anneal-cli[dashboard]'"
+        )
 
     # Resolve .anneal root directory
     if args.root:

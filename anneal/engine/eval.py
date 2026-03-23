@@ -341,18 +341,21 @@ class StochasticEvaluator:
         output_format: str,
     ) -> tuple[str, float]:
         """Generate a single sample. Returns (text, cost_usd)."""
-        async with _API_SEMAPHORE:
-            response = await client.chat.completions.create(
-                model=model,
-                temperature=0.7,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": f"Generate output in {output_format} format.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            )
+        try:
+            async with _API_SEMAPHORE:
+                response = await client.chat.completions.create(
+                    model=model,
+                    temperature=0.7,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": f"Generate output in {output_format} format.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                )
+        except (openai.APITimeoutError, openai.APIConnectionError) as exc:
+            raise EvalError(f"Generation API call failed: {exc}") from exc
         text = response.choices[0].message.content or ""
         cost = _extract_cost(response, model)
         return text, cost
@@ -365,28 +368,31 @@ class StochasticEvaluator:
         criterion: BinaryCriterion,
     ) -> tuple[float, float]:
         """Single judgment call for a (sample, criterion) pair. Returns (0|1, cost_usd)."""
-        async with _API_SEMAPHORE:
-            response = await client.chat.completions.create(
-                model=model,
-                temperature=0.0,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are an evaluator. Answer the following question about the "
-                            "provided output with exactly YES or NO. No explanation."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            f"## Criterion: {criterion.name}\n\n"
-                            f"{criterion.question}\n\n"
-                            f"## Output to evaluate\n\n{sample}"
-                        ),
-                    },
-                ],
-            )
+        try:
+            async with _API_SEMAPHORE:
+                response = await client.chat.completions.create(
+                    model=model,
+                    temperature=0.0,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are an evaluator. Answer the following question about the "
+                                "provided output with exactly YES or NO. No explanation."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                f"## Criterion: {criterion.name}\n\n"
+                                f"{criterion.question}\n\n"
+                                f"## Output to evaluate\n\n{sample}"
+                            ),
+                        },
+                    ],
+                )
+        except (openai.APITimeoutError, openai.APIConnectionError) as exc:
+            raise EvalError(f"Scoring API call failed for {criterion.name}: {exc}") from exc
         answer = (response.choices[0].message.content or "").strip().upper()
         binary = 1.0 if answer.startswith("YES") else 0.0
         cost = _extract_cost(response, model)

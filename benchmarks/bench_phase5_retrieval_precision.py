@@ -15,7 +15,16 @@ from __future__ import annotations
 
 import sys
 
-from anneal.engine.knowledge import TFIDFIndex, _jaccard_similarity
+from anneal.engine.knowledge import TFIDFIndex
+
+
+def _jaccard_similarity(a: str, b: str) -> float:
+    """Jaccard similarity between two strings (word-level)."""
+    set_a = set(a.lower().split())
+    set_b = set(b.lower().split())
+    intersection = set_a & set_b
+    union = set_a | set_b
+    return len(intersection) / len(union) if union else 0.0
 
 
 # Ground truth: 5 groups x 6 hypotheses = 30 total.

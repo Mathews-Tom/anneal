@@ -246,6 +246,40 @@ def _read_file_safe(path: Path) -> str | None:
     return path.read_text()
 
 
+VERIFIER_WARNING_THRESHOLD = 0.6
+VERIFIER_WARNING_WINDOW = 10
+
+
+def _build_verifier_warning(history: list[ExperimentRecord]) -> str:
+    """Build verifier failure warning if any verifier blocks >60% of recent experiments."""
+    recent = history[-VERIFIER_WARNING_WINDOW:]
+    if len(recent) < 3:
+        return ""
+
+    verifier_counts: dict[str, int] = {}
+    total = len(recent)
+    for r in recent:
+        if r.failure_mode and r.failure_mode.startswith("verifier:"):
+            v_name = r.failure_mode[len("verifier:"):]
+            verifier_counts[v_name] = verifier_counts.get(v_name, 0) + 1
+
+    warnings: list[str] = []
+    for v_name, count in verifier_counts.items():
+        rate = count / total
+        if rate > VERIFIER_WARNING_THRESHOLD:
+            warnings.append(
+                f"\u26a0 Verifier '{v_name}' blocked {count}/{total} recent mutations ({rate:.0%})."
+            )
+
+    if not warnings:
+        return ""
+
+    return "# Verifier Failure Warnings\n\n" + "\n".join(warnings) + (
+        "\n\nFocus on producing mutations that pass these verification gates. "
+        "Review the verifier requirements before making changes."
+    )
+
+
 def build_target_context(
     target: OptimizationTarget,
     worktree_path: Path,
@@ -318,6 +352,14 @@ def build_target_context(
             "knowledge_context", knowledge_context, priority=4, required=False
         )
 
+    # Slot 4b: Verifier failure warnings (when a verifier blocks >60% of recent experiments)
+    if history:
+        verifier_warning = _build_verifier_warning(history)
+        if verifier_warning:
+            budget.add_slot(
+                "verifier_warnings", verifier_warning, priority=4, required=False
+            )
+
     # Slot 5: Global cross-project learnings (F5)
     if global_learnings:
         budget.add_slot(
@@ -326,5 +368,83 @@ def build_target_context(
 
     assembled = budget.assemble()
     logger.debug("Context assembly:\n%s", budget.summary())
+
+    return assembled, budget.total_tokens
+
+
+def build_restart_context(
+    target: OptimizationTarget,
+    worktree_path: Path,
+    repo_root: Path,
+) -> tuple[str, int]:
+    """Build context for a restart experiment — fresh generation from scratch.
+
+    Provides eval criteria, scope definition, and watch files but
+    NO current artifact content and NO experiment history.
+    This forces the agent to generate a fresh implementation.
+
+    Returns (assembled_prompt, total_tokens).
+    """
+    budget = ContextBudget(max_tokens=target.agent_config.max_context_tokens)
+
+    # Slot 1: System prompt with restart instruction
+    program_path = repo_root / target.knowledge_path / "program.md"
+    program_content = _read_file_safe(program_path)
+    if program_content is None:
+        program_content = (
+            f"# Optimization Target: {target.id}\n\n"
+            f"You are optimizing artifacts to improve the metric "
+            f"'{target.eval_config.metric_name}' "
+            f"({target.eval_config.direction.value}).\n\n"
+            f"Current baseline score: {target.baseline_score}\n\n"
+            f"## Scope Rules\n"
+            f"- Editable files: {', '.join(target.artifact_paths)}\n"
+            f"- Eval mode: {target.eval_mode.value}\n"
+        )
+
+    restart_instruction = (
+        "\n\n## RESTART EXPERIMENT\n\n"
+        "Generate a FRESH implementation from scratch. Do not assume any "
+        "prior structure. Approach the problem with a completely new design. "
+        "The current artifact content is intentionally withheld to avoid "
+        "anchoring on a potentially flawed structure.\n"
+    )
+
+    budget.add_slot(
+        "system_prompt", program_content + restart_instruction,
+        priority=1, required=True,
+    )
+
+    # Slot 2: Scope definition (what files to create/modify)
+    scope_path = repo_root / target.scope_path
+    scope_content = _read_file_safe(scope_path)
+    if scope_content:
+        budget.add_slot(
+            "scope_definition",
+            f"# Scope Definition\n\n```yaml\n{scope_content}\n```",
+            priority=2, required=True,
+        )
+
+    # Slot 3: Watch file contents (reference material, read-only context)
+    from anneal.engine.scope import load_scope
+    try:
+        scope = load_scope(scope_path)
+        watch_parts: list[str] = []
+        for watch_rel in scope.watch:
+            watch_path = worktree_path / watch_rel
+            content = _read_file_safe(watch_path)
+            if content is not None:
+                watch_parts.append(f"### {watch_rel}\n```\n{content}\n```")
+        if watch_parts:
+            budget.add_slot(
+                "watch_files",
+                "# Reference Files (read-only)\n\n" + "\n\n".join(watch_parts),
+                priority=3, required=False,
+            )
+    except Exception:
+        pass  # Scope loading failure is non-fatal for restart context
+
+    assembled = budget.assemble()
+    logger.debug("Restart context assembly:\n%s", budget.summary())
 
     return assembled, budget.total_tokens

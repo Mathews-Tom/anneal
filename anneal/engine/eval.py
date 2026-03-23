@@ -33,9 +33,6 @@ class EvalError(Exception):
     """Raised on evaluation failures."""
 
 
-# Keep _make_client as an alias for backward compatibility (gate scripts import it)
-_make_client = make_client
-
 
 def _bootstrap_ci(
     scores: list[float],

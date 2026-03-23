@@ -49,10 +49,6 @@ def _extract_tags(text: str) -> list[str]:
     return []
 
 
-# Backward compatibility aliases (gate scripts import these)
-_make_api_client = make_client
-_compute_cost = compute_cost
-
 
 class AgentInvoker:
     """Invokes a mutation agent via Claude Code subprocess or direct API call."""

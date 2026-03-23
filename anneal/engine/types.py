@@ -8,11 +8,12 @@ coordinated updates across all consumers.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Literal, NamedTuple
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ---------------------------------------------------------------------------
@@ -62,59 +63,54 @@ class RunnerState(Enum):
 
 
 # ---------------------------------------------------------------------------
-# Configuration dataclasses
+# Configuration models
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class AgentConfig:
+class AgentConfig(BaseModel):
     """Configuration for the mutation agent."""
 
     mode: Literal["claude_code", "api"]
     model: str
     evaluator_model: str
-    max_budget_usd: float = 0.10
-    max_context_tokens: int = 80_000
-    temperature: float = 0.7
+    max_budget_usd: float = Field(default=0.10, gt=0)
+    max_context_tokens: int = Field(default=80_000, gt=0)
+    temperature: float = Field(default=0.7, ge=0, le=2.0)
     sandbox: bool = False
 
 
-@dataclass
-class DeterministicEval:
+class DeterministicEval(BaseModel):
     """Configuration for deterministic evaluation."""
 
     run_command: str
     parse_command: str
-    timeout_seconds: int
+    timeout_seconds: int = Field(gt=0)
 
 
-@dataclass
-class BinaryCriterion:
+class BinaryCriterion(BaseModel):
     """A single binary evaluation criterion for stochastic eval."""
 
     name: str
     question: str
 
 
-@dataclass
-class StochasticEval:
+class StochasticEval(BaseModel):
     """Configuration for stochastic evaluation."""
 
-    sample_count: int
+    sample_count: int = Field(gt=0)
     criteria: list[BinaryCriterion]
     test_prompts: list[str]
     generation_prompt_template: str
     output_format: str
-    confidence_level: float = 0.95
+    confidence_level: float = Field(default=0.95, gt=0, lt=1)
     generation_agent_config: AgentConfig | None = None
-    held_out_prompts: list[str] = field(default_factory=list)
-    min_criterion_scores: dict[str, float] = field(default_factory=dict)
-    judgment_votes: int = 3
-    comparison_mode: str = "majority_vote"  # "majority_vote" or "bradley_terry"
+    held_out_prompts: list[str] = Field(default_factory=list)
+    min_criterion_scores: dict[str, float] = Field(default_factory=dict)
+    judgment_votes: int = Field(default=3, gt=0)
+    comparison_mode: str = "majority_vote"
 
 
-@dataclass
-class MetricConstraint:
+class MetricConstraint(BaseModel):
     """A constraint that must be satisfied for an experiment to be KEPT."""
 
     metric_name: str
@@ -122,74 +118,80 @@ class MetricConstraint:
     direction: Direction
 
 
-@dataclass
-class ConstraintCommand:
+class ConstraintCommand(BaseModel):
     """A secondary deterministic eval command used as a constraint."""
 
     name: str
     run_command: str
     parse_command: str
-    timeout_seconds: int
+    timeout_seconds: int = Field(gt=0)
     threshold: float
     direction: Direction
 
 
-@dataclass
-class FidelityStage:
+class FidelityStage(BaseModel):
     """A stage in a multi-fidelity evaluation pipeline."""
 
     name: str
-    run_command: str  # Deterministic eval command
-    parse_command: str  # Parse output to float
-    timeout_seconds: int = 30
-    min_pass_score: float = 0.0  # Minimum to proceed to next stage
+    run_command: str
+    parse_command: str
+    timeout_seconds: int = Field(default=30, gt=0)
+    min_pass_score: float = 0.0
 
 
-@dataclass
-class EvalConfig:
+class EvalConfig(BaseModel):
     """Evaluation configuration for a target."""
 
     metric_name: str
     direction: Direction
-    min_improvement_threshold: float = 0.0
+    min_improvement_threshold: float = Field(default=0.0, ge=0)
     deterministic: DeterministicEval | None = None
     stochastic: StochasticEval | None = None
-    held_out_interval: int = 10
-    constraints: list[MetricConstraint] = field(default_factory=list)
-    constraint_commands: list[ConstraintCommand] = field(default_factory=list)
-    fidelity_stages: list[FidelityStage] = field(default_factory=list)
+    held_out_interval: int = Field(default=10, gt=0)
+    constraints: list[MetricConstraint] = Field(default_factory=list)
+    constraint_commands: list[ConstraintCommand] = Field(default_factory=list)
+    fidelity_stages: list[FidelityStage] = Field(default_factory=list)
 
 
-@dataclass
-class BudgetCap:
+class BudgetCap(BaseModel):
     """Budget enforcement configuration."""
 
-    max_usd_per_day: float
-    cumulative_usd_spent: float = 0.0
+    max_usd_per_day: float = Field(gt=0)
+    cumulative_usd_spent: float = Field(default=0.0, ge=0)
 
 
-@dataclass
-class NotificationConfig:
+class NotificationConfig(BaseModel):
     """Notification hooks configuration."""
 
     webhook_url: str | None = None
     fallback_webhook_url: str | None = None
     status_file: str = ".anneal-status"
-    notify_on: list[str] = field(default_factory=lambda: ["PAUSED", "HALTED"])
-    milestone_interval: int = 10
-    webhook_retry_count: int = 3
-    webhook_retry_delay_seconds: float = 5.0
+    notify_on: list[str] = Field(default_factory=lambda: ["PAUSED", "HALTED"])
+    milestone_interval: int = Field(default=10, gt=0)
+    webhook_retry_count: int = Field(default=3, ge=0)
+    webhook_retry_delay_seconds: float = Field(default=5.0, ge=0)
 
 
-@dataclass
-class ScopeConfig:
+class ScopeConfig(BaseModel):
     """Parsed scope.yaml content."""
 
     editable: list[str]
     immutable: list[str]
-    watch: list[str] = field(default_factory=list)
-    allowed_deletions: list[str] = field(default_factory=list)
-    constraints: list[dict[str, str]] = field(default_factory=list)
+    watch: list[str] = Field(default_factory=list)
+    allowed_deletions: list[str] = Field(default_factory=list)
+    constraints: list[dict[str, str]] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# PopulationConfig (must be defined before OptimizationTarget)
+# ---------------------------------------------------------------------------
+
+
+class PopulationConfig(BaseModel):
+    """Configuration for population-based search strategy."""
+
+    population_size: int = Field(default=4, gt=0)
+    tournament_size: int = Field(default=2, gt=0)
 
 
 # ---------------------------------------------------------------------------
@@ -197,31 +199,32 @@ class ScopeConfig:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class OptimizationTarget:
+class OptimizationTarget(BaseModel):
     """Complete configuration for one optimization target."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     id: str
     domain_tier: DomainTier
-    artifact_paths: list[str]
+    artifact_paths: list[str] = Field(min_length=1)
     scope_path: str
     scope_hash: str
     eval_mode: EvalMode
     eval_config: EvalConfig
     agent_config: AgentConfig
-    time_budget_seconds: int
-    loop_interval_seconds: int
+    time_budget_seconds: int = Field(gt=0)
+    loop_interval_seconds: int = Field(ge=0)
     knowledge_path: str
     worktree_path: str
     git_branch: str
     baseline_score: float
-    baseline_raw_scores: list[float] = field(default_factory=list)
-    max_consecutive_failures: int = 5
+    baseline_raw_scores: list[float] = Field(default_factory=list)
+    max_consecutive_failures: int = Field(default=5, gt=0)
     budget_cap: BudgetCap | None = None
-    meta_depth: int = 0
+    meta_depth: int = Field(default=0, ge=0)
     inject_knowledge_context: bool = False
-    notifications: NotificationConfig = field(default_factory=NotificationConfig)
-    approval_callback: Callable[[str], bool] | None = None
+    notifications: NotificationConfig = Field(default_factory=NotificationConfig)
+    approval_callback: Callable[[str], bool] | None = Field(default=None, exclude=True)
     population_config: PopulationConfig | None = None
 
 
@@ -238,12 +241,11 @@ class EvalResult(NamedTuple):
     ci_upper: float | None = None
     raw_scores: list[float] | None = None
     cost_usd: float = 0.0
-    criterion_names: list[str] | None = None  # Ordered criterion names matching raw_scores
+    criterion_names: list[str] | None = None
     per_criterion_scores: dict[str, float] | None = None
 
 
-@dataclass
-class AgentInvocationResult:
+class AgentInvocationResult(BaseModel):
     """Returned by agent invoker, consumed by runner and cost tracker."""
 
     success: bool
@@ -256,9 +258,10 @@ class AgentInvocationResult:
     raw_output: str
 
 
-@dataclass(frozen=True)
-class ScopeViolationResult:
+class ScopeViolationResult(BaseModel):
     """Returned by scope enforcer, consumed by runner."""
+
+    model_config = ConfigDict(frozen=True)
 
     has_violations: bool
     violated_paths: list[str]
@@ -266,8 +269,7 @@ class ScopeViolationResult:
     all_blocked: bool
 
 
-@dataclass
-class ExperimentRecord:
+class ExperimentRecord(BaseModel):
     """One experiment's complete record. Written by runner, read by
     knowledge store, cost tracker, and consolidation."""
 
@@ -297,8 +299,7 @@ class ExperimentRecord:
     per_criterion_scores: dict[str, float] | None = None
 
 
-@dataclass
-class CostEstimate:
+class CostEstimate(BaseModel):
     """Pre-experiment cost estimate for budget enforcement."""
 
     context_input_tokens: float
@@ -307,8 +308,7 @@ class CostEstimate:
     total_usd: float
 
 
-@dataclass
-class ConsolidationRecord:
+class ConsolidationRecord(BaseModel):
     """Structured summary produced every 50 experiments."""
 
     experiment_range: tuple[int, int]
@@ -322,7 +322,7 @@ class ConsolidationRecord:
     top_improvements: list[dict[str, str | float]]
     failed_approaches: list[dict[str, str | float]]
     tags_frequency: dict[str, int]
-    criterion_variances: dict[str, float] = field(default_factory=dict)
+    criterion_variances: dict[str, float] = Field(default_factory=dict)
     score_variance: float = 0.0
 
 
@@ -331,8 +331,7 @@ class ConsolidationRecord:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class DriftEntry:
+class DriftEntry(BaseModel):
     """A single criterion exhibiting evaluator drift."""
 
     criterion_name: str
@@ -342,26 +341,14 @@ class DriftEntry:
 
 
 # ---------------------------------------------------------------------------
-# Population-based search
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class PopulationConfig:
-    """Configuration for population-based search strategy."""
-
-    population_size: int = 4
-    tournament_size: int = 2
-
-
-# ---------------------------------------------------------------------------
 # Git environment types
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class WorktreeInfo:
+class WorktreeInfo(BaseModel):
     """Information about a git worktree."""
+
+    model_config = ConfigDict(frozen=True)
 
     path: Path
     branch: str

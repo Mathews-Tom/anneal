@@ -153,8 +153,8 @@ class TestRegistryRoundTripEvalConfig:
 
     def test_constraints_roundtrip(self) -> None:
         constraints = [
-            MetricConstraint("clarity", 0.5, Direction.HIGHER_IS_BETTER),
-            MetricConstraint("latency", 100.0, Direction.LOWER_IS_BETTER),
+            MetricConstraint(metric_name="clarity", threshold=0.5, direction=Direction.HIGHER_IS_BETTER),
+            MetricConstraint(metric_name="latency", threshold=100.0, direction=Direction.LOWER_IS_BETTER),
         ]
         target = _make_target(constraints=constraints)
         toml_str = _serialize_target_toml(target)

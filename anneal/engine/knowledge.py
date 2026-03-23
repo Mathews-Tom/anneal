@@ -456,15 +456,13 @@ class KnowledgeStore:
                     criterion_variances[name] = _variance(values)
 
         # Verifier block rates: fraction of experiments blocked by each verifier
-        verifier_block_rates: dict[str, float] = {}
-        verifier_counts: dict[str, int] = {}
+        verifier_counts: Counter[str] = Counter()
         for r in window:
             if r.failure_mode and r.failure_mode.startswith("verifier:"):
-                v_name = r.failure_mode[len("verifier:"):]
-                verifier_counts[v_name] = verifier_counts.get(v_name, 0) + 1
-        total_in_window = len(window)
-        for v_name, count in verifier_counts.items():
-            verifier_block_rates[v_name] = count / total_in_window if total_in_window > 0 else 0.0
+                verifier_counts[r.failure_mode.removeprefix("verifier:")] += 1
+        verifier_block_rates = {
+            v_name: count / len(window) for v_name, count in verifier_counts.items()
+        }
 
         record = ConsolidationRecord(
             experiment_range=(start_idx, total),

@@ -260,7 +260,7 @@ def _build_verifier_warning(history: list[ExperimentRecord]) -> str:
     total = len(recent)
     for r in recent:
         if r.failure_mode and r.failure_mode.startswith("verifier:"):
-            v_name = r.failure_mode[len("verifier:"):]
+            v_name = r.failure_mode.removeprefix("verifier:")
             verifier_counts[v_name] = verifier_counts.get(v_name, 0) + 1
 
     warnings: list[str] = []
@@ -352,18 +352,18 @@ def build_target_context(
             "knowledge_context", knowledge_context, priority=4, required=False
         )
 
-    # Slot 4b: Verifier failure warnings (when a verifier blocks >60% of recent experiments)
+    # Slot 5: Verifier failure warnings (when a verifier blocks >60% of recent experiments)
     if history:
         verifier_warning = _build_verifier_warning(history)
         if verifier_warning:
             budget.add_slot(
-                "verifier_warnings", verifier_warning, priority=4, required=False
+                "verifier_warnings", verifier_warning, priority=5, required=False
             )
 
-    # Slot 5: Global cross-project learnings (F5)
+    # Slot 6: Global cross-project learnings
     if global_learnings:
         budget.add_slot(
-            "global_learnings", global_learnings, priority=5, required=False
+            "global_learnings", global_learnings, priority=6, required=False
         )
 
     assembled = budget.assemble()
@@ -426,7 +426,7 @@ def build_restart_context(
         )
 
     # Slot 3: Watch file contents (reference material, read-only context)
-    from anneal.engine.scope import load_scope
+    from anneal.engine.scope import ScopeError, load_scope
     try:
         scope = load_scope(scope_path)
         watch_parts: list[str] = []
@@ -441,8 +441,8 @@ def build_restart_context(
                 "# Reference Files (read-only)\n\n" + "\n\n".join(watch_parts),
                 priority=3, required=False,
             )
-    except Exception:
-        pass  # Scope loading failure is non-fatal for restart context
+    except ScopeError:
+        logger.debug("Scope loading failed for restart context, skipping watch files")
 
     assembled = budget.assemble()
     logger.debug("Restart context assembly:\n%s", budget.summary())

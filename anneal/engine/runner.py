@@ -22,7 +22,7 @@ from typing import Literal
 from anneal.engine.agent import AgentInvocationError, AgentInvoker, AgentTimeoutError
 from anneal.engine.context import build_restart_context, build_target_context
 from anneal.engine.environment import GitEnvironment
-from anneal.engine.eval import EvalEngine, EvalError
+from anneal.engine.eval import EvalEngine, EvalError, run_verifiers
 from anneal.engine.knowledge import KnowledgeStore
 from anneal.engine.learning_pool import LearningPool, extract_learning
 from anneal.engine.notifications import NotificationManager
@@ -303,7 +303,6 @@ class ExperimentRunner:
 
         # 4b. Run verifiers (binary gates before eval)
         if target.eval_config.verifiers:
-            from anneal.engine.eval import run_verifiers
             verifier_results = await run_verifiers(worktree, target.eval_config.verifiers)
             for v_name, v_passed, v_stderr in verifier_results:
                 if not v_passed:
@@ -323,7 +322,6 @@ class ExperimentRunner:
                         self._knowledge.append_record(verifier_record)
                         self._knowledge.update_index(verifier_record)
                     if self._learning_pool is not None:
-                        from anneal.engine.learning_pool import extract_learning
                         self._learning_pool.add(extract_learning(verifier_record, source_target=target.id))
                     return verifier_record
 

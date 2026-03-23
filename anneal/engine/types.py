@@ -198,6 +198,20 @@ class PopulationConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Eval environment (cloud/remote eval lifecycle)
+# ---------------------------------------------------------------------------
+
+
+class EvalEnvironment(BaseModel):
+    """Environment requirements for eval commands (cloud/remote targets)."""
+
+    requires_network: bool = False
+    env_vars: list[str] = Field(default_factory=list)
+    setup_command: str | None = None
+    teardown_command: str | None = None
+
+
+# ---------------------------------------------------------------------------
 # OptimizationTarget — the full target registration record
 # ---------------------------------------------------------------------------
 
@@ -229,6 +243,7 @@ class OptimizationTarget(BaseModel):
     notifications: NotificationConfig = Field(default_factory=NotificationConfig)
     approval_callback: Callable[[str], bool] | None = Field(default=None, exclude=True)
     population_config: PopulationConfig | None = None
+    eval_environment: EvalEnvironment | None = None
 
 
 # ---------------------------------------------------------------------------

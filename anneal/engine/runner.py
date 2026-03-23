@@ -62,7 +62,6 @@ def _make_early_record(
     failure_mode: str | None = None,
     cost_usd: float = 0.0,
     score: float | None = None,
-    agent_model: str = "",
 ) -> ExperimentRecord:
     """Build an ExperimentRecord for early-exit paths (timeout, blocked, etc.)."""
     return ExperimentRecord(
@@ -86,7 +85,7 @@ def _make_early_record(
         learnings="",
         cost_usd=cost_usd,
         bootstrap_seed=0,
-        agent_model=agent_model,
+        agent_model=target.agent_config.model,
     )
 
 
@@ -316,7 +315,6 @@ class ExperimentRunner:
                         tags=tags,
                         failure_mode=f"constraint_violated:{name}",
                         cost_usd=cost_usd,
-                        agent_model=target.agent_config.model,
                     )
                     if self._learning_pool is not None:
                         self._learning_pool.add(extract_learning(early_record, source_target=target.id))
@@ -362,7 +360,6 @@ class ExperimentRunner:
                         failure_mode=f"fidelity_stage:{stage.name}",
                         cost_usd=cost_usd,
                         score=stage_result.score,
-                        agent_model=target.agent_config.model,
                     )
                     if self._learning_pool is not None:
                         self._learning_pool.add(extract_learning(fidelity_record, source_target=target.id))

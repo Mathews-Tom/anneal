@@ -85,6 +85,9 @@ class DeterministicEval(BaseModel):
     run_command: str
     parse_command: str
     timeout_seconds: int = Field(gt=0)
+    max_retries: int = Field(default=1, ge=1)
+    retry_delay_seconds: float = Field(default=5.0, ge=0)
+    flake_detection: bool = False
 
 
 class BinaryCriterion(BaseModel):

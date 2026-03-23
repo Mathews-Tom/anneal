@@ -15,6 +15,7 @@ import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from anneal.engine.agent import AgentInvocationError, AgentInvoker, AgentTimeoutError
 from anneal.engine.context import build_target_context
@@ -46,6 +47,47 @@ DIVERGENCE_CRITICAL = 0.25  # 25%
 
 class ScopeIntegrityError(Exception):
     """Raised when scope.yaml hash has drifted since registration."""
+
+
+def _make_early_record(
+    experiment_id: str,
+    target: OptimizationTarget,
+    pre_experiment_sha: str,
+    start_time: float,
+    outcome: Outcome,
+    *,
+    hypothesis: str = "",
+    hypothesis_source: Literal["agent", "synthesized"] = "synthesized",
+    tags: list[str] | None = None,
+    failure_mode: str | None = None,
+    cost_usd: float = 0.0,
+    score: float | None = None,
+    agent_model: str = "",
+) -> ExperimentRecord:
+    """Build an ExperimentRecord for early-exit paths (timeout, blocked, etc.)."""
+    return ExperimentRecord(
+        id=experiment_id,
+        target_id=target.id,
+        git_sha=pre_experiment_sha,
+        pre_experiment_sha=pre_experiment_sha,
+        timestamp=datetime.now(tz=timezone.utc),
+        hypothesis=hypothesis,
+        hypothesis_source=hypothesis_source,
+        mutation_diff_summary="",
+        score=score if score is not None else target.baseline_score,
+        score_ci_lower=None,
+        score_ci_upper=None,
+        raw_scores=None,
+        baseline_score=target.baseline_score,
+        outcome=outcome,
+        failure_mode=failure_mode,
+        duration_seconds=time.monotonic() - start_time,
+        tags=tags or [],
+        learnings="",
+        cost_usd=cost_usd,
+        bootstrap_seed=0,
+        agent_model=agent_model,
+    )
 
 
 class ExperimentRunner:
@@ -157,28 +199,14 @@ class ExperimentRunner:
                         f"Set approval_callback during registration."
                     )
                 if not target.approval_callback(agent_result.raw_output):
-                        duration = time.monotonic() - start_time
-                        return ExperimentRecord(
-                            id=experiment_id,
-                            target_id=target.id,
-                            git_sha=pre_experiment_sha,
-                            pre_experiment_sha=pre_experiment_sha,
-                            timestamp=datetime.now(tz=timezone.utc),
+                        return _make_early_record(
+                            experiment_id, target, pre_experiment_sha, start_time,
+                            Outcome.DISCARDED,
                             hypothesis=agent_result.hypothesis or "Deployment change rejected",
                             hypothesis_source=agent_result.hypothesis_source,
-                            mutation_diff_summary="",
-                            score=target.baseline_score,
-                            score_ci_lower=None,
-                            score_ci_upper=None,
-                            raw_scores=None,
-                            baseline_score=target.baseline_score,
-                            outcome=Outcome.DISCARDED,
-                            failure_mode="approval_rejected",
-                            duration_seconds=duration,
                             tags=agent_result.tags,
-                            learnings="",
+                            failure_mode="approval_rejected",
                             cost_usd=agent_result.cost_usd,
-                            bootstrap_seed=0,
                         )
             else:
                 agent_result = await self._agent.invoke(
@@ -188,55 +216,21 @@ class ExperimentRunner:
                     target.time_budget_seconds,
                 )
         except AgentTimeoutError as exc:
-            duration = time.monotonic() - start_time
             # KILLED recovery: clean up index.lock, restore worktree
             await self._handle_killed(worktree, pre_experiment_sha)
-            return ExperimentRecord(
-                id=experiment_id,
-                target_id=target.id,
-                git_sha=pre_experiment_sha,
-                pre_experiment_sha=pre_experiment_sha,
-                timestamp=datetime.now(tz=timezone.utc),
+            return _make_early_record(
+                experiment_id, target, pre_experiment_sha, start_time,
+                Outcome.KILLED,
                 hypothesis="Agent timed out",
-                hypothesis_source="synthesized",
-                mutation_diff_summary="",
-                score=target.baseline_score,
-                score_ci_lower=None,
-                score_ci_upper=None,
-                raw_scores=None,
-                baseline_score=target.baseline_score,
-                outcome=Outcome.KILLED,
                 failure_mode=str(exc),
-                duration_seconds=duration,
-                tags=[],
-                learnings="",
-                cost_usd=0.0,
-                bootstrap_seed=0,
             )
         except AgentInvocationError as exc:
-            duration = time.monotonic() - start_time
             await self._safe_restore(worktree, pre_experiment_sha)
-            return ExperimentRecord(
-                id=experiment_id,
-                target_id=target.id,
-                git_sha=pre_experiment_sha,
-                pre_experiment_sha=pre_experiment_sha,
-                timestamp=datetime.now(tz=timezone.utc),
+            return _make_early_record(
+                experiment_id, target, pre_experiment_sha, start_time,
+                Outcome.CRASHED,
                 hypothesis="Agent invocation failed",
-                hypothesis_source="synthesized",
-                mutation_diff_summary="",
-                score=target.baseline_score,
-                score_ci_lower=None,
-                score_ci_upper=None,
-                raw_scores=None,
-                baseline_score=target.baseline_score,
-                outcome=Outcome.CRASHED,
                 failure_mode=str(exc),
-                duration_seconds=duration,
-                tags=[],
-                learnings="",
-                cost_usd=0.0,
-                bootstrap_seed=0,
             )
 
         cost_usd += agent_result.cost_usd
@@ -262,31 +256,17 @@ class ExperimentRunner:
         )
 
         if scope_result.all_blocked:
-            duration = time.monotonic() - start_time
             # Reset all violating files
             await self._reset_violated(worktree, scope_result.violated_paths, git_status)
             await self._git.clean_untracked(worktree)
-            return ExperimentRecord(
-                id=experiment_id,
-                target_id=target.id,
-                git_sha=pre_experiment_sha,
-                pre_experiment_sha=pre_experiment_sha,
-                timestamp=datetime.now(tz=timezone.utc),
+            return _make_early_record(
+                experiment_id, target, pre_experiment_sha, start_time,
+                Outcome.BLOCKED,
                 hypothesis=hypothesis,
                 hypothesis_source=hypothesis_source,
-                mutation_diff_summary="",
-                score=target.baseline_score,
-                score_ci_lower=None,
-                score_ci_upper=None,
-                raw_scores=None,
-                baseline_score=target.baseline_score,
-                outcome=Outcome.BLOCKED,
-                failure_mode=f"All changes violated scope: {scope_result.violated_paths}",
-                duration_seconds=duration,
                 tags=tags,
-                learnings="",
+                failure_mode=f"All changes violated scope: {scope_result.violated_paths}",
                 cost_usd=cost_usd,
-                bootstrap_seed=0,
             )
 
         # Reset violations, keep valid edits
@@ -300,28 +280,14 @@ class ExperimentRunner:
 
         # 5. Commit valid edits (skip if agent made no changes)
         if not scope_result.valid_paths:
-            duration = time.monotonic() - start_time
-            return ExperimentRecord(
-                id=experiment_id,
-                target_id=target.id,
-                git_sha=pre_experiment_sha,
-                pre_experiment_sha=pre_experiment_sha,
-                timestamp=datetime.now(tz=timezone.utc),
+            return _make_early_record(
+                experiment_id, target, pre_experiment_sha, start_time,
+                Outcome.BLOCKED,
                 hypothesis=hypothesis,
                 hypothesis_source=hypothesis_source,
-                mutation_diff_summary="",
-                score=target.baseline_score,
-                score_ci_lower=None,
-                score_ci_upper=None,
-                raw_scores=None,
-                baseline_score=target.baseline_score,
-                outcome=Outcome.BLOCKED,
-                failure_mode="Agent made no file changes",
-                duration_seconds=duration,
                 tags=tags,
-                learnings="",
+                failure_mode="Agent made no file changes",
                 cost_usd=cost_usd,
-                bootstrap_seed=0,
             )
 
         commit_sha = await self._git.commit(
@@ -340,30 +306,16 @@ class ExperimentRunner:
             )
             for name, passed, actual in fast_results:
                 if not passed:
-                    duration = time.monotonic() - start_time
                     await self._git.reset_hard(worktree, pre_experiment_sha)
                     logger.warning("Fast constraint %s failed for target %s: actual=%.4f", name, target.id, actual)
-                    early_record = ExperimentRecord(
-                        id=experiment_id,
-                        target_id=target.id,
-                        git_sha=pre_experiment_sha,
-                        pre_experiment_sha=pre_experiment_sha,
-                        timestamp=datetime.now(tz=timezone.utc),
+                    early_record = _make_early_record(
+                        experiment_id, target, pre_experiment_sha, start_time,
+                        Outcome.DISCARDED,
                         hypothesis=hypothesis,
                         hypothesis_source=hypothesis_source,
-                        mutation_diff_summary="",
-                        score=target.baseline_score,
-                        score_ci_lower=None,
-                        score_ci_upper=None,
-                        raw_scores=None,
-                        baseline_score=target.baseline_score,
-                        outcome=Outcome.DISCARDED,
-                        failure_mode=f"constraint_violated:{name}",
-                        duration_seconds=duration,
                         tags=tags,
-                        learnings="",
+                        failure_mode=f"constraint_violated:{name}",
                         cost_usd=cost_usd,
-                        bootstrap_seed=0,
                         agent_model=target.agent_config.model,
                     )
                     if self._learning_pool is not None:
@@ -396,33 +348,20 @@ class ExperimentRunner:
                     passed = stage_result.score <= stage.min_pass_score
 
                 if not passed:
-                    duration = time.monotonic() - start_time
                     await self._git.reset_hard(worktree, pre_experiment_sha)
                     logger.info(
                         "Fidelity stage %s rejected mutation for %s: score=%.4f (min=%.4f)",
                         stage.name, target.id, stage_result.score, stage.min_pass_score,
                     )
-                    fidelity_record = ExperimentRecord(
-                        id=experiment_id,
-                        target_id=target.id,
-                        git_sha=pre_experiment_sha,
-                        pre_experiment_sha=pre_experiment_sha,
-                        timestamp=datetime.now(tz=timezone.utc),
+                    fidelity_record = _make_early_record(
+                        experiment_id, target, pre_experiment_sha, start_time,
+                        Outcome.DISCARDED,
                         hypothesis=hypothesis,
                         hypothesis_source=hypothesis_source,
-                        mutation_diff_summary="",
-                        score=stage_result.score,
-                        score_ci_lower=None,
-                        score_ci_upper=None,
-                        raw_scores=None,
-                        baseline_score=target.baseline_score,
-                        outcome=Outcome.DISCARDED,
-                        failure_mode=f"fidelity_stage:{stage.name}",
-                        duration_seconds=duration,
                         tags=tags,
-                        learnings="",
+                        failure_mode=f"fidelity_stage:{stage.name}",
                         cost_usd=cost_usd,
-                        bootstrap_seed=0,
+                        score=stage_result.score,
                         agent_model=target.agent_config.model,
                     )
                     if self._learning_pool is not None:
@@ -437,29 +376,15 @@ class ExperimentRunner:
                 artifact_content,
             )
         except EvalError as exc:
-            duration = time.monotonic() - start_time
             await self._safe_restore(worktree, pre_experiment_sha)
-            return ExperimentRecord(
-                id=experiment_id,
-                target_id=target.id,
-                git_sha=pre_experiment_sha,
-                pre_experiment_sha=pre_experiment_sha,
-                timestamp=datetime.now(tz=timezone.utc),
+            return _make_early_record(
+                experiment_id, target, pre_experiment_sha, start_time,
+                Outcome.CRASHED,
                 hypothesis=hypothesis,
                 hypothesis_source=hypothesis_source,
-                mutation_diff_summary="",
-                score=target.baseline_score,
-                score_ci_lower=None,
-                score_ci_upper=None,
-                raw_scores=None,
-                baseline_score=target.baseline_score,
-                outcome=Outcome.CRASHED,
-                failure_mode=str(exc),
-                duration_seconds=duration,
                 tags=tags,
-                learnings="",
+                failure_mode=str(exc),
                 cost_usd=cost_usd,
-                bootstrap_seed=0,
             )
 
         cost_usd += eval_result.cost_usd

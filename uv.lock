@@ -112,7 +112,7 @@ wheels = [
 [[package]]
 name = "anneal-cli"
 version = "0.1.1"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "filelock" },
     { name = "httpx" },

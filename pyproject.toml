@@ -20,6 +20,10 @@ dependencies = [
 [project.scripts]
 anneal = "anneal.cli:main"
 
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
 [tool.setuptools.packages.find]
 include = ["anneal*"]
 

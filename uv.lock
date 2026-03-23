@@ -131,6 +131,9 @@ dependencies = [
 dashboard = [
     { name = "aiohttp" },
 ]
+dev = [
+    { name = "scikit-learn" },
+]
 mcp = [
     { name = "mcp" },
 ]
@@ -157,12 +160,13 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rich", specifier = ">=14.3.3" },
+    { name = "scikit-learn", marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "scikit-learn", marker = "extra == 'ml'", specifier = ">=1.5" },
     { name = "scipy", specifier = ">=1.14" },
     { name = "tiktoken", specifier = ">=0.9" },
     { name = "tomli-w", specifier = ">=1.1" },
 ]
-provides-extras = ["dashboard", "mcp", "ml"]
+provides-extras = ["dashboard", "mcp", "ml", "dev"]
 
 [package.metadata.requires-dev]
 dev = [

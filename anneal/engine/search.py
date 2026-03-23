@@ -11,11 +11,11 @@ import math
 import random
 from typing import Protocol
 
-logger = logging.getLogger(__name__)
-
 from scipy.stats import wilcoxon
 
 from anneal.engine.types import Direction, EvalResult
+
+logger = logging.getLogger(__name__)
 
 
 class SearchStrategy(Protocol):

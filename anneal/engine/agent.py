@@ -15,7 +15,7 @@ import signal
 from pathlib import Path
 
 from anneal.engine.client import compute_cost, make_client, strip_provider_prefix
-from anneal.engine.types import AgentConfig, AgentInvocationResult, DomainTier
+from anneal.engine.types import AgentConfig, AgentInvocationResult
 
 logger = logging.getLogger(__name__)
 

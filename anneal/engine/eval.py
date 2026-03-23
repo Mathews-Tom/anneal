@@ -13,14 +13,11 @@ import openai
 
 from anneal.engine.client import compute_cost, make_client, strip_provider_prefix
 from anneal.engine.types import (
-    AgentConfig,
     BinaryCriterion,
-    ConstraintCommand,
     DeterministicEval,
     Direction,
     EvalConfig,
     EvalResult,
-    MetricConstraint,
     StochasticEval,
 )
 

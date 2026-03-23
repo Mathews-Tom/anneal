@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import threading
 import time
 import uuid
@@ -19,16 +20,16 @@ from pathlib import Path
 from typing import Literal
 
 from anneal.engine.agent import AgentInvocationError, AgentInvoker, AgentTimeoutError
-from anneal.engine.context import build_target_context
+from anneal.engine.context import build_restart_context, build_target_context
 from anneal.engine.environment import GitEnvironment
-from anneal.engine.eval import EvalEngine, EvalError
+from anneal.engine.eval import EvalEngine, EvalError, run_verifiers
 from anneal.engine.knowledge import KnowledgeStore
 from anneal.engine.learning_pool import LearningPool, extract_learning
 from anneal.engine.notifications import NotificationManager
 from anneal.engine.registry import Registry
 from anneal.engine.safety import pre_experiment_check
 from anneal.engine.scope import enforce_scope, load_scope, verify_scope_hash
-from anneal.engine.search import GreedySearch, SearchStrategy
+from anneal.engine.search import GreedySearch, SearchStrategy, SimulatedAnnealingSearch
 from anneal.engine.types import (
     AgentInvocationResult,
     DeterministicEval,
@@ -208,34 +209,55 @@ class ExperimentRunner:
         )
 
         # 2. Build prompt with optional knowledge context
-        # Auto-enable knowledge injection after sufficient KEPT experiments
-        KNOWLEDGE_ACTIVATION_THRESHOLD = 20
-        inject_knowledge = target.inject_knowledge_context
-        if not inject_knowledge and self._knowledge:
-            kept_total = sum(
-                1 for r in self._knowledge.load_records()
-                if r.outcome is Outcome.KEPT
+        # Check for restart: roll against restart_probability
+        is_restart = False
+        effective_restart_p = target.restart_probability
+        if effective_restart_p > 0 and isinstance(self._search, SimulatedAnnealingSearch):
+            effective_restart_p *= self._search.temperature_ratio
+        if effective_restart_p > 0 and random.random() < effective_restart_p:
+            is_restart = True
+            logger.info(
+                "Restart triggered for %s (effective_p=%.4f)",
+                target.id, effective_restart_p,
             )
-            if kept_total >= KNOWLEDGE_ACTIVATION_THRESHOLD:
-                inject_knowledge = True
-                logger.info(
-                    "Auto-enabling knowledge context for %s (%d KEPT experiments)",
-                    target.id, kept_total,
+
+        if is_restart:
+            prompt, _context_tokens = build_restart_context(
+                target=target,
+                worktree_path=worktree,
+                repo_root=self._repo_root or worktree,
+            )
+            history = []
+            knowledge_context = ""
+        else:
+            # Auto-enable knowledge injection after sufficient KEPT experiments
+            KNOWLEDGE_ACTIVATION_THRESHOLD = 20
+            inject_knowledge = target.inject_knowledge_context
+            if not inject_knowledge and self._knowledge:
+                kept_total = sum(
+                    1 for r in self._knowledge.load_records()
+                    if r.outcome is Outcome.KEPT
                 )
+                if kept_total >= KNOWLEDGE_ACTIVATION_THRESHOLD:
+                    inject_knowledge = True
+                    logger.info(
+                        "Auto-enabling knowledge context for %s (%d KEPT experiments)",
+                        target.id, kept_total,
+                    )
 
-        history: list[ExperimentRecord] = []
-        knowledge_context = ""
-        if self._knowledge and inject_knowledge:
-            history = self._knowledge.load_records(limit=10)
-            knowledge_context = self._knowledge.get_context()
+            history = []
+            knowledge_context = ""
+            if self._knowledge and inject_knowledge:
+                history = self._knowledge.load_records(limit=10)
+                knowledge_context = self._knowledge.get_context()
 
-        prompt, _context_tokens = build_target_context(
-            target=target,
-            worktree_path=worktree,
-            repo_root=self._repo_root or worktree,
-            history=history,
-            knowledge_context=knowledge_context,
-        )
+            prompt, _context_tokens = build_target_context(
+                target=target,
+                worktree_path=worktree,
+                repo_root=self._repo_root or worktree,
+                history=history,
+                knowledge_context=knowledge_context,
+            )
 
         # 3. Invoke mutation agent
         result = await self._invoke_agent(
@@ -247,7 +269,9 @@ class ExperimentRunner:
         cost_usd = agent_result.cost_usd
         hypothesis = agent_result.hypothesis or "No hypothesis provided"
         hypothesis_source = agent_result.hypothesis_source
-        tags = agent_result.tags
+        tags = list(agent_result.tags)
+        if is_restart:
+            tags.append("restart")
 
         # Ablation logging: track whether knowledge context influenced the hypothesis
         if knowledge_context and hypothesis != "No hypothesis provided":
@@ -276,6 +300,30 @@ class ExperimentRunner:
 
         # Re-read artifact content after mutation
         artifact_content = self._read_artifacts(worktree, target.artifact_paths)
+
+        # 4b. Run verifiers (binary gates before eval)
+        if target.eval_config.verifiers:
+            verifier_results = await run_verifiers(worktree, target.eval_config.verifiers)
+            for v_name, v_passed, v_stderr in verifier_results:
+                if not v_passed:
+                    await self._git.reset_hard(worktree, pre_sha)
+                    logger.warning(
+                        "Verifier %s failed for target %s: %s",
+                        v_name, target.id, v_stderr[:200],
+                    )
+                    verifier_record = _make_early_record(
+                        experiment_id, target, pre_sha, start_time,
+                        Outcome.BLOCKED, hypothesis=hypothesis,
+                        hypothesis_source=hypothesis_source,
+                        tags=tags, failure_mode=f"verifier:{v_name}",
+                        cost_usd=cost_usd,
+                    )
+                    if self._knowledge:
+                        self._knowledge.append_record(verifier_record)
+                        self._knowledge.update_index(verifier_record)
+                    if self._learning_pool is not None:
+                        self._learning_pool.add(extract_learning(verifier_record, source_target=target.id))
+                    return verifier_record
 
         # 5. Run pre-checks (constraints + fidelity stages)
         pre_check = await self._run_pre_checks(

@@ -32,6 +32,7 @@ from anneal.engine.types import (
     OptimizationTarget,
     PopulationConfig,
     StochasticEval,
+    VerifierCommand,
 )
 
 console = Console(stderr=True)
@@ -212,6 +213,15 @@ def _handle_register(args: argparse.Namespace) -> None:
 
     held_out_interval = args.held_out_interval if args.held_out_interval is not None else 10
 
+    # Parse verifier gates
+    verifiers: list[VerifierCommand] = []
+    for verifier_str in (args.verifier or []):
+        if ":" not in verifier_str:
+            console.print(f"[red]Invalid verifier format: {verifier_str}. Use 'name:command'.[/red]")
+            sys.exit(1)
+        v_name, v_command = verifier_str.split(":", 1)
+        verifiers.append(VerifierCommand(name=v_name.strip(), run_command=v_command.strip()))
+
     eval_config = EvalConfig(
         metric_name="binary_criteria_score" if eval_mode is EvalMode.STOCHASTIC else "deterministic_score",
         direction=direction,
@@ -219,6 +229,7 @@ def _handle_register(args: argparse.Namespace) -> None:
         stochastic=stochastic_eval,
         held_out_interval=held_out_interval,
         constraints=constraints,
+        verifiers=verifiers,
     )
 
     # Build agent config (per-invocation budget is separate from daily cap)
@@ -270,6 +281,7 @@ def _handle_register(args: argparse.Namespace) -> None:
         baseline_score=0.0,
         budget_cap=budget_cap,
         meta_depth=meta_depth,
+        restart_probability=args.restart_probability,
         approval_callback=approval_callback,
     )
 
@@ -1158,6 +1170,8 @@ def _build_parser() -> argparse.ArgumentParser:
     reg.add_argument("--constraint", action="append", help="Metric constraint: 'metric>=value' or 'metric<=value' (repeatable)")
     reg.add_argument("--domain-tier", choices=["sandbox", "deployment"], help="Domain tier (default: sandbox)")
     reg.add_argument("--meta-depth", type=int, help="Meta-optimization depth (0=disabled, 1=enabled)")
+    reg.add_argument("--verifier", action="append", metavar="NAME:COMMAND", help="Binary pass/fail verifier gate (repeatable, format: name:command)")
+    reg.add_argument("--restart-probability", type=float, default=0.0, help="Probability of restart experiment per cycle (0.0-1.0, default: 0.0)")
 
     # -- run (stub) --
     run = subparsers.add_parser("run", help="Run optimization loop")

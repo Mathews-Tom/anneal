@@ -230,6 +230,17 @@ class SimulatedAnnealingSearch:
         """Reset temperature to initial value."""
         self._temperature = self._initial_temperature
 
+    @property
+    def initial_temperature(self) -> float:
+        return self._initial_temperature
+
+    @property
+    def temperature_ratio(self) -> float:
+        """Current temperature as fraction of initial temperature (0.0 to 1.0)."""
+        if self._initial_temperature <= 0:
+            return 0.0
+        return self._temperature / self._initial_temperature
+
 
 class PopulationSearch:
     """Population-based search with tournament selection.

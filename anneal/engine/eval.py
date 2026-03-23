@@ -19,6 +19,7 @@ from anneal.engine.types import (
     EvalConfig,
     EvalResult,
     StochasticEval,
+    VerifierCommand,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,46 @@ _API_SEMAPHORE = asyncio.Semaphore(10)
 class EvalError(Exception):
     """Raised on evaluation failures."""
 
+
+async def run_verifiers(
+    worktree_path: Path,
+    verifiers: list[VerifierCommand],
+) -> list[tuple[str, bool, str]]:
+    """Run binary pass/fail verifiers sequentially. Fail-fast on first failure.
+
+    Returns list of (name, passed, stderr_output) tuples.
+    Only returns results up to and including the first failure.
+    """
+    results: list[tuple[str, bool, str]] = []
+    for verifier in verifiers:
+        proc: asyncio.subprocess.Process | None = None
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                verifier.run_command,
+                cwd=worktree_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _stdout, stderr_bytes = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=verifier.timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            if proc is not None:
+                proc.kill()
+                await proc.wait()
+            results.append((verifier.name, False, f"timed out after {verifier.timeout_seconds}s"))
+            return results
+
+        assert proc is not None
+        if proc.returncode != 0:
+            stderr_content = stderr_bytes.decode(errors="replace").strip()
+            results.append((verifier.name, False, stderr_content))
+            return results
+
+        results.append((verifier.name, True, ""))
+
+    return results
 
 
 def _bootstrap_ci(

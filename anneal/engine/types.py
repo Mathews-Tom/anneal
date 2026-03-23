@@ -142,6 +142,18 @@ class FidelityStage(BaseModel):
     min_pass_score: float = 0.0
 
 
+class VerifierCommand(BaseModel):
+    """Binary pass/fail gate run after scope enforcement, before eval.
+
+    If the command exits non-zero, the mutation is DISCARDED immediately.
+    No score parsing, no threshold comparison — purely binary.
+    """
+
+    name: str
+    run_command: str
+    timeout_seconds: int = Field(default=30, gt=0)
+
+
 class EvalConfig(BaseModel):
     """Evaluation configuration for a target."""
 
@@ -154,6 +166,7 @@ class EvalConfig(BaseModel):
     constraints: list[MetricConstraint] = Field(default_factory=list)
     constraint_commands: list[ConstraintCommand] = Field(default_factory=list)
     fidelity_stages: list[FidelityStage] = Field(default_factory=list)
+    verifiers: list[VerifierCommand] = Field(default_factory=list)
 
 
 class BudgetCap(BaseModel):
@@ -242,6 +255,7 @@ class OptimizationTarget(BaseModel):
     inject_knowledge_context: bool = False
     notifications: NotificationConfig = Field(default_factory=NotificationConfig)
     approval_callback: Callable[[str], bool] | None = Field(default=None, exclude=True)
+    restart_probability: float = Field(default=0.0, ge=0.0, le=1.0)
     population_config: PopulationConfig | None = None
     eval_environment: EvalEnvironment | None = None
 
@@ -342,6 +356,7 @@ class ConsolidationRecord(BaseModel):
     tags_frequency: dict[str, int]
     criterion_variances: dict[str, float] = Field(default_factory=dict)
     score_variance: float = 0.0
+    verifier_block_rates: dict[str, float] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

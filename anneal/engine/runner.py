@@ -206,9 +206,24 @@ class ExperimentRunner:
         )
 
         # 2. Build prompt with optional knowledge context
+        # Auto-enable knowledge injection after sufficient KEPT experiments
+        KNOWLEDGE_ACTIVATION_THRESHOLD = 20
+        inject_knowledge = target.inject_knowledge_context
+        if not inject_knowledge and self._knowledge:
+            kept_total = sum(
+                1 for r in self._knowledge.load_records()
+                if r.outcome is Outcome.KEPT
+            )
+            if kept_total >= KNOWLEDGE_ACTIVATION_THRESHOLD:
+                inject_knowledge = True
+                logger.info(
+                    "Auto-enabling knowledge context for %s (%d KEPT experiments)",
+                    target.id, kept_total,
+                )
+
         history: list[ExperimentRecord] = []
         knowledge_context = ""
-        if self._knowledge and target.inject_knowledge_context:
+        if self._knowledge and inject_knowledge:
             history = self._knowledge.load_records(limit=10)
             knowledge_context = self._knowledge.get_context()
 
@@ -231,6 +246,21 @@ class ExperimentRunner:
         hypothesis = agent_result.hypothesis or "No hypothesis provided"
         hypothesis_source = agent_result.hypothesis_source
         tags = agent_result.tags
+
+        # Ablation logging: track whether knowledge context influenced the hypothesis
+        if knowledge_context and hypothesis != "No hypothesis provided":
+            # Check if any retrieved hypothesis keywords appear in the agent's hypothesis
+            retrieved_hypotheses = [r.hypothesis for r in history if r.hypothesis]
+            referenced = any(
+                keyword in hypothesis.lower()
+                for rh in retrieved_hypotheses
+                for keyword in rh.lower().split()
+                if len(keyword) > 5  # skip short common words
+            )
+            logger.info(
+                "Knowledge ablation for %s: injected=%d records, hypothesis_references_knowledge=%s",
+                target.id, len(history), referenced,
+            )
 
         # 4. Enforce scope and commit valid edits
         commit_or_record = await self._enforce_and_commit(

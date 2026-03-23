@@ -268,34 +268,38 @@ class TestPersistentLearningPool:
 # ---------------------------------------------------------------------------
 
 
-def test_eviction_breaks_ties_randomly_varies_across_runs(tmp_path: Path) -> None:
-    """Eviction with identical scores does not always keep the same subset."""
+def test_eviction_breaks_ties_randomly_varies_across_runs() -> None:
+    """Eviction with identical scores uses random tiebreaking, producing
+    different survivor sets when the pool is filled in bulk."""
     from datetime import UTC, datetime
 
     fixed_ts = datetime(2026, 1, 1, tzinfo=UTC)
 
+    def _make_learning(i: int) -> Learning:
+        return Learning(
+            observation=f"obs-{i}",
+            signal=LearningSignal.POSITIVE,
+            source_condition="guided",
+            source_target="target-1",
+            source_experiment_ids=[i],
+            score_delta=0.1,
+            criterion_deltas={},
+            confidence=1.0,
+            tags=[],
+            created_at=fixed_ts,
+        )
+
     surviving_sets: list[frozenset[str]] = []
     for _ in range(50):
         pool = LearningPool(max_size=10)
-        for i in range(20):
-            pool.add(
-                Learning(
-                    observation=f"obs-{i}",
-                    signal=LearningSignal.POSITIVE,
-                    source_condition="guided",
-                    source_target="target-1",
-                    source_experiment_ids=[i],
-                    score_delta=0.1,
-                    criterion_deltas={},
-                    confidence=1.0,
-                    tags=[],
-                    created_at=fixed_ts,
-                )
-            )
+        # Load all 20 items directly, then trigger a single eviction pass
+        pool._learnings = [_make_learning(i) for i in range(20)]  # noqa: SLF001
+        pool._evict()  # noqa: SLF001
         surviving = frozenset(l.observation for l in pool._learnings)  # noqa: SLF001
+        assert len(pool._learnings) == 10  # noqa: SLF001
         surviving_sets.append(surviving)
 
-    # With random tiebreaking, not all 50 runs can produce the same survivor set
+    # With random tiebreaking in a single sort, 50 runs must produce variance
     assert len(set(surviving_sets)) > 1
 
 

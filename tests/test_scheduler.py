@@ -61,7 +61,7 @@ class TestStaleLockRecovery:
         os.utime(lock_path, (old_time, old_time))
 
         scheduler = Scheduler([target], max_skip_threshold=3)
-        ready = asyncio.get_event_loop().run_until_complete(scheduler.tick())
+        ready = asyncio.run(scheduler.tick())
 
         assert target.id in ready
         # Lock file created by stale recovery was removed; a new one was acquired
@@ -84,7 +84,7 @@ class TestStaleLockRecovery:
 
         try:
             scheduler = Scheduler([target], max_skip_threshold=3)
-            ready = asyncio.get_event_loop().run_until_complete(scheduler.tick())
+            ready = asyncio.run(scheduler.tick())
 
             assert target.id not in ready
             assert lock_path.exists()
@@ -106,7 +106,7 @@ class TestStaleLockRecovery:
         old_time = time.time() - 7200
         os.utime(lock_path, (old_time, old_time))
 
-        ready = asyncio.get_event_loop().run_until_complete(scheduler.tick())
+        ready = asyncio.run(scheduler.tick())
 
         assert target.id in ready
         assert scheduler.get_skip_count(target.id) == 0

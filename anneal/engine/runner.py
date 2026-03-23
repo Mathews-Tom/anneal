@@ -769,77 +769,6 @@ class ExperimentRunner:
 
         status_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
-    # ------------------------------------------------------------------
-    # Prompt building
-    # ------------------------------------------------------------------
-
-    def _build_prompt(
-        self,
-        target: OptimizationTarget,
-        history: list[ExperimentRecord],
-    ) -> str:
-        """Build prompt from program.md, artifact content, and experiment history."""
-        worktree = Path(target.worktree_path)
-
-        # Read program.md if it exists
-        program_path = worktree / "targets" / target.id / "program.md"
-        if program_path.exists():
-            program_content = program_path.read_text(encoding="utf-8")
-        else:
-            program_content = self._default_program(target)
-
-        # Read artifact content
-        artifact_content = self._read_artifacts(worktree, target.artifact_paths)
-
-        # Format recent history (last 5)
-        history_text = self._format_history(history[-5:])
-
-        # Knowledge context (retrieved similar experiments + learnings)
-        knowledge_context = ""
-        if self._knowledge:
-            knowledge_context = self._knowledge.get_context()
-
-        # Assemble prompt
-        parts = [
-            program_content,
-            "",
-            "## Previous Results",
-            "",
-            history_text if history_text else "No previous experiments.",
-        ]
-        if knowledge_context:
-            parts.extend(["", knowledge_context])
-        parts.extend([
-            "",
-            "--- ARTIFACT CONTENT ---",
-            artifact_content,
-        ])
-
-        return "\n".join(parts)
-
-    def _default_program(self, target: OptimizationTarget) -> str:
-        """Generate a default program.md prompt when none exists."""
-        editable_list = "\n".join(f"- {p}" for p in target.artifact_paths)
-        return (
-            f"# {target.id} — Optimization Program\n"
-            f"\n"
-            f"## Your Role\n"
-            f"\n"
-            f"You are optimizing the artifact files listed below. Your goal is to "
-            f"improve the evaluation metric: {target.eval_config.metric_name} "
-            f"({target.eval_config.direction.value}).\n"
-            f"\n"
-            f"## Editable Files\n"
-            f"\n"
-            f"{editable_list}\n"
-            f"\n"
-            f"## Constraints\n"
-            f"\n"
-            f"- Only modify files listed above\n"
-            f"- Produce a ## Hypothesis block before making edits\n"
-            f"- Produce a ## Tags block with comma-separated mutation categories\n"
-        )
-
     @staticmethod
     def _read_artifacts(worktree: Path, artifact_paths: list[str]) -> str:
         """Read and concatenate artifact file contents from the worktree."""
@@ -850,19 +779,6 @@ class ExperimentRunner:
                 content = full_path.read_text(encoding="utf-8")
                 parts.append(f"### {rel_path}\n\n{content}")
         return "\n\n".join(parts)
-
-    @staticmethod
-    def _format_history(records: list[ExperimentRecord]) -> str:
-        """Format experiment records for inclusion in the prompt."""
-        if not records:
-            return ""
-        lines: list[str] = []
-        for i, rec in enumerate(records, 1):
-            lines.append(
-                f"{i}. [{rec.outcome.value}] score={rec.score:.4f} "
-                f"| hypothesis: {rec.hypothesis}"
-            )
-        return "\n".join(lines)
 
     # ------------------------------------------------------------------
     # Recovery helpers

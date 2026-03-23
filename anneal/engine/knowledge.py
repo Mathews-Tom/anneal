@@ -87,17 +87,6 @@ def _json_to_consolidation(line: str) -> ConsolidationRecord:
     return ConsolidationRecord(**data)
 
 
-def _jaccard_similarity(a: str, b: str) -> float:
-    """Word-level Jaccard similarity between two strings."""
-    words_a = set(a.lower().split())
-    words_b = set(b.lower().split())
-    if not words_a or not words_b:
-        return 0.0
-    intersection = words_a & words_b
-    union = words_a | words_b
-    return len(intersection) / len(union)
-
-
 class TFIDFIndex:
     """Lightweight TF-IDF index for hypothesis similarity. No external deps."""
 

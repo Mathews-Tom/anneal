@@ -15,6 +15,7 @@ import signal
 from pathlib import Path
 
 from anneal.engine.client import compute_cost, make_client, strip_provider_prefix
+from anneal.engine.environment import GitEnvironment
 from anneal.engine.types import AgentConfig, AgentInvocationResult
 
 logger = logging.getLogger(__name__)
@@ -254,3 +255,62 @@ class AgentInvoker:
             tags=tags,
             raw_output=raw_output,
         )
+
+    async def generate_drafts(
+        self,
+        config: AgentConfig,
+        prompt: str,
+        worktree_path: Path,
+        time_budget_seconds: int,
+        n_drafts: int,
+        git: GitEnvironment,
+    ) -> list[tuple[AgentInvocationResult, str]]:
+        """Generate N draft mutations, capturing each as a diff.
+
+        For API mode: concurrent invocations with varied temperature.
+        For claude_code mode: sequential invocations with worktree reset between each.
+
+        Returns list of (agent_result, diff_text) tuples.
+        """
+        pre_sha = await git.rev_parse(worktree_path, "HEAD")
+        drafts: list[tuple[AgentInvocationResult, str]] = []
+
+        if config.mode == "api":
+            # Concurrent API calls with varied temperature
+            tasks = []
+            for i in range(n_drafts):
+                temp_offset = (i - n_drafts // 2) * 0.1
+                draft_config = config.model_copy(update={
+                    "temperature": max(0.0, min(2.0, config.temperature + temp_offset)),
+                    "max_budget_usd": config.max_budget_usd / n_drafts,
+                })
+                tasks.append(self._invoke_api(draft_config, prompt, worktree_path, time_budget_seconds))
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, BaseException):
+                    logger.warning("Draft generation failed: %s", result)
+                    continue
+                # For API mode, result is the text response — no worktree diff
+                # We store the raw_output as a pseudo-diff (the agent's proposed changes)
+                drafts.append((result, result.raw_output))
+        else:
+            # Sequential claude_code invocations with diff capture
+            for i in range(n_drafts):
+                draft_config = config.model_copy(update={
+                    "max_budget_usd": config.max_budget_usd / n_drafts,
+                })
+                try:
+                    result = await self._invoke_claude_code(
+                        draft_config, prompt, worktree_path, time_budget_seconds,
+                    )
+                    diff_text = await git.capture_diff(worktree_path)
+                    drafts.append((result, diff_text))
+                except (AgentTimeoutError, AgentInvocationError) as exc:
+                    logger.warning("Draft %d/%d failed: %s", i + 1, n_drafts, exc)
+                finally:
+                    # Reset worktree for next draft
+                    await git.reset_hard(worktree_path, pre_sha)
+                    await git.clean_untracked(worktree_path)
+
+        return drafts

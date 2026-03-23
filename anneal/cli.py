@@ -265,6 +265,16 @@ def _handle_register(args: argparse.Namespace) -> None:
     # F8: Meta depth
     meta_depth = args.meta_depth if args.meta_depth is not None else 0
 
+    # Policy agent configuration
+    policy_config = None
+    if args.policy_model:
+        from anneal.engine.types import PolicyConfig
+        policy_config = PolicyConfig(
+            enabled=True,
+            model=args.policy_model,
+            rewrite_interval=args.policy_interval,
+        )
+
     target = OptimizationTarget(
         id=target_id,
         domain_tier=domain_tier,
@@ -283,6 +293,7 @@ def _handle_register(args: argparse.Namespace) -> None:
         budget_cap=budget_cap,
         meta_depth=meta_depth,
         restart_probability=args.restart_probability,
+        policy_config=policy_config,
         approval_callback=approval_callback,
     )
 
@@ -1175,6 +1186,8 @@ def _build_parser() -> argparse.ArgumentParser:
     reg.add_argument("--restart-probability", type=float, default=0.0, help="Probability of restart experiment per cycle (0.0-1.0, default: 0.0)")
     reg.add_argument("--failure-categories", help="Path to TOML file with custom failure categories (optional)")
     reg.add_argument("--n-drafts", type=int, default=1, help="Number of draft mutations per experiment cycle (1-10, default: 1)")
+    reg.add_argument("--policy-model", help="Model for policy agent instruction rewriting (enables continuous meta-optimization)")
+    reg.add_argument("--policy-interval", type=int, default=3, help="Rewrite mutation instructions every N experiments (default: 3)")
 
     # -- run (stub) --
     run = subparsers.add_parser("run", help="Run optimization loop")
@@ -1187,7 +1200,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--samples", type=int, help="Override sample count (N) for this run")
     run.add_argument("--confidence", type=float, help="Override confidence level for this run")
     run.add_argument("--agent-budget", type=float, help="Override per-invocation agent budget for this run")
-    run.add_argument("--search", choices=["greedy", "annealing", "population"], help="Override search strategy for this run")
+    run.add_argument("--search", choices=["greedy", "annealing", "population", "ucb_tree"], help="Override search strategy for this run")
     run.add_argument("--population-size", type=int, help="Population size for population search (default: 4)")
     run.add_argument("--global-learnings", action=argparse.BooleanOptionalAction, default=True, help="Enable/disable cross-project learning pool")
 

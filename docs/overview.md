@@ -35,6 +35,11 @@ Autoresearch is a proof-of-concept for one domain (ML training, single GPU, sing
 | Hardware      | NVIDIA GPU required               | Runs anywhere — no GPU needed                                           |
 | Knowledge     | Flat TSV, no cross-session memory | Structured DAG with semantic retrieval, consolidation, and cross-experiment learning pool |
 | Safety        | git reset                         | Budget caps, failure limits, regression guards, immutable eval boundary |
+| Verification   | None                              | Binary pass/fail gates before eval, per-draft pruning in multi-draft   |
+| Failure diagnosis | None                           | Structured taxonomy with LLM classification, blind spot detection      |
+| Search          | Linear (always HEAD)              | Greedy, SA, Population, Pareto, UCB tree search with backtracking     |
+| Meta-optimization | None                           | Two-timescale: policy agent (continuous) + plateau rewriting (episodic) |
+| Multi-draft     | Single mutation per cycle         | N drafts with verifier pruning, temperature variation                  |
 
 Six key innovations: stochastic eval framework, multi-target orchestration, knowledge compounding with consolidation, cross-experiment learning pool (cross-condition, cross-target, cross-project), external feedback loop integration, and embeddability (as SaaS feature, CI stage, or always-on service).
 

@@ -270,7 +270,8 @@ class TestPersistentLearningPool:
 
 def test_eviction_breaks_ties_randomly_varies_across_runs() -> None:
     """Eviction with identical scores uses random tiebreaking, producing
-    different survivor sets when the pool is filled in bulk."""
+    different survivor sets under different random seeds."""
+    import random as random_mod
     from datetime import UTC, datetime
 
     fixed_ts = datetime(2026, 1, 1, tzinfo=UTC)
@@ -290,16 +291,20 @@ def test_eviction_breaks_ties_randomly_varies_across_runs() -> None:
         )
 
     surviving_sets: list[frozenset[str]] = []
-    for _ in range(50):
-        pool = LearningPool(max_size=10)
-        # Load all 20 items directly, then trigger a single eviction pass
-        pool._learnings = [_make_learning(i) for i in range(20)]  # noqa: SLF001
-        pool._evict()  # noqa: SLF001
-        surviving = frozenset(l.observation for l in pool._learnings)  # noqa: SLF001
-        assert len(pool._learnings) == 10  # noqa: SLF001
-        surviving_sets.append(surviving)
+    saved_state = random_mod.getstate()
+    try:
+        for seed in range(20):
+            random_mod.seed(seed)
+            pool = LearningPool(max_size=10)
+            pool._learnings = [_make_learning(i) for i in range(20)]  # noqa: SLF001
+            pool._evict()  # noqa: SLF001
+            surviving = frozenset(l.observation for l in pool._learnings)  # noqa: SLF001
+            assert len(pool._learnings) == 10  # noqa: SLF001
+            surviving_sets.append(surviving)
+    finally:
+        random_mod.setstate(saved_state)
 
-    # With random tiebreaking in a single sort, 50 runs must produce variance
+    # Different seeds must produce different survivor sets
     assert len(set(surviving_sets)) > 1
 
 

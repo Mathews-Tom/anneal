@@ -30,7 +30,9 @@ from anneal.engine.registry import Registry
 from anneal.engine.safety import pre_experiment_check
 from anneal.engine.scope import enforce_scope, load_scope, verify_scope_hash
 from anneal.engine.search import GreedySearch, SearchStrategy, SimulatedAnnealingSearch
+from anneal.engine.policy_agent import PolicyAgent
 from anneal.engine.taxonomy import FailureTaxonomy
+from anneal.engine.tree_search import UCBTreeSearch
 from anneal.engine.types import (
     AgentInvocationResult,
     DeterministicEval,
@@ -166,6 +168,7 @@ class ExperimentRunner:
         self._notifications = notifications
         self._learning_pool = learning_pool
         self._taxonomy = taxonomy
+        self._policy_agent: PolicyAgent | None = None
         self._stop_flags: set[str] = set()
         self._stop_lock = threading.Lock()
 
@@ -211,6 +214,15 @@ class ExperimentRunner:
             path for _, path in await self._git.status_porcelain(worktree)
         )
 
+        # 1b. Tree search: select parent node and checkout if non-HEAD
+        if isinstance(self._search, UCBTreeSearch):
+            parent_sha = self._search.select_parent()
+            if parent_sha != pre_sha:
+                await self._git.checkout(worktree, parent_sha)
+                pre_sha = parent_sha
+                artifact_content = self._read_artifacts(worktree, target.artifact_paths)
+                logger.info("Tree search selected parent %s for %s", parent_sha[:8], target.id)
+
         # 2. Build prompt with optional knowledge context
         # Check for restart: roll against restart_probability
         is_restart = False
@@ -254,12 +266,17 @@ class ExperimentRunner:
                 history = self._knowledge.load_records(limit=10)
                 knowledge_context = self._knowledge.get_context()
 
+            policy_instructions = ""
+            if self._policy_agent is not None:
+                policy_instructions = self._policy_agent.current_instructions
+
             prompt, _context_tokens = build_target_context(
                 target=target,
                 worktree_path=worktree,
                 repo_root=self._repo_root or worktree,
                 history=history,
                 knowledge_context=knowledge_context,
+                policy_instructions=policy_instructions,
             )
 
         # 3. Invoke mutation agent
@@ -636,6 +653,15 @@ class ExperimentRunner:
             except Exception as exc:
                 logger.warning("Failure classification failed for %s: %s", target.id, exc)
 
+        # Record outcome in tree search and persist
+        if isinstance(self._search, UCBTreeSearch):
+            self._search.record_outcome(
+                parent_sha=pre_sha, child_sha=record.git_sha,
+                score=record.score, kept=outcome is Outcome.KEPT,
+            )
+            tree_path = Path(target.knowledge_path) / "search_tree.json"
+            self._search.persist(tree_path)
+
         if self._knowledge:
             self._knowledge.append_record(record)
             self._knowledge.update_index(record)
@@ -676,6 +702,10 @@ class ExperimentRunner:
         """Run experiments in a loop until stopped."""
         self._clear_stop(target.id)
         records: list[ExperimentRecord] = []
+
+        # Initialize policy agent if configured
+        if target.policy_config and target.policy_config.enabled:
+            self._policy_agent = PolicyAgent(target.policy_config)
 
         # Eval environment lifecycle: run setup command once before loop
         eval_env = target.eval_environment
@@ -799,7 +829,32 @@ class ExperimentRunner:
                 except EvalError as exc:
                     logger.warning("Held-out eval failed for %s: %s", target.id, exc)
 
-            # F8: Meta-optimization on plateau
+            # Policy agent: continuous instruction rewriting
+            if (
+                target.policy_config
+                and target.policy_config.enabled
+                and self._policy_agent is not None
+                and self._policy_agent.should_rewrite(loop.total_experiments)
+            ):
+                recent = self._knowledge.load_records(limit=target.policy_config.lookback_window) if self._knowledge else []
+                failure_dist = FailureTaxonomy.distribution(recent) if self._taxonomy else None
+                try:
+                    new_instructions, rewrite_cost = await self._policy_agent.rewrite_instructions(
+                        recent_records=recent,
+                        current_instructions=self._policy_agent.current_instructions,
+                        target_description=f"Target '{target.id}': optimize {target.eval_config.metric_name} ({target.eval_config.direction.value})",
+                        failure_distribution=failure_dist,
+                    )
+                    reward = self._policy_agent.compute_reward(target.baseline_score)
+                    loop.cumulative_cost_usd += rewrite_cost
+                    logger.info(
+                        "Policy rewrite #%d: reward=%.4f, cost=$%.4f",
+                        self._policy_agent.rewrite_count, reward, rewrite_cost,
+                    )
+                except Exception as exc:
+                    logger.warning("Policy rewrite failed for %s: %s", target.id, exc)
+
+            # Plateau meta-optimization
             meta_m = min(target.max_consecutive_failures, 10)
             if (
                 target.meta_depth > 0

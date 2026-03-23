@@ -328,6 +328,7 @@ def build_target_context(
     history: list[ExperimentRecord],
     knowledge_context: str = "",
     global_learnings: str = "",
+    policy_instructions: str = "",
 ) -> tuple[str, int]:
     """Build the complete agent context for a target.
 
@@ -355,7 +356,15 @@ def build_target_context(
 
     budget.add_slot("system_prompt", program_content, priority=1, required=True)
 
-    # Slot 2: Artifact (current best version of editable files)
+    # Slot 1b: Policy instructions (rewritten by policy agent between experiments)
+    if policy_instructions:
+        budget.add_slot(
+            "policy_instructions",
+            f"# Mutation Strategy\n\n{policy_instructions}",
+            priority=2, required=True,
+        )
+
+    # Slot 2/3: Artifact (current best version of editable files)
     artifact_parts: list[str] = []
     for artifact_rel in target.artifact_paths:
         artifact_path = worktree_path / artifact_rel
@@ -381,38 +390,38 @@ def build_target_context(
             target.agent_config.max_context_tokens,
         )
 
-    budget.add_slot("artifact", artifact_content, priority=2, required=True)
+    budget.add_slot("artifact", artifact_content, priority=3, required=True)
 
-    # Slot 3: Recent history (last 5 experiment records)
+    # Slot 4: Recent history (last 5 experiment records)
     history_content = _format_recent_history(history)
-    budget.add_slot("recent_history", history_content, priority=3, required=True)
+    budget.add_slot("recent_history", history_content, priority=4, required=True)
 
-    # Slot 4: Knowledge context (retrieved history + consolidated learnings)
+    # Slot 5: Knowledge context (retrieved history + consolidated learnings)
     if knowledge_context:
         budget.add_slot(
-            "knowledge_context", knowledge_context, priority=4, required=False
+            "knowledge_context", knowledge_context, priority=5, required=False
         )
 
-    # Slot 5: Verifier failure warnings (when a verifier blocks >60% of recent experiments)
+    # Slot 6: Verifier failure warnings (when a verifier blocks >60% of recent experiments)
     if history:
         verifier_warning = _build_verifier_warning(history)
         if verifier_warning:
             budget.add_slot(
-                "verifier_warnings", verifier_warning, priority=5, required=False
+                "verifier_warnings", verifier_warning, priority=6, required=False
             )
 
-    # Slot 6: Failure distribution summary (when enough experiments exist)
+    # Slot 7: Failure distribution summary (when enough experiments exist)
     if history:
         failure_summary = _build_failure_distribution_summary(history)
         if failure_summary:
             budget.add_slot(
-                "failure_distribution", failure_summary, priority=6, required=False
+                "failure_distribution", failure_summary, priority=7, required=False
             )
 
-    # Slot 7: Global cross-project learnings
+    # Slot 8: Global cross-project learnings
     if global_learnings:
         budget.add_slot(
-            "global_learnings", global_learnings, priority=7, required=False
+            "global_learnings", global_learnings, priority=8, required=False
         )
 
     assembled = budget.assemble()

@@ -26,7 +26,7 @@ _EMBEDDING_AVAILABLE = False
 _embedding_model = None
 
 
-def _get_embedding_model() -> object | None:
+def _get_embedding_model() -> object:  # SentenceTransformer | None (optional dep)
     """Lazy-load sentence transformer model."""
     global _embedding_model, _EMBEDDING_AVAILABLE
     if _embedding_model is not None:
@@ -329,7 +329,7 @@ class KnowledgeStore:
         if count < self.COLD_START_THRESHOLD:
             return []
 
-        if _EMBEDDING_AVAILABLE or _get_embedding_model() is not None:
+        if _get_embedding_model() is not None:
             pairs = self.retrieve_similar_embedding(query, k)
         else:
             pairs = self._retrieve_similar_tfidf(query, k)
@@ -359,12 +359,9 @@ class KnowledgeStore:
 
         consolidations = self.load_consolidations()
         if not consolidations:
-            return total >= self.CONSOLIDATION_INTERVAL
+            return True  # total >= CONSOLIDATION_INTERVAL already guaranteed above
 
-        last = consolidations[-1]
-        last_end = last.experiment_range[1]
-        experiments_since = total - last_end
-        return experiments_since >= self.CONSOLIDATION_INTERVAL
+        return total - consolidations[-1].experiment_range[1] >= self.CONSOLIDATION_INTERVAL
 
     def consolidate(self) -> ConsolidationRecord:
         """Extract a ConsolidationRecord from recent experiments.
@@ -442,13 +439,13 @@ class KnowledgeStore:
         criterion_variances: dict[str, float] = {}
         records_with_raw = [r for r in window if r.raw_scores]
         if records_with_raw:
-            max_len = max(len(r.raw_scores) for r in records_with_raw)  # type: ignore[arg-type]
+            max_criterion_count = max(len(r.raw_scores) for r in records_with_raw)  # type: ignore[arg-type]
             # Use criterion names from records if available, fall back to positional index
             if records_with_raw[0].criterion_names:
                 crit_names = records_with_raw[0].criterion_names
             else:
-                crit_names = [f"criterion_{i}" for i in range(max_len)]
-            for i in range(max_len):
+                crit_names = [f"criterion_{i}" for i in range(max_criterion_count)]
+            for i in range(max_criterion_count):
                 name = crit_names[i] if i < len(crit_names) else f"criterion_{i}"
                 values = [
                     r.raw_scores[i]  # type: ignore[index]

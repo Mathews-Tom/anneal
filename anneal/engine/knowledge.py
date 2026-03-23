@@ -455,6 +455,17 @@ class KnowledgeStore:
                 if len(values) >= 2:
                     criterion_variances[name] = _variance(values)
 
+        # Verifier block rates: fraction of experiments blocked by each verifier
+        verifier_block_rates: dict[str, float] = {}
+        verifier_counts: dict[str, int] = {}
+        for r in window:
+            if r.failure_mode and r.failure_mode.startswith("verifier:"):
+                v_name = r.failure_mode[len("verifier:"):]
+                verifier_counts[v_name] = verifier_counts.get(v_name, 0) + 1
+        total_in_window = len(window)
+        for v_name, count in verifier_counts.items():
+            verifier_block_rates[v_name] = count / total_in_window if total_in_window > 0 else 0.0
+
         record = ConsolidationRecord(
             experiment_range=(start_idx, total),
             timestamp=datetime.now(),
@@ -469,6 +480,7 @@ class KnowledgeStore:
             tags_frequency=dict(tag_counter),
             criterion_variances=criterion_variances,
             score_variance=score_variance,
+            verifier_block_rates=verifier_block_rates,
         )
 
         drifting = [name for name, var in criterion_variances.items() if var > 0.1]

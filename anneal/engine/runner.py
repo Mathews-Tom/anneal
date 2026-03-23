@@ -70,6 +70,7 @@ class RunLoopState:
 
     def save(self, path: Path) -> None:
         """Persist loop state to JSON file."""
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps({
                 "consecutive_failures": self.consecutive_failures,

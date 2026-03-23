@@ -206,9 +206,9 @@ uv run pytest tests/ --cov=anneal --cov-report=term-missing
 uv run pytest tests/test_e2e.py -v
 
 # Run validation benchmarks
-uv run python benchmarks/bench_phase2_false_positives.py
-uv run python benchmarks/bench_phase3_sa_convergence.py
-uv run python benchmarks/bench_phase5_retrieval_precision.py
+uv run python benchmarks/bench_false_positives.py
+uv run python benchmarks/bench_sa_convergence.py
+uv run python benchmarks/bench_retrieval_precision.py
 ```
 
 ## Project Status

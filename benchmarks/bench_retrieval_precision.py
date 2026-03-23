@@ -1,4 +1,4 @@
-"""Phase 5 Gate: TF-IDF vs Jaccard retrieval precision.
+"""Gate: TF-IDF vs Jaccard retrieval precision.
 
 Builds a corpus of experiment hypotheses with known similarity groups.
 Measures precision@5 for both TF-IDF and Jaccard retrieval.
@@ -9,7 +9,7 @@ on a group-unique keyword (e.g. "gradient", "tensor") against a background
 of shared generic words. TF-IDF's IDF weighting surfaces the discriminative
 term; Jaccard degrades because shared filler words inflate the union.
 
-Usage: uv run python benchmarks/bench_phase5_retrieval_precision.py
+Usage: uv run python benchmarks/bench_retrieval_precision.py
 """
 from __future__ import annotations
 

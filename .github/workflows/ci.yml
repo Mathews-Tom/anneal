@@ -32,6 +32,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
       - run: uv sync --dev
-      - run: uv run python benchmarks/bench_phase2_false_positives.py
-      - run: uv run python benchmarks/bench_phase3_sa_convergence.py
-      - run: uv run python benchmarks/bench_phase5_retrieval_precision.py
+      - run: uv run python benchmarks/bench_false_positives.py
+      - run: uv run python benchmarks/bench_sa_convergence.py
+      - run: uv run python benchmarks/bench_retrieval_precision.py

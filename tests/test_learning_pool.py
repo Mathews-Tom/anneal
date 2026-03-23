@@ -275,7 +275,7 @@ def test_eviction_breaks_ties_randomly_varies_across_runs(tmp_path: Path) -> Non
     fixed_ts = datetime(2026, 1, 1, tzinfo=UTC)
 
     surviving_sets: list[frozenset[str]] = []
-    for _ in range(10):
+    for _ in range(50):
         pool = LearningPool(max_size=10)
         for i in range(20):
             pool.add(
@@ -295,7 +295,7 @@ def test_eviction_breaks_ties_randomly_varies_across_runs(tmp_path: Path) -> Non
         surviving = frozenset(l.observation for l in pool._learnings)  # noqa: SLF001
         surviving_sets.append(surviving)
 
-    # With random tiebreaking, not all 10 runs can produce the same survivor set
+    # With random tiebreaking, not all 50 runs can produce the same survivor set
     assert len(set(surviving_sets)) > 1
 
 

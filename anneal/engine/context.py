@@ -295,9 +295,6 @@ def _build_failure_distribution_summary(history: list[ExperimentRecord]) -> str:
         return ""
 
     total_failures = sum(dist.values())
-    if total_failures == 0:
-        return ""
-
     lines = ["# Recent Failure Distribution\n"]
     sorted_dist = sorted(dist.items(), key=lambda x: x[1], reverse=True)
     for cat, count in sorted_dist:

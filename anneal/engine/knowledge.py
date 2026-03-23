@@ -17,6 +17,7 @@ from pathlib import Path
 
 from filelock import FileLock
 
+from anneal.engine.taxonomy import FailureTaxonomy
 from anneal.engine.types import ConsolidationRecord, DriftEntry, ExperimentRecord, Outcome
 
 logger = logging.getLogger(__name__)
@@ -467,10 +468,8 @@ class KnowledgeStore:
         }
 
         # Failure distribution and blind spots
-        from anneal.engine.taxonomy import FailureTaxonomy
         failure_distribution = FailureTaxonomy.distribution(window)
-        taxonomy = FailureTaxonomy()
-        blind_spots = taxonomy.blind_spot_check(window)
+        blind_spots = FailureTaxonomy().blind_spot_check(window)
 
         record = ConsolidationRecord(
             experiment_range=(start_idx, total),

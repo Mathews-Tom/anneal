@@ -361,7 +361,10 @@ anneal/                              # Python package (source code only)
 │   ├── safety.py                    # time-boxing, budget, failure tracking, terminal states
 │   ├── notifications.py             # webhook with retry, stdout, status file notification hooks
 │   ├── scheduler.py                 # interval scheduling + per-target locking
-│   └── cost.py                      # cost tracking + pre-experiment estimation
+│   ├── cost.py                      # cost tracking + pre-experiment estimation
+│   ├── taxonomy.py                  # failure classification with LLM-based categorization
+│   ├── tree_search.py               # UCB tree search with pruning and JSON persistence
+│   └── policy_agent.py              # continuous instruction rewriting meta-optimizer
 └── cli.py                           # CLI entry point
 
 .anneal/                             # runtime artifacts (gitignored)
@@ -807,9 +810,9 @@ For cross-condition retrieval, the guided agent calls `retrieve(scope=TARGET, ex
 
 Cross-condition insights are injected as a separate context section at priority 4 (after same-condition history, before eval criteria):
 
-| Slot | Budget | Priority |
-|------|--------|----------|
-| Cross-condition insights (top 5 learnings) | ~800 tokens | 4 |
+| Slot                                       | Budget      | Priority |
+| ------------------------------------------ | ----------- | -------- |
+| Cross-condition insights (top 5 learnings) | ~800 tokens | 4        |
 
 If context budget is tight, this slot reduces K before other slots are truncated.
 
@@ -998,6 +1001,43 @@ flowchart TD
     BLOCK --> LOG
     LOG --> START
 ```
+
+### Verification Gates
+
+Binary pass/fail commands that run after scope enforcement and before fidelity stages and eval. Each verifier executes sequentially (fail-fast). On first failure, the mutation is immediately discarded with `Outcome.BLOCKED` — no eval budget spent.
+
+```
+scope_enforce → verifiers → fidelity_stages → constraints → eval
+```
+
+Verifier failure rates are tracked per name in consolidation. When a verifier blocks >60% of mutations in a sliding window, a warning is injected into the agent's context.
+
+### Failure Taxonomy
+
+Every DISCARDED or BLOCKED experiment is classified into a structured category via a lightweight LLM call (evaluator_model tier, ~$0.001/call). Categories: output_format, logic_error, regression, scope_violation, syntax_error, semantic_drift, over_optimization, incomplete_edit. Custom categories loadable from TOML.
+
+The taxonomy provides distribution summaries and blind spot detection — identifying categories with zero attributions despite repeated failures.
+
+### Multi-Draft Mutation
+
+When `n_drafts > 1`, the runner generates N candidate mutations per cycle. In claude_code mode, each draft runs sequentially with worktree reset between invocations, diffs captured before reset. Verifiers prune failing drafts. The first survivor is applied permanently. Budget is split evenly: `per_draft_cap = max_budget_usd / n_drafts`.
+
+### Random Restart
+
+With `restart_probability > 0`, a random roll before context assembly may trigger a fresh-start experiment. The restart context provides eval criteria, scope, and watch files but intentionally excludes artifact content and experiment history. For SimulatedAnnealing, restart probability decays with temperature: `effective_p = restart_probability × (T / T_initial)`.
+
+### UCB Tree Search
+
+Maps experiment history to a tree where each node is a git commit. `select_parent()` uses UCB1 to balance exploitation (high-scoring nodes) and exploration (under-visited nodes). The runner checks out the selected ancestor before context assembly. Subtrees are pruned after consecutive non-improvements. Tree state persists to JSON for crash recovery; falls back to bootstrap from experiments.jsonl.
+
+### Policy Agent
+
+A dedicated meta-optimizer that rewrites mutation instructions between experiments. Analyzes recent experiment outcomes (hypotheses, scores, failure classifications) and generates refined guidance injected at context priority 2 (after system prompt, before artifact). Operates at a faster cadence than plateau-triggered program.md rewriting.
+
+| Mechanism    | Trigger                | Target                  | Timescale  |
+| ------------ | ---------------------- | ----------------------- | ---------- |
+| Policy agent | Every N experiments    | In-context instructions | Continuous |
+| Plateau meta | M consecutive non-KEPT | program.md file         | Episodic   |
 
 ## Per-Experiment Cycle
 

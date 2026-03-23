@@ -135,3 +135,56 @@ max_retries = 3
 retry_delay_seconds = 5.0
 flake_detection = true
 ```
+
+## Advanced: Multi-Draft with Verification Gates
+
+Use multiple drafts with structural verification for high-reliability optimization.
+
+```yaml
+# scope.yaml
+editable:
+  - src/core/engine.py
+immutable:
+  - scope.yaml
+  - tests/**
+watch:
+  - src/core/types.py
+```
+
+```bash
+anneal register \
+  --name engine-perf \
+  --artifact src/core/engine.py \
+  --eval-mode deterministic \
+  --run-cmd "python -m pytest tests/bench.py -q --tb=no | tail -1" \
+  --parse-cmd "awk '{print \$1}'" \
+  --direction minimize \
+  --scope scope.yaml \
+  --verifier "typecheck:python -m mypy src/core/engine.py --no-error-summary" \
+  --verifier "lint:ruff check src/core/engine.py" \
+  --n-drafts 3
+
+anneal run --target engine-perf --experiments 50
+```
+
+Each cycle generates 3 drafts, verifies each against mypy and ruff, and promotes the first survivor. Failed drafts are discarded before eval — no wasted eval budget.
+
+## Advanced: UCB Tree Search with Policy Agent
+
+Combine tree search (backtracking) with continuous instruction tuning for complex optimization landscapes.
+
+```bash
+anneal register \
+  --name prompt-quality \
+  --artifact prompts/system.md \
+  --eval-mode stochastic \
+  --criteria eval_criteria.toml \
+  --scope scope.yaml \
+  --policy-model gpt-4.1-mini \
+  --policy-interval 5 \
+  --restart-probability 0.05
+
+anneal run --target prompt-quality --search ucb_tree --experiments 100
+```
+
+The policy agent rewrites mutation instructions every 5 experiments based on failure patterns. UCB tree search backtracks to high-scoring ancestors when recent branches degrade. Random restart (5% probability, decaying with SA temperature) introduces fresh perspectives.

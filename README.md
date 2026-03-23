@@ -168,15 +168,24 @@ anneal/engine/
 - **Concurrent consolidation safety** — check-and-act consolidation is atomic under FileLock.
 - **Live dashboard** — `anneal dashboard` reads from `.anneal/` directory. No coupling to the runner process.
 
+## Installation
+
+```bash
+# From PyPI
+uv tool install anneal-cli
+
+# With ML extras (Bayesian surrogate, optional)
+uv tool install anneal-cli --with scikit-learn
+
+# Or with pip
+pip install anneal-cli
+```
+
+Requires Python 3.12+. The `anneal` command is available globally after installation.
+
 ## Quick Start
 
 ```bash
-# Install
-uv tool install anneal-cli
-
-# Install with ML extras (Bayesian surrogate)
-uv tool install anneal-cli --with scikit-learn
-
 # Initialize in a git repo
 anneal init
 

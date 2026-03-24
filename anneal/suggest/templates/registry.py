@@ -180,7 +180,7 @@ _register(ExperimentTemplate(
 ))
 
 _register(ExperimentTemplate(
-    name="code-minify",
+    name="code-golf",
     description="Reduce code size while preserving exact output",
     domain="code",
     eval_mode="deterministic",

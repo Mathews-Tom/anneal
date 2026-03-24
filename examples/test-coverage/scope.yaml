@@ -1,0 +1,7 @@
+editable:
+  - examples/test-coverage/tests/test_calculator.py
+
+immutable:
+  - scope.yaml
+  - src/**
+  - eval.sh

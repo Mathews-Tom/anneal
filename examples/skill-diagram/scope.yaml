@@ -1,7 +1,0 @@
-editable:
-  - examples/skill-diagram/SKILL.md
-
-immutable:
-  - scope.yaml
-  - metrics.yaml
-  - eval_criteria.toml

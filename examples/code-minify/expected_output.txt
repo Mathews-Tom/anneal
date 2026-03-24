@@ -1,5 +1,0 @@
-Fibonacci(10): [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
-Primes(1-50): [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47]
-Average: 30.0
-Reverse: !dlroW ,olleH
-Word counts: {'the': 3, 'quick': 1, 'brown': 1, 'fox': 2, 'jumps': 1, 'over': 1, 'lazy': 1, 'dog': 1}

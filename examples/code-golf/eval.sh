@@ -1,5 +1,5 @@
 #!/bin/bash
-# Eval script for code-minify: outputs character count only if output is correct.
+# Eval script for code-golf: outputs character count only if output is correct.
 # If output differs from expected, outputs a high penalty score (99999).
 set -euo pipefail
 

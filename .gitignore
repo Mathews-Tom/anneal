@@ -227,3 +227,6 @@ examples/*/hypotheses.jsonl
 
 # Anneal runtime artifacts (created by anneal init/register/run)
 .anneal/
+
+# Manim render artifacts (intermediate frames, partial movies)
+assets/media/

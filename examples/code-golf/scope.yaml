@@ -1,0 +1,7 @@
+editable:
+  - examples/code-golf/app.py
+
+immutable:
+  - scope.yaml
+  - eval.sh
+  - expected_output.txt

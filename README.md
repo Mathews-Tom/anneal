@@ -2,8 +2,6 @@
 
 Autonomous optimization for any measurable artifact.
 
-![anneal – autonomous optimization loop](https://github.com/user-attachments/assets/28f72aec-699d-4315-b2db-dca3330e96b0)
-
 <video src="https://github.com/user-attachments/assets/cb0cd879-444e-444b-8b69-32623ff9af76" width="100%" autoplay loop muted playsinline></video>
 
 Define _what_ to improve, _how to measure_ improvement, and _what's allowed to change_. An LLM agent handles the rest — generating hypotheses, running experiments, keeping winners, discarding losers, compounding learnings. Overnight. Unattended.

@@ -11,8 +11,10 @@ from pathlib import Path
 import numpy as np
 import openai
 
+from anneal.engine.agent import AgentInvoker
 from anneal.engine.client import compute_cost, make_client, strip_provider_prefix
 from anneal.engine.types import (
+    AgentConfig,
     BinaryCriterion,
     DeterministicEval,
     Direction,
@@ -25,6 +27,7 @@ from anneal.engine.types import (
 logger = logging.getLogger(__name__)
 
 _API_SEMAPHORE = asyncio.Semaphore(10)
+_CLAUDE_CODE_SEMAPHORE = asyncio.Semaphore(3)  # Limit concurrent Claude Code subprocesses
 
 
 class EvalError(Exception):
@@ -284,14 +287,20 @@ class StochasticEvaluator:
         prompts: list[str],
     ) -> EvalResult:
         """Core evaluation logic shared between regular and held-out eval."""
-        gen_agent_config = config.generation_agent_config
-        if gen_agent_config is None:
+        gen_cfg = config.generation_agent_config
+        if gen_cfg is None:
             raise EvalError("StochasticEval requires generation_agent_config")
 
-        gen_client = make_client(gen_agent_config.model)
-        eval_client = make_client(gen_agent_config.evaluator_model)
-        gen_model = strip_provider_prefix(gen_agent_config.model)
-        eval_model = strip_provider_prefix(gen_agent_config.evaluator_model)
+        # Build judgment config: explicit or synthesized from gen_cfg.evaluator_model
+        judge_cfg = config.judgment_agent_config
+        if judge_cfg is None:
+            judge_cfg = AgentConfig(
+                mode="api",
+                model=gen_cfg.evaluator_model,
+                evaluator_model=gen_cfg.evaluator_model,
+                max_budget_usd=gen_cfg.max_budget_usd,
+                temperature=0.0,
+            )
 
         total_cost = 0.0
 
@@ -299,13 +308,13 @@ class StochasticEvaluator:
         samples: list[str] = []
         gen_tasks = [
             self._generate_sample(
-                gen_client,
-                gen_model,
+                gen_cfg,
                 config.generation_prompt_template.format(
                     test_prompt=prompt,
                     artifact_content=artifact_content,
                 ),
                 config.output_format,
+                worktree_path,
             )
             for prompt in prompts
         ]
@@ -329,7 +338,7 @@ class StochasticEvaluator:
 
                 forward_tasks = [
                     self._score_criterion(
-                        eval_client, eval_model, sample, criterion,
+                        judge_cfg, sample, criterion, worktree_path,
                         votes=forward_votes, comparison_mode=comparison_mode,
                     )
                     for criterion in forward_criteria
@@ -338,7 +347,7 @@ class StochasticEvaluator:
 
                 reverse_tasks = [
                     self._score_criterion(
-                        eval_client, eval_model, sample, criterion,
+                        judge_cfg, sample, criterion, worktree_path,
                         votes=reverse_votes, comparison_mode=comparison_mode,
                     )
                     for criterion in reverse_criteria
@@ -367,7 +376,7 @@ class StochasticEvaluator:
                 random.shuffle(shuffled_criteria)
                 score_tasks = [
                     self._score_criterion(
-                        eval_client, eval_model, sample, criterion,
+                        judge_cfg, sample, criterion, worktree_path,
                         votes=votes, comparison_mode=comparison_mode,
                     )
                     for criterion in shuffled_criteria
@@ -413,17 +422,33 @@ class StochasticEvaluator:
 
     async def _generate_sample(
         self,
-        client: openai.AsyncOpenAI,
-        model: str,
+        config: AgentConfig,
         prompt: str,
         output_format: str,
+        worktree_path: Path,
     ) -> tuple[str, float]:
-        """Generate a single sample. Returns (text, cost_usd)."""
+        """Generate a single sample. Returns (text, cost_usd).
+
+        Dispatches to Claude Code subprocess or API based on config.mode.
+        """
+        if config.mode == "claude_code":
+            async with _CLAUDE_CODE_SEMAPHORE:
+                invoker = AgentInvoker()
+                full_prompt = f"Generate output in {output_format} format.\n\n{prompt}"
+                result = await invoker.invoke(
+                    config, full_prompt, worktree_path,
+                    time_budget_seconds=120, deployment_mode=True,
+                )
+                return result.raw_output, result.cost_usd
+
+        # API path (default)
+        client = make_client(config.model)
+        model = strip_provider_prefix(config.model)
         try:
             async with _API_SEMAPHORE:
                 response = await client.chat.completions.create(
                     model=model,
-                    temperature=0.7,
+                    temperature=config.temperature,
                     messages=[
                         {
                             "role": "system",
@@ -440,33 +465,48 @@ class StochasticEvaluator:
 
     async def _score_criterion_once(
         self,
-        client: openai.AsyncOpenAI,
-        model: str,
+        config: AgentConfig,
         sample: str,
         criterion: BinaryCriterion,
+        worktree_path: Path,
     ) -> tuple[float, float]:
-        """Single judgment call for a (sample, criterion) pair. Returns (0|1, cost_usd)."""
+        """Single judgment call for a (sample, criterion) pair. Returns (0|1, cost_usd).
+
+        Dispatches to Claude Code subprocess or API based on config.mode.
+        """
+        system_msg = (
+            "You are an evaluator. Answer the following question about the "
+            "provided output with exactly YES or NO. No explanation."
+        )
+        user_msg = (
+            f"## Criterion: {criterion.name}\n\n"
+            f"{criterion.question}\n\n"
+            f"## Output to evaluate\n\n{sample}"
+        )
+
+        if config.mode == "claude_code":
+            async with _CLAUDE_CODE_SEMAPHORE:
+                invoker = AgentInvoker()
+                full_prompt = f"{system_msg}\n\n{user_msg}"
+                result = await invoker.invoke(
+                    config, full_prompt, worktree_path,
+                    time_budget_seconds=60, deployment_mode=True,
+                )
+                answer = result.raw_output.strip().upper()
+                binary = 1.0 if answer.startswith("YES") else 0.0
+                return binary, result.cost_usd
+
+        # API path (default)
+        client = make_client(config.model)
+        model = strip_provider_prefix(config.model)
         try:
             async with _API_SEMAPHORE:
                 response = await client.chat.completions.create(
                     model=model,
                     temperature=0.0,
                     messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are an evaluator. Answer the following question about the "
-                                "provided output with exactly YES or NO. No explanation."
-                            ),
-                        },
-                        {
-                            "role": "user",
-                            "content": (
-                                f"## Criterion: {criterion.name}\n\n"
-                                f"{criterion.question}\n\n"
-                                f"## Output to evaluate\n\n{sample}"
-                            ),
-                        },
+                        {"role": "system", "content": system_msg},
+                        {"role": "user", "content": user_msg},
                     ],
                 )
         except (openai.APITimeoutError, openai.APIConnectionError) as exc:
@@ -478,10 +518,10 @@ class StochasticEvaluator:
 
     async def _score_criterion(
         self,
-        client: openai.AsyncOpenAI,
-        model: str,
+        config: AgentConfig,
         sample: str,
         criterion: BinaryCriterion,
+        worktree_path: Path,
         votes: int = 1,
         comparison_mode: str = "majority_vote",
     ) -> tuple[float, float]:
@@ -495,13 +535,13 @@ class StochasticEvaluator:
         to a single judgment call.
         """
         if votes <= 1 and comparison_mode == "majority_vote":
-            return await self._score_criterion_once(client, model, sample, criterion)
+            return await self._score_criterion_once(config, sample, criterion, worktree_path)
 
         yes_count = 0
         total_cost = 0.0
 
         for i in range(votes):
-            binary, cost = await self._score_criterion_once(client, model, sample, criterion)
+            binary, cost = await self._score_criterion_once(config, sample, criterion, worktree_path)
             yes_count += int(binary)
             total_cost += cost
 

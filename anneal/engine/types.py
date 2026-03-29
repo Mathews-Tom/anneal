@@ -108,6 +108,7 @@ class StochasticEval(BaseModel):
     output_format: str
     confidence_level: float = Field(default=0.95, gt=0, lt=1)
     generation_agent_config: AgentConfig | None = None
+    judgment_agent_config: AgentConfig | None = None
     held_out_prompts: list[str] = Field(default_factory=list)
     min_criterion_scores: dict[str, float] = Field(default_factory=dict)
     judgment_votes: int = Field(default=3, gt=0)

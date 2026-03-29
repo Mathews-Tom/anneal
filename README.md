@@ -3,8 +3,6 @@
 Let an AI agent improve your code, prompts, and configs — overnight, unattended.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/infographic.svg">
-  <source media="(prefers-color-scheme: light)" srcset="assets/infographic.svg">
   <img alt="anneal infographic — autonomous optimization for any measurable artifact" src="assets/infographic.png" width="100%">
 </picture>
 

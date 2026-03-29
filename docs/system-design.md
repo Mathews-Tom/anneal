@@ -195,6 +195,8 @@ def validate_scope(
 
 Registration fails if validation produces errors. The human must fix scope.yaml before the engine accepts the target.
 
+**In-place relaxation:** when `--in-place` is used, the `metrics.yaml` immutable requirement is waived because in-place targets have no worktree-level scope enforcement. The `scope.yaml` self-referential immutable requirement still applies.
+
 ### scope.yaml Integrity at Runtime
 
 scope.yaml is hashed (SHA-256) at registration time and the hash is stored in `config.toml`. On every experiment cycle, the runner verifies the hash before loading scope rules. If the hash has changed since registration (e.g., a human edited scope.yaml without re-registering), the runner fails with an explicit error requiring `anneal re-register --target <id>`. This prevents scope drift between registration-time validation and runtime enforcement.
@@ -244,7 +246,37 @@ git worktree add .anneal/worktrees/<target-id> -b anneal/<target-id>
 
 All file operations for that target happen within `.anneal/worktrees/<target-id>/`. The runner's working directory is set to the worktree path.
 
+**Auto-staging untracked artifacts:** if artifact files exist in the repo working directory but are missing from the worktree (because they are untracked in git), the registration process copies them into the worktree and commits on the `anneal/<target-id>` branch. Scope-adjacent files (`scope.yaml`, `eval_criteria.toml`) are also staged. This allows `anneal register` to work without requiring a prior `git add` + `git commit`. The user's main branch is not modified.
+
 **Deregistration:** on target deregistration, the runner first acquires the target's lock (to prevent deregistering a running target). The worktree is removed but `.anneal/targets/<target-id>/` (containing experiments.jsonl, learnings, and the vector index) is preserved. Deregistration does not destroy experiment history.
+
+### In-Place Mode
+
+For artifacts that should not be tracked in git or don't need branch isolation, targets can be registered with `--in-place`. This skips worktree creation entirely — mutations happen directly on the file in the working directory.
+
+Rollback uses `FileBackupEnvironment` instead of `git reset --hard`:
+
+```
+register --in-place
+    → backup artifacts to .anneal/backups/<target-id>/<timestamp>/
+    → agent mutates files in-place
+    → eval scores the mutation
+    → KEPT: delete backup
+    → DISCARDED: restore from backup, delete backup
+```
+
+Trade-offs vs worktree mode:
+
+| Aspect | Worktree (default) | In-place (`--in-place`) |
+|--------|-------------------|------------------------|
+| Isolation | Full branch isolation | None — shares working directory |
+| Rollback | `git reset --hard` | File copy from `.anneal/backups/` |
+| Git requirement | Artifacts must be reachable from HEAD | No git tracking needed |
+| Parallel targets | Safe (separate worktrees) | Unsafe if targets share files |
+| Scope enforcement | `git status --porcelain` diff | Skipped |
+| `metrics.yaml` immutable | Required | Not required |
+
+In-place mode is appropriate for local skill definitions, config files under active development, and any artifact where git overhead is undesirable.
 
 ### Git GC Under Multi-Target Load
 

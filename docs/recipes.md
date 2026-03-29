@@ -188,3 +188,31 @@ anneal run --target prompt-quality --search ucb_tree --experiments 100
 ```
 
 The policy agent rewrites mutation instructions every 5 experiments based on failure patterns. UCB tree search backtracks to high-scoring ancestors when recent branches degrade. Random restart (5% probability, decaying with SA temperature) introduces fresh perspectives.
+
+## In-Place: Local Skill Optimization
+
+Optimize a SKILL.md file that isn't tracked in git. Uses file backup for rollback instead of git worktrees.
+
+```yaml
+# scope.yaml
+editable:
+  - SKILL.md
+immutable:
+  - scope.yaml
+  - eval_criteria.toml
+```
+
+```bash
+anneal register \
+  --name my-skill \
+  --artifact SKILL.md \
+  --eval-mode stochastic \
+  --criteria eval_criteria.toml \
+  --direction maximize \
+  --scope scope.yaml \
+  --in-place
+
+anneal run --target my-skill --experiments 15
+```
+
+No worktree is created. The agent mutates `SKILL.md` directly. On discard, the file is restored from `.anneal/backups/my-skill/`. Note: `metrics.yaml` is not required in the immutable scope for in-place targets.

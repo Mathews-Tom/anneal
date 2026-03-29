@@ -92,6 +92,21 @@ anneal register \
 anneal run --target code-golf --experiments 10
 ```
 
+### Local Artifacts (no git tracking required)
+
+Artifact files don't need to be committed to git. If they're untracked, anneal copies them into the worktree automatically during registration. For files you don't want in version control at all, use `--in-place` to skip worktree isolation entirely:
+
+```bash
+anneal register \
+  --name local-skill \
+  --artifact SKILL.md \
+  --eval-mode stochastic \
+  --criteria eval_criteria.toml \
+  --direction maximize \
+  --scope scope.yaml \
+  --in-place
+```
+
 ## Two Eval Modes
 
 **Deterministic** — a shell command produces a number. Run code, parse output, compare. Use for: performance benchmarks, test coverage, file size, build time.
@@ -113,7 +128,7 @@ anneal run --target code-golf --experiments 10
 ## Testing
 
 ```bash
-uv run pytest tests/ -x -q          # 492 tests
+uv run pytest tests/ -x -q          # 514 tests
 uv run pytest tests/ --cov=anneal    # With coverage
 ```
 

@@ -3,6 +3,8 @@
 ## Core
 
 - **Scope enforcement** — declare what the agent can and cannot modify. Path traversal attempts and absolute paths are rejected. Violations are reverted automatically.
+- **Auto-staging** — untracked artifact files are automatically copied into the worktree and committed on the anneal branch during registration. No manual `git add` required.
+- **In-place mode** — `--in-place` flag skips worktree creation for local-only artifacts. Uses file backup for rollback instead of git. Useful for skills, configs, and files not in version control.
 - **Knowledge compounding** — experiment history + consolidated learnings + cross-condition insights available for agent context. Per-criterion feedback (PASS/FAIL per criterion) helps the agent target specific weaknesses.
 - **Cost control** — per-experiment and daily budget caps. Pricing loaded from `~/.anneal/pricing.toml` with hardcoded defaults. Local models tracked at $0.
 - **Safety** — process group time-boxing (SIGKILL), consecutive failure halting, disk space checks, JSONL corruption recovery, git fsck integrity checks after kill recovery.

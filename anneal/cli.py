@@ -182,7 +182,7 @@ def _handle_register(args: argparse.Namespace) -> None:
                 model=judge_model or args.evaluator_model,
                 evaluator_model=judge_model or args.evaluator_model,
                 max_budget_usd=0.02,
-                temperature=0.0,
+                temperature=1.0,
             )
 
         stochastic_eval = StochasticEval(
@@ -841,7 +841,7 @@ def _handle_configure(args: argparse.Namespace) -> None:
                 model=args.judgment_model,
                 evaluator_model=args.judgment_model,
                 max_budget_usd=0.02,
-                temperature=0.0,
+                temperature=1.0,
             )
         else:
             stoch.judgment_agent_config.model = args.judgment_model
@@ -856,7 +856,7 @@ def _handle_configure(args: argparse.Namespace) -> None:
                 model=gen_cfg.evaluator_model if gen_cfg else "gpt-4.1",
                 evaluator_model=gen_cfg.evaluator_model if gen_cfg else "gpt-4.1",
                 max_budget_usd=0.02,
-                temperature=0.0,
+                temperature=1.0,
             )
         else:
             stoch.judgment_agent_config.mode = args.judgment_mode

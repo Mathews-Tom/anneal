@@ -299,7 +299,7 @@ class StochasticEvaluator:
                 model=gen_cfg.evaluator_model,
                 evaluator_model=gen_cfg.evaluator_model,
                 max_budget_usd=gen_cfg.max_budget_usd,
-                temperature=0.0,
+                temperature=1.0,
             )
 
         total_cost = 0.0
@@ -503,7 +503,7 @@ class StochasticEvaluator:
             async with _API_SEMAPHORE:
                 response = await client.chat.completions.create(
                     model=model,
-                    temperature=0.0,
+                    temperature=1.0,
                     messages=[
                         {"role": "system", "content": system_msg},
                         {"role": "user", "content": user_msg},

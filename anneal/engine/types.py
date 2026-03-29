@@ -272,9 +272,19 @@ class OptimizationTarget(BaseModel):
     notifications: NotificationConfig = Field(default_factory=NotificationConfig)
     approval_callback: Callable[[str], bool] | None = Field(default=None, exclude=True)
     restart_probability: float = Field(default=0.0, ge=0.0, le=1.0)
+    in_place: bool = False
     policy_config: PolicyConfig | None = None
     population_config: PopulationConfig | None = None
     eval_environment: EvalEnvironment | None = None
+
+
+# ---------------------------------------------------------------------------
+# Cross-component exceptions
+# ---------------------------------------------------------------------------
+
+
+class ArtifactError(Exception):
+    """Raised when required artifact files cannot be found in the worktree."""
 
 
 # ---------------------------------------------------------------------------

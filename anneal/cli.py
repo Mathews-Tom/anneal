@@ -293,6 +293,7 @@ def _handle_register(args: argparse.Namespace) -> None:
         budget_cap=budget_cap,
         meta_depth=meta_depth,
         restart_probability=args.restart_probability,
+        in_place=args.in_place,
         policy_config=policy_config,
         approval_callback=approval_callback,
     )
@@ -339,10 +340,18 @@ def _handle_register(args: argparse.Namespace) -> None:
         return
 
     try:
-        asyncio.run(Registry(repo_root).register_target(target))
+        staged_paths = asyncio.run(Registry(repo_root).register_target(target))
     except (ScopeError, GitError) as exc:
         console.print(f"[red]Registration failed: {exc}[/red]")
         sys.exit(1)
+
+    if staged_paths:
+        console.print(
+            f"[cyan]Staged {len(staged_paths)} untracked file(s) "
+            f"on branch anneal/{args.name}:[/cyan]"
+        )
+        for sp in staged_paths:
+            console.print(f"  {sp}")
 
     # Copy custom failure categories to knowledge directory
     if args.failure_categories:
@@ -1224,6 +1233,9 @@ def _build_parser() -> argparse.ArgumentParser:
     reg.add_argument("--n-drafts", type=int, default=1, help="Number of draft mutations per experiment cycle (1-10, default: 1)")
     reg.add_argument("--policy-model", help="Model for policy agent instruction rewriting (enables continuous meta-optimization)")
     reg.add_argument("--policy-interval", type=int, default=3, help="Rewrite mutation instructions every N experiments (default: 3)")
+    reg.add_argument("--in-place", action="store_true", default=False,
+                     help="Optimize artifact in-place without git worktree isolation. "
+                          "Uses file backup for rollback.")
 
     # -- run (stub) --
     run = subparsers.add_parser("run", help="Run optimization loop")

@@ -230,6 +230,46 @@ class TestRegistryCRUD:
         with pytest.raises(RegistryError, match="already registered"):
             await registry.register_target(_make_target())
 
+    @pytest.mark.asyncio
+    async def test_register_stages_untracked_artifacts(
+        self, initialized_repo: Path, sample_scope_yaml: Path
+    ) -> None:
+        """Untracked artifact files are auto-staged into the worktree."""
+        # Create untracked artifact (not committed)
+        (initialized_repo / "SKILL.md").write_text("skill content\n")
+
+        registry = Registry(initialized_repo)
+        target = _make_target()
+        staged = await registry.register_target(target)
+
+        assert "SKILL.md" in staged
+        wt_path = initialized_repo / target.worktree_path
+        assert (wt_path / "SKILL.md").exists()
+        assert (wt_path / "SKILL.md").read_text() == "skill content\n"
+
+    @pytest.mark.asyncio
+    async def test_register_with_committed_artifacts_stages_nothing(
+        self, initialized_repo: Path, sample_scope_yaml: Path
+    ) -> None:
+        """Already-committed artifacts produce an empty staged list."""
+        import subprocess
+        # Commit the artifact and scope.yaml
+        (initialized_repo / "SKILL.md").write_text("committed\n")
+        subprocess.run(
+            ["git", "add", "SKILL.md", "scope.yaml"],
+            cwd=str(initialized_repo), capture_output=True, check=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "add artifact and scope"],
+            cwd=str(initialized_repo), capture_output=True, check=True,
+        )
+
+        registry = Registry(initialized_repo)
+        target = _make_target()
+        staged = await registry.register_target(target)
+
+        assert staged == []
+
 
 # ---------------------------------------------------------------------------
 # Config persistence

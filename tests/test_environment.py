@@ -273,6 +273,100 @@ async def test_status_clean_returns_empty(
 
 
 # ---------------------------------------------------------------------------
+# stage_untracked_artifacts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stage_untracked_copies_missing_files(
+    git_repo: Path, env: GitEnvironment
+) -> None:
+    """Untracked artifact in repo_root is copied into worktree and committed."""
+    # Create untracked artifact in repo root
+    artifact_dir = git_repo / "examples" / "recon"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "SKILL.md").write_text("skill content\n")
+    scope_path = git_repo / "examples" / "recon" / "scope.yaml"
+    scope_path.write_text("editable:\n  - examples/recon/SKILL.md\n")
+
+    info = await env.create_worktree(git_repo, "stage-test")
+    wt = info.path
+
+    # Artifact should NOT be in worktree yet (untracked)
+    assert not (wt / "examples" / "recon" / "SKILL.md").exists()
+
+    staged = await env.stage_untracked_artifacts(
+        git_repo, wt,
+        ["examples/recon/SKILL.md"],
+        "examples/recon/scope.yaml",
+    )
+
+    assert "examples/recon/SKILL.md" in staged
+    assert (wt / "examples" / "recon" / "SKILL.md").exists()
+    assert (wt / "examples" / "recon" / "SKILL.md").read_text() == "skill content\n"
+    # File should be committed (clean status)
+    status = await env.status_porcelain(wt)
+    committed_paths = {p for _, p in status}
+    assert "examples/recon/SKILL.md" not in committed_paths
+
+
+@pytest.mark.asyncio
+async def test_stage_untracked_skips_already_present(
+    git_repo: Path, env: GitEnvironment
+) -> None:
+    """Files already in the worktree are not re-staged."""
+    info = await env.create_worktree(git_repo, "skip-test")
+    wt = info.path
+
+    # README already exists in worktree (committed in initial commit)
+    staged = await env.stage_untracked_artifacts(
+        git_repo, wt,
+        ["README"],
+        "scope.yaml",
+    )
+
+    assert staged == []
+
+
+@pytest.mark.asyncio
+async def test_stage_untracked_returns_empty_when_nothing_to_stage(
+    git_repo: Path, env: GitEnvironment
+) -> None:
+    """When all artifacts are committed, returns empty list."""
+    info = await env.create_worktree(git_repo, "empty-stage")
+    staged = await env.stage_untracked_artifacts(
+        git_repo, info.path,
+        ["README"],
+        "scope.yaml",
+    )
+    assert staged == []
+
+
+@pytest.mark.asyncio
+async def test_stage_untracked_includes_scope_adjacent_files(
+    git_repo: Path, env: GitEnvironment
+) -> None:
+    """eval_criteria.toml adjacent to scope.yaml is also staged."""
+    criteria_dir = git_repo / "examples" / "test"
+    criteria_dir.mkdir(parents=True)
+    (criteria_dir / "scope.yaml").write_text("editable:\n  - a.md\n")
+    (criteria_dir / "eval_criteria.toml").write_text('[[criteria]]\nname = "x"\n')
+    (criteria_dir / "a.md").write_text("artifact\n")
+
+    info = await env.create_worktree(git_repo, "adjacent-test")
+    wt = info.path
+
+    staged = await env.stage_untracked_artifacts(
+        git_repo, wt,
+        ["examples/test/a.md"],
+        "examples/test/scope.yaml",
+    )
+
+    assert "examples/test/eval_criteria.toml" in staged
+    assert (wt / "examples" / "test" / "eval_criteria.toml").exists()
+
+
+# ---------------------------------------------------------------------------
 # GC configuration
 # ---------------------------------------------------------------------------
 

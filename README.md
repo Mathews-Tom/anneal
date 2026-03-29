@@ -2,6 +2,12 @@
 
 Let an AI agent improve your code, prompts, and configs — overnight, unattended.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/infographic.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/infographic.svg">
+  <img alt="anneal infographic — autonomous optimization for any measurable artifact" src="assets/infographic.png" width="100%">
+</picture>
+
 <video src="https://github.com/user-attachments/assets/06f8848d-a404-4b58-817a-8c0bf8bb71e3" width="100%" autoplay loop muted playsinline></video>
 
 Point anneal at any text file in a git repo, tell it how to measure "better," and walk away. The agent generates hypotheses, runs experiments, keeps winners, discards losers, and compounds learnings — all while you sleep.

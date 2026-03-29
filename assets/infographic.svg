@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B0F14"/>
+      <stop offset="1" stop-color="#101827"/>
+    </linearGradient>
+    <linearGradient id="hero" x1="0" y1="0" x2="900" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#47FF9C" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#7AA2F7" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#141C27"/>
+      <stop offset="1" stop-color="#101723"/>
+    </linearGradient>
+    <linearGradient id="accentLine" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#47FF9C"/>
+      <stop offset="1" stop-color="#7AA2F7"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+    <style>
+      .title { font: 700 54px Inter, Arial, sans-serif; fill: #F3F7FF; letter-spacing: -0.02em; }
+      .subtitle { font: 400 24px Inter, Arial, sans-serif; fill: #9CB0C9; }
+      .panelTitle { font: 700 24px Inter, Arial, sans-serif; fill: #F3F7FF; letter-spacing: 0.01em; }
+      .h3 { font: 700 20px Inter, Arial, sans-serif; fill: #DCE7F6; }
+      .body { font: 400 17px Inter, Arial, sans-serif; fill: #AFC1D8; }
+      .small { font: 500 14px Inter, Arial, sans-serif; fill: #8EA4BF; }
+      .mono { font: 600 14px "JetBrains Mono", "SFMono-Regular", Consolas, monospace; fill: #DCE7F6; }
+      .chipText { font: 600 15px Inter, Arial, sans-serif; fill: #DCE7F6; }
+      .metricNum { font: 700 28px Inter, Arial, sans-serif; fill: #47FF9C; }
+      .metricLabel { font: 500 15px Inter, Arial, sans-serif; fill: #9CB0C9; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+
+  <!-- ambient glows -->
+  <circle cx="1360" cy="90" r="240" fill="#47FF9C" opacity="0.05"/>
+  <circle cx="1450" cy="750" r="220" fill="#7AA2F7" opacity="0.05"/>
+  <circle cx="160" cy="780" r="180" fill="#F7768E" opacity="0.04"/>
+
+  <!-- hero -->
+  <rect x="60" y="48" width="1480" height="160" rx="28" fill="url(#hero)" stroke="#233248" stroke-width="1.5"/>
+  <text x="100" y="176" class="title">anneal</text>
+  <text x="100" y="216" class="subtitle">Autonomous optimization for any measurable artifact</text>
+  <text x="100" y="252" class="body">Let an AI agent improve code, prompts, and configs overnight by mutating a target, evaluating results, and keeping only winning changes.</text>
+
+  <!-- right hero card -->
+  <g filter="url(#shadow)">
+    <rect x="1110" y="78" width="360" height="102" rx="22" fill="#0E1520" stroke="#26364D"/>
+  </g>
+  <text x="1140" y="118" class="small">Quick install</text>
+  <text x="1140" y="150" class="mono">uv tool install anneal-cli</text>
+  <text x="1140" y="176" class="small">Python 3.12+</text>
+
+  <!-- metrics -->
+  <g>
+    <rect x="1090" y="214" width="110" height="74" rx="18" fill="#0E1520" stroke="#223146"/>
+    <text x="1116" y="247" class="metricNum">245</text>
+    <text x="1116" y="271" class="metricLabel">commits</text>
+
+    <rect x="1216" y="214" width="110" height="74" rx="18" fill="#0E1520" stroke="#223146"/>
+    <text x="1246" y="247" class="metricNum">492</text>
+    <text x="1237" y="271" class="metricLabel">tests</text>
+
+    <rect x="1342" y="214" width="128" height="74" rx="18" fill="#0E1520" stroke="#223146"/>
+    <text x="1368" y="247" class="metricNum">v0.2.0</text>
+    <text x="1367" y="271" class="metricLabel">latest release</text>
+  </g>
+
+  <!-- row 1 -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="252" width="460" height="270" rx="24" fill="url(#panel)" stroke="#233248"/>
+    <rect x="540" y="252" width="520" height="270" rx="24" fill="url(#panel)" stroke="#233248"/>
+    <rect x="1080" y="252" width="460" height="270" rx="24" fill="url(#panel)" stroke="#233248"/>
+  </g>
+
+  <!-- panel 1 -->
+  <text x="90" y="295" class="panelTitle">What it does</text>
+  <rect x="90" y="308" width="120" height="4" rx="2" fill="url(#accentLine)"/>
+  <text x="90" y="350" class="body">You register a target file, define how “better” is measured, and let the system run autonomous experiments in a git repo.</text>
+
+  <g>
+    <circle cx="106" cy="397" r="7" fill="#47FF9C"/>
+    <text x="126" y="403" class="body">Mutates an artifact</text>
+    <circle cx="106" cy="437" r="7" fill="#7AA2F7"/>
+    <text x="126" y="443" class="body">Runs an evaluation loop</text>
+    <circle cx="106" cy="477" r="7" fill="#F7768E"/>
+    <text x="126" y="483" class="body">Keeps winners, reverts losers</text>
+  </g>
+
+  <rect x="90" y="488" width="400" height="1" fill="#243348"/>
+  <text x="90" y="514" class="small">Good fit</text>
+  <text x="90" y="540" class="body">Prompt tuning · test coverage · code golf · measurable docs or config optimization</text>
+
+  <!-- panel 2 core loop -->
+  <text x="570" y="295" class="panelTitle">Core optimization loop</text>
+  <rect x="570" y="308" width="170" height="4" rx="2" fill="url(#accentLine)"/>
+
+  <!-- flow boxes -->
+  <g>
+    <rect x="586" y="350" width="128" height="46" rx="14" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="611" y="379" class="chipText">Register</text>
+
+    <rect x="742" y="350" width="128" height="46" rx="14" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="776" y="379" class="chipText">Mutate</text>
+
+    <rect x="898" y="350" width="128" height="46" rx="14" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="926" y="379" class="chipText">Evaluate</text>
+
+    <path d="M714 373H740" stroke="#5B769B" stroke-width="3" stroke-linecap="round"/>
+    <path d="M870 373H896" stroke="#5B769B" stroke-width="3" stroke-linecap="round"/>
+    <path d="M732 373l-8 -6v12l8 -6z" fill="#5B769B"/>
+    <path d="M888 373l-8 -6v12l8 -6z" fill="#5B769B"/>
+
+    <rect x="664" y="428" width="160" height="46" rx="14" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="704" y="457" class="chipText">Keep / Revert</text>
+
+    <rect x="850" y="428" width="160" height="46" rx="14" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="896" y="457" class="chipText">Learn</text>
+
+    <path d="M962 396V418" stroke="#5B769B" stroke-width="3" stroke-linecap="round"/>
+    <path d="M744 428V407" stroke="#5B769B" stroke-width="3" stroke-linecap="round"/>
+    <path d="M824 451H848" stroke="#5B769B" stroke-width="3" stroke-linecap="round"/>
+    <path d="M846 451l-8 -6v12l8 -6z" fill="#5B769B"/>
+
+    <path d="M1010 451C1038 451 1038 503 980 503H690C635 503 635 430 660 430" stroke="#314662" stroke-width="3" fill="none"/>
+    <path d="M655 430l12 2l-6 10z" fill="#314662"/>
+  </g>
+  <text x="572" y="505" class="small">All experiments are tracked as git history, so review and rollback stay auditable.</text>
+
+  <!-- panel 3 eval modes -->
+  <text x="1110" y="295" class="panelTitle">Two evaluation modes</text>
+  <rect x="1110" y="308" width="180" height="4" rx="2" fill="url(#accentLine)"/>
+
+  <rect x="1110" y="340" width="400" height="74" rx="18" fill="#0D1520" stroke="#2A3A50"/>
+  <text x="1134" y="370" class="h3">Deterministic</text>
+  <text x="1134" y="395" class="body">A shell command produces a numeric score. Good for coverage, performance, file size, or build time.</text>
+
+  <rect x="1110" y="430" width="400" height="74" rx="18" fill="#0D1520" stroke="#2A3A50"/>
+  <text x="1134" y="460" class="h3">Stochastic</text>
+  <text x="1134" y="485" class="body">An LLM judges multiple samples against binary criteria. Good for prompts, docs, and variable-output tasks.</text>
+
+  <!-- row 2 -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="548" width="710" height="292" rx="24" fill="url(#panel)" stroke="#233248"/>
+    <rect x="790" y="548" width="750" height="292" rx="24" fill="url(#panel)" stroke="#233248"/>
+  </g>
+
+  <!-- left bottom: examples -->
+  <text x="90" y="591" class="panelTitle">Representative examples</text>
+  <rect x="90" y="604" width="210" height="4" rx="2" fill="url(#accentLine)"/>
+
+  <g>
+    <rect x="90" y="632" width="650" height="52" rx="16" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="114" y="664" class="h3">Prompt optimization</text>
+    <text x="356" y="664" class="body">Rewrite a system prompt and score summaries with LLM-based criteria.</text>
+
+    <rect x="90" y="698" width="650" height="52" rx="16" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="114" y="730" class="h3">Test coverage</text>
+    <text x="268" y="730" class="body">Add pytest cases, run coverage, and maximize the measured score.</text>
+
+    <rect x="90" y="764" width="650" height="52" rx="16" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="114" y="796" class="h3">Code golf</text>
+    <text x="234" y="796" class="body">Minimize file size while preserving byte-identical output.</text>
+  </g>
+
+  <!-- right bottom: architecture/docs -->
+  <text x="820" y="591" class="panelTitle">Repo shape</text>
+  <rect x="820" y="604" width="120" height="4" rx="2" fill="url(#accentLine)"/>
+
+  <g>
+    <rect x="820" y="634" width="132" height="42" rx="14" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="856" y="661" class="chipText">anneal/</text>
+
+    <rect x="968" y="634" width="132" height="42" rx="14" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="997" y="661" class="chipText">docs/</text>
+
+    <rect x="1116" y="634" width="150" height="42" rx="14" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="1152" y="661" class="chipText">examples/</text>
+
+    <rect x="1282" y="634" width="140" height="42" rx="14" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="1316" y="661" class="chipText">tests/</text>
+  </g>
+
+  <text x="820" y="720" class="body">The repo includes documentation for overview, evaluation guidance, recipes, use cases, features, architecture, and system design.</text>
+
+  <text x="820" y="770" class="small">Key positioning</text>
+  <text x="820" y="800" class="body">This is not a generic optimizer package. It is an agentic experimentation loop for measurable artifacts inside a git-based workflow.</text>
+
+  <!-- footer -->
+</svg>

@@ -132,8 +132,8 @@ class GitEnvironment:
         staged: list[str] = []
 
         # Collect all paths to check: artifacts + scope-adjacent files
-        scope_parent = str(Path(scope_path).parent)
-        criteria_rel = str(Path(scope_parent) / "eval_criteria.toml")
+        scope_dir = Path(scope_path).parent
+        criteria_rel = str(scope_dir / "eval_criteria.toml")
         paths_to_check = list(artifact_paths)
         for adjacent in [scope_path, criteria_rel]:
             if adjacent not in paths_to_check:

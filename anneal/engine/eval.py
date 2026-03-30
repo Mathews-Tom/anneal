@@ -252,6 +252,9 @@ class BradleyTerryScorer:
 class StochasticEvaluator:
     """Generates N samples from fixed test prompts, scores each against K criteria."""
 
+    def __init__(self) -> None:
+        self._invoker = AgentInvoker()
+
     async def evaluate(
         self,
         worktree_path: Path,
@@ -433,9 +436,8 @@ class StochasticEvaluator:
         """
         if config.mode == "claude_code":
             async with _CLAUDE_CODE_SEMAPHORE:
-                invoker = AgentInvoker()
                 full_prompt = f"Generate output in {output_format} format.\n\n{prompt}"
-                result = await invoker.invoke(
+                result = await self._invoker.invoke(
                     config, full_prompt, worktree_path,
                     time_budget_seconds=120, deployment_mode=True,
                 )
@@ -486,15 +488,12 @@ class StochasticEvaluator:
 
         if config.mode == "claude_code":
             async with _CLAUDE_CODE_SEMAPHORE:
-                invoker = AgentInvoker()
                 full_prompt = f"{system_msg}\n\n{user_msg}"
-                result = await invoker.invoke(
+                result = await self._invoker.invoke(
                     config, full_prompt, worktree_path,
                     time_budget_seconds=60, deployment_mode=True,
                 )
-                answer = result.raw_output.strip().upper()
-                binary = 1.0 if answer.startswith("YES") else 0.0
-                return binary, result.cost_usd
+                return _parse_yes_no(result.raw_output), result.cost_usd
 
         # API path (default)
         client = make_client(config.model)
@@ -511,10 +510,9 @@ class StochasticEvaluator:
                 )
         except (openai.APITimeoutError, openai.APIConnectionError) as exc:
             raise EvalError(f"Scoring API call failed for {criterion.name}: {exc}") from exc
-        answer = (response.choices[0].message.content or "").strip().upper()
-        binary = 1.0 if answer.startswith("YES") else 0.0
+        raw_answer = response.choices[0].message.content or ""
         cost = _extract_cost(response, model)
-        return binary, cost
+        return _parse_yes_no(raw_answer), cost
 
     async def _score_criterion(
         self,
@@ -557,6 +555,11 @@ class StochasticEvaluator:
         # Majority vote (existing behavior)
         majority = 1.0 if yes_count > votes / 2 else 0.0
         return majority, total_cost
+
+
+def _parse_yes_no(raw: str) -> float:
+    """Parse a YES/NO judgment response into a binary score (1.0 or 0.0)."""
+    return 1.0 if raw.strip().upper().startswith("YES") else 0.0
 
 
 def _extract_cost(response: object, model: str = "") -> float:

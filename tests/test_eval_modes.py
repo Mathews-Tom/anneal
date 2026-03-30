@@ -81,18 +81,18 @@ class TestGenerateSampleDispatch:
             tags=[], raw_output="generated via claude code",
         )
 
-        with patch("anneal.engine.eval.AgentInvoker") as MockInvoker:
-            instance = MockInvoker.return_value
-            instance.invoke = AsyncMock(return_value=mock_result)
+        mock_invoker = AsyncMock()
+        mock_invoker.invoke = AsyncMock(return_value=mock_result)
+        evaluator._invoker = mock_invoker
 
-            text, cost = await evaluator._generate_sample(
-                claude_code_config, "test prompt", "text", tmp_path,
-            )
+        text, cost = await evaluator._generate_sample(
+            claude_code_config, "test prompt", "text", tmp_path,
+        )
 
         assert text == "generated via claude code"
         assert cost == 0.05
-        instance.invoke.assert_called_once()
-        call_kwargs = instance.invoke.call_args
+        mock_invoker.invoke.assert_called_once()
+        call_kwargs = mock_invoker.invoke.call_args
         assert call_kwargs[1].get("deployment_mode") is True or call_kwargs[0][4] is True
 
 
@@ -134,13 +134,13 @@ class TestScoreCriterionDispatch:
             tags=[], raw_output="YES",
         )
 
-        with patch("anneal.engine.eval.AgentInvoker") as MockInvoker:
-            instance = MockInvoker.return_value
-            instance.invoke = AsyncMock(return_value=mock_result)
+        mock_invoker = AsyncMock()
+        mock_invoker.invoke = AsyncMock(return_value=mock_result)
+        evaluator._invoker = mock_invoker
 
-            binary, cost = await evaluator._score_criterion_once(
-                claude_code_config, "sample text", criterion, tmp_path,
-            )
+        binary, cost = await evaluator._score_criterion_once(
+            claude_code_config, "sample text", criterion, tmp_path,
+        )
 
         assert binary == 1.0
         assert cost == 0.02
@@ -156,13 +156,13 @@ class TestScoreCriterionDispatch:
             tags=[], raw_output="NO",
         )
 
-        with patch("anneal.engine.eval.AgentInvoker") as MockInvoker:
-            instance = MockInvoker.return_value
-            instance.invoke = AsyncMock(return_value=mock_result)
+        mock_invoker = AsyncMock()
+        mock_invoker.invoke = AsyncMock(return_value=mock_result)
+        evaluator._invoker = mock_invoker
 
-            binary, cost = await evaluator._score_criterion_once(
-                claude_code_config, "sample text", criterion, tmp_path,
-            )
+        binary, cost = await evaluator._score_criterion_once(
+            claude_code_config, "sample text", criterion, tmp_path,
+        )
 
         assert binary == 0.0
 

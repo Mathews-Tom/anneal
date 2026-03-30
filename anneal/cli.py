@@ -837,34 +837,31 @@ def _handle_configure(args: argparse.Namespace) -> None:
             target.eval_config.stochastic.generation_agent_config.mode = args.generation_mode
         changes.append(f"  generation mode = {args.generation_mode}")
 
-    if getattr(args, "judgment_model", None) is not None and target.eval_config.stochastic:
+    # Update judgment agent config (model and/or mode)
+    judge_model_arg = getattr(args, "judgment_model", None)
+    judge_mode_arg = getattr(args, "judgment_mode", None)
+    if (judge_model_arg is not None or judge_mode_arg is not None) and target.eval_config.stochastic:
         stoch = target.eval_config.stochastic
         if stoch.judgment_agent_config is None:
-            stoch.judgment_agent_config = AgentConfig(
-                mode="api",
-                model=args.judgment_model,
-                evaluator_model=args.judgment_model,
-                max_budget_usd=0.02,
-                temperature=1.0,
-            )
-        else:
-            stoch.judgment_agent_config.model = args.judgment_model
-        changes.append(f"  judgment model = {args.judgment_model}")
-
-    if getattr(args, "judgment_mode", None) is not None and target.eval_config.stochastic:
-        stoch = target.eval_config.stochastic
-        if stoch.judgment_agent_config is None:
+            # Create from scratch — derive defaults from generation config
             gen_cfg = stoch.generation_agent_config
+            default_model = gen_cfg.evaluator_model if gen_cfg else "gpt-4.1"
             stoch.judgment_agent_config = AgentConfig(
-                mode=args.judgment_mode,
-                model=gen_cfg.evaluator_model if gen_cfg else "gpt-4.1",
-                evaluator_model=gen_cfg.evaluator_model if gen_cfg else "gpt-4.1",
+                mode=judge_mode_arg or "api",
+                model=judge_model_arg or default_model,
+                evaluator_model=judge_model_arg or default_model,
                 max_budget_usd=0.02,
                 temperature=1.0,
             )
         else:
-            stoch.judgment_agent_config.mode = args.judgment_mode
-        changes.append(f"  judgment mode = {args.judgment_mode}")
+            if judge_model_arg is not None:
+                stoch.judgment_agent_config.model = judge_model_arg
+            if judge_mode_arg is not None:
+                stoch.judgment_agent_config.mode = judge_mode_arg
+        if judge_model_arg:
+            changes.append(f"  judgment model = {judge_model_arg}")
+        if judge_mode_arg:
+            changes.append(f"  judgment mode = {judge_mode_arg}")
 
     if getattr(args, "base_url", None) is not None:
         # Store base_url as a custom field — the agent invoker reads it

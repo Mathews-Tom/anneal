@@ -23,6 +23,7 @@ from anneal.engine.agent import AgentInvocationError, AgentInvoker, AgentTimeout
 from anneal.engine.context import build_restart_context, build_target_context
 from anneal.engine.environment import FileBackupEnvironment, GitEnvironment
 from anneal.engine.eval import EvalEngine, EvalError, run_verifiers
+from anneal.engine.eval_cache import EvalCache
 from anneal.engine.knowledge import KnowledgeStore
 from anneal.engine.learning_pool import LearningPool, extract_learning
 from anneal.engine.notifications import NotificationManager

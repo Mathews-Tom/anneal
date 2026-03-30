@@ -13,6 +13,7 @@ import openai
 
 from anneal.engine.agent import AgentInvoker
 from anneal.engine.client import compute_cost, make_client, strip_provider_prefix
+from anneal.engine.eval_cache import EvalCache
 from anneal.engine.types import (
     AgentConfig,
     BinaryCriterion,
@@ -579,9 +580,10 @@ def _extract_cost(response: object, model: str = "") -> float:
 class EvalEngine:
     """Dispatcher that routes to the appropriate evaluator."""
 
-    def __init__(self) -> None:
+    def __init__(self, cache: EvalCache | None = None) -> None:
         self._deterministic = DeterministicEvaluator()
         self._stochastic = StochasticEvaluator()
+        self._cache = cache
 
     async def evaluate(
         self,
@@ -595,11 +597,35 @@ class EvalEngine:
         if eval_config.stochastic is not None:
             if artifact_content is None:
                 raise EvalError("Stochastic evaluation requires artifact_content")
-            return await self._stochastic.evaluate(
+            criteria_names = [c.name for c in eval_config.stochastic.criteria]
+
+            if self._cache is not None:
+                cached = self._cache.get(artifact_content, criteria_names)
+                if cached is not None:
+                    logger.info(
+                        "EvalCache hit (rate=%.1f%%)", self._cache.hit_rate * 100,
+                    )
+                    return EvalResult(
+                        score=cached.score,
+                        raw_scores=list(cached.raw_scores),
+                        criterion_names=list(cached.criterion_names),
+                    )
+
+            result = await self._stochastic.evaluate(
                 worktree_path,
                 eval_config.stochastic,
                 artifact_content,
             )
+
+            if self._cache is not None:
+                self._cache.put(
+                    artifact_content,
+                    criteria_names,
+                    result.score,
+                    result.raw_scores or [],
+                )
+
+            return result
 
         raise EvalError("EvalConfig has neither deterministic nor stochastic configuration")
 

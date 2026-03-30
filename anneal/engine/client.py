@@ -49,8 +49,14 @@ def _load_pricing() -> dict[str, tuple[float, float]]:
     if _PRICING_CONFIG_PATH.exists():
         with open(_PRICING_CONFIG_PATH, "rb") as f:
             config = tomllib.load(f)
-        for model, prices in config.get("models", {}).items():
+        overrides = config.get("models", {})
+        for model, prices in overrides.items():
             defaults[model] = (float(prices["input"]), float(prices["output"]))
+        if overrides:
+            logger.info(
+                "Loaded %d pricing override(s) from %s",
+                len(overrides), _PRICING_CONFIG_PATH,
+            )
     return defaults
 
 
@@ -136,7 +142,13 @@ def compute_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     # Strip prefix for cost lookup
     if model not in _MODEL_COSTS and model not in _WARNED_MODELS:
         _WARNED_MODELS.add(model)
-        logger.warning("No cost data for model %s; using default pricing", model)
+        logger.warning(
+            "No cost data for model %s; using default pricing ($%.2f/$%.2f per MTok). "
+            "To set pricing, add to %s:\n"
+            '  [models."%s"]\n  input = <$/MTok>\n  output = <$/MTok>',
+            model, _DEFAULT_COSTS[0], _DEFAULT_COSTS[1],
+            _PRICING_CONFIG_PATH, model,
+        )
     costs = get_model_costs(model)
 
     input_rate, output_rate = costs[0] / 1_000_000, costs[1] / 1_000_000

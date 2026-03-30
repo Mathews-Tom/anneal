@@ -656,13 +656,9 @@ class ExperimentRunner:
         stochastic_conf = target.eval_config.stochastic
         confidence = stochastic_conf.confidence_level if stochastic_conf else 0.95
 
-        if isinstance(self._search, GreedySearch) and self._knowledge:
-            experiments_in_window = self._knowledge.record_count() % self._knowledge.CONSOLIDATION_INTERVAL
-            window_size = self._knowledge.CONSOLIDATION_INTERVAL
-            adjusted_alpha = GreedySearch._adjusted_alpha(
-                1 - confidence, experiments_in_window, window_size,
-            )
-            confidence = 1 - adjusted_alpha
+        experiment_index = 0
+        if self._knowledge:
+            experiment_index = self._knowledge.record_count() % self._knowledge.CONSOLIDATION_INTERVAL
 
         if target.eval_config.stochastic is not None and not target.baseline_raw_scores:
             logger.info("Cold-start for stochastic target %s: accepting first evaluation as baseline", target.id)
@@ -674,6 +670,8 @@ class ExperimentRunner:
                 target.eval_config.direction,
                 target.eval_config.min_improvement_threshold,
                 confidence,
+                experiment_index=experiment_index,
+                holm_bonferroni=stochastic_conf is not None,
             )
 
         # Check constraints before finalizing KEEP

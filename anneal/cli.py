@@ -163,11 +163,13 @@ def _handle_register(args: argparse.Namespace) -> None:
             getattr(args, "generation_mode", None)
             or gen.get("agent", {}).get("mode", "api")
         )
+        # Claude Code subprocess needs higher budget than API due to session overhead
+        gen_budget = 0.50 if gen_mode == "claude_code" else 0.02
         gen_agent = AgentConfig(
             mode=gen_mode,
             model=gen.get("agent", {}).get("model", "gemini-2.5-flash"),
             evaluator_model=args.evaluator_model,
-            max_budget_usd=0.02,
+            max_budget_usd=gen.get("agent", {}).get("max_budget_usd", gen_budget),
             temperature=gen.get("agent", {}).get("temperature", 0.7),
         )
 
@@ -177,11 +179,13 @@ def _handle_register(args: argparse.Namespace) -> None:
         judge_mode = getattr(args, "judgment_mode", None) or judge_section.get("agent", {}).get("mode", None)
         judge_model = getattr(args, "judgment_model", None) or judge_section.get("agent", {}).get("model", None)
         if judge_mode or judge_model:
+            effective_judge_mode = judge_mode or "api"
+            judge_budget = 0.50 if effective_judge_mode == "claude_code" else 0.02
             judgment_agent_config = AgentConfig(
-                mode=judge_mode or "api",
+                mode=effective_judge_mode,
                 model=judge_model or args.evaluator_model,
                 evaluator_model=judge_model or args.evaluator_model,
-                max_budget_usd=0.02,
+                max_budget_usd=judge_budget,
                 temperature=1.0,
             )
 

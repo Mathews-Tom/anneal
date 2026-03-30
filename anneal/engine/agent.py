@@ -189,6 +189,15 @@ class AgentInvoker:
                 f"Invalid JSON response from Claude Code: {exc}"
             ) from exc
 
+        # Detect Claude Code error responses (exit code 0 but no result)
+        is_error = response.get("is_error", False)
+        subtype = response.get("subtype", "")
+        if is_error or (subtype and subtype.startswith("error_")):
+            raise AgentInvocationError(
+                f"Claude Code returned error: subtype={subtype}, "
+                f"cost=${response.get('total_cost_usd', 0):.4f}"
+            )
+
         cost_usd = float(response.get("total_cost_usd", response.get("cost_usd", 0.0)))
         usage = response.get("usage", {})
         input_tokens = int(usage.get("input_tokens", 0))

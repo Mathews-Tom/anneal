@@ -12,7 +12,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from anneal.engine.types import ExperimentRecord, OptimizationTarget
+from anneal.engine.types import ArtifactError, ExperimentRecord, OptimizationTarget
 
 logger = logging.getLogger(__name__)
 
@@ -376,6 +376,13 @@ def build_target_context(
             )
         else:
             logger.warning("Artifact file not found: %s", artifact_path)
+
+    if not artifact_parts:
+        raise ArtifactError(
+            f"No artifact files found in worktree. "
+            f"Expected: {target.artifact_paths}. "
+            f"Checked paths under: {worktree_path}"
+        )
 
     artifact_content = "# Current Artifacts\n\n" + "\n\n".join(artifact_parts)
     artifact_tokens = estimate_tokens(artifact_content)

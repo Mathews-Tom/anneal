@@ -108,6 +108,7 @@ class StochasticEval(BaseModel):
     output_format: str
     confidence_level: float = Field(default=0.95, gt=0, lt=1)
     generation_agent_config: AgentConfig | None = None
+    judgment_agent_config: AgentConfig | None = None
     held_out_prompts: list[str] = Field(default_factory=list)
     min_criterion_scores: dict[str, float] = Field(default_factory=dict)
     judgment_votes: int = Field(default=3, gt=0)
@@ -272,9 +273,19 @@ class OptimizationTarget(BaseModel):
     notifications: NotificationConfig = Field(default_factory=NotificationConfig)
     approval_callback: Callable[[str], bool] | None = Field(default=None, exclude=True)
     restart_probability: float = Field(default=0.0, ge=0.0, le=1.0)
+    in_place: bool = False
     policy_config: PolicyConfig | None = None
     population_config: PopulationConfig | None = None
     eval_environment: EvalEnvironment | None = None
+
+
+# ---------------------------------------------------------------------------
+# Cross-component exceptions
+# ---------------------------------------------------------------------------
+
+
+class ArtifactError(Exception):
+    """Raised when required artifact files cannot be found in the worktree."""
 
 
 # ---------------------------------------------------------------------------

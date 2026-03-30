@@ -84,7 +84,7 @@ class FailureTaxonomy:
         try:
             response = await client.chat.completions.create(
                 model=api_model,
-                temperature=0.0,
+                temperature=1.0,
                 messages=[{"role": "user", "content": prompt}],
             )
         except (openai.APITimeoutError, openai.APIConnectionError) as exc:

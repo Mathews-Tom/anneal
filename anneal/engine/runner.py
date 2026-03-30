@@ -21,7 +21,7 @@ from typing import Literal
 
 from anneal.engine.agent import AgentInvocationError, AgentInvoker, AgentTimeoutError
 from anneal.engine.context import build_restart_context, build_target_context
-from anneal.engine.environment import GitEnvironment
+from anneal.engine.environment import FileBackupEnvironment, GitEnvironment
 from anneal.engine.eval import EvalEngine, EvalError, run_verifiers
 from anneal.engine.knowledge import KnowledgeStore
 from anneal.engine.learning_pool import LearningPool, extract_learning
@@ -35,6 +35,7 @@ from anneal.engine.taxonomy import FailureTaxonomy
 from anneal.engine.tree_search import UCBTreeSearch
 from anneal.engine.types import (
     AgentInvocationResult,
+    ArtifactError,
     DeterministicEval,
     Direction,
     DomainTier,
@@ -169,6 +170,7 @@ class ExperimentRunner:
         self._learning_pool = learning_pool
         self._taxonomy = taxonomy
         self._policy_agent: PolicyAgent | None = None
+        self._backup_envs: dict[str, FileBackupEnvironment] = {}
         self._stop_flags: set[str] = set()
         self._stop_lock = threading.Lock()
 
@@ -199,8 +201,18 @@ class ExperimentRunner:
         start_time = time.monotonic()
         experiment_id = str(uuid.uuid4())
 
+        # In-place mode: backup artifacts before mutation
+        backup_id: str | None = None
+        if target.in_place:
+            if target.id not in self._backup_envs:
+                backup_dir = Path(target.worktree_path) / ".anneal" / "backups" / target.id
+                self._backup_envs[target.id] = FileBackupEnvironment(backup_dir)
+            backup_id = await self._backup_envs[target.id].backup(
+                target.artifact_paths, worktree,
+            )
+
         # 1. Record pre-experiment state and verify scope integrity
-        pre_sha = await self._git.rev_parse(worktree, "HEAD")
+        pre_sha = "" if target.in_place else await self._git.rev_parse(worktree, "HEAD")
         base = self._repo_root if self._repo_root else worktree
         scope_path = base / target.scope_path
         if not verify_scope_hash(scope_path, target.scope_hash):
@@ -210,8 +222,10 @@ class ExperimentRunner:
             )
         scope = load_scope(scope_path)
         artifact_content = self._read_artifacts(worktree, target.artifact_paths)
-        pre_agent_status = set(
-            path for _, path in await self._git.status_porcelain(worktree)
+        pre_agent_status = (
+            set()
+            if target.in_place
+            else set(path for _, path in await self._git.status_porcelain(worktree))
         )
 
         # 1b. Tree search: select parent node and checkout if non-HEAD
@@ -497,6 +511,11 @@ class ExperimentRunner:
     ) -> str | ExperimentRecord:
         """Enforce scope, reset violations, commit valid edits.
         Returns commit SHA on success or ExperimentRecord on early exit."""
+        # In-place mode: skip git scope enforcement and commit — mutations
+        # are managed via file backup/restore, not git.
+        if target.in_place:
+            return pre_sha  # Placeholder SHA; in-place has no commits
+
         _INTERNAL_FILES = {".anneal-status", ".anneal.lock"}
         git_status = [
             (code, path) for code, path in await self._git.status_porcelain(worktree)
@@ -675,9 +694,18 @@ class ExperimentRunner:
                 target.baseline_raw_scores = list(eval_result.raw_scores)
             self._registry.update_target(target)
             git_sha = commit_sha
+            # In-place: cleanup backup (mutation is kept)
+            if target.in_place and backup_id and target.id in self._backup_envs:
+                await self._backup_envs[target.id].cleanup(backup_id)
         else:
             outcome = Outcome.DISCARDED
-            await self._git.reset_hard(worktree, pre_sha)
+            if target.in_place and backup_id and target.id in self._backup_envs:
+                await self._backup_envs[target.id].restore(
+                    backup_id, target.artifact_paths, worktree,
+                )
+                await self._backup_envs[target.id].cleanup(backup_id)
+            else:
+                await self._git.reset_hard(worktree, pre_sha)
             git_sha = pre_sha
 
         record = ExperimentRecord(
@@ -1007,13 +1035,28 @@ class ExperimentRunner:
 
     @staticmethod
     def _read_artifacts(worktree: Path, artifact_paths: list[str]) -> str:
-        """Read and concatenate artifact file contents from the worktree."""
+        """Read and concatenate artifact file contents from the worktree.
+
+        Raises ArtifactError if ALL artifact files are missing — this prevents
+        silent NaN scores from stochastic eval receiving empty content.
+        """
         parts: list[str] = []
+        missing: list[str] = []
         for rel_path in artifact_paths:
             full_path = worktree / rel_path
             if full_path.exists():
                 content = full_path.read_text(encoding="utf-8")
                 parts.append(f"### {rel_path}\n\n{content}")
+            else:
+                missing.append(rel_path)
+        if missing:
+            logger.warning("Artifact files missing from worktree: %s", missing)
+        if not parts:
+            raise ArtifactError(
+                f"All artifact files missing from worktree ({worktree}): {missing}. "
+                f"Ensure files are committed to git before registration, "
+                f"or re-register the target."
+            )
         return "\n\n".join(parts)
 
     # ------------------------------------------------------------------

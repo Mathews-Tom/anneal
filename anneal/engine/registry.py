@@ -104,9 +104,10 @@ class Registry:
     # Target lifecycle
     # ------------------------------------------------------------------
 
-    async def register_target(self, target: OptimizationTarget) -> None:
+    async def register_target(self, target: OptimizationTarget) -> list[str]:
         """Register a new target: validate scope, create worktree, store config.
 
+        Returns list of paths that were auto-staged from untracked files.
         Raises RegistryError if validation fails or target ID already exists.
         """
         if target.id in self._targets:
@@ -121,7 +122,7 @@ class Registry:
 
         # Validate scope against invariants
         sibling_targets = list(self._targets.values())
-        errors = validate_scope(scope, target.eval_mode, sibling_targets)
+        errors = validate_scope(scope, target.eval_mode, sibling_targets, in_place=target.in_place)
         if errors:
             raise RegistryError(
                 f"Scope validation failed for {target.id}:\n"
@@ -139,10 +140,45 @@ class Registry:
         # Compute and store scope hash
         target.scope_hash = compute_scope_hash(scope_path)
 
-        # Create git worktree
-        worktree_info = await self._git.create_worktree(self._repo_root, target.id)
-        target.worktree_path = str(worktree_info.path.relative_to(self._repo_root))
-        target.git_branch = worktree_info.branch
+        staged: list[str] = []
+
+        if target.in_place:
+            # In-place mode: no worktree, artifacts live in repo root
+            target.worktree_path = str(self._repo_root)
+            target.git_branch = ""
+            backup_dir = self._repo_root / ".anneal" / "backups" / target.id
+            backup_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            # Standard mode: create git worktree
+            worktree_info = await self._git.create_worktree(self._repo_root, target.id)
+            target.worktree_path = str(worktree_info.path.relative_to(self._repo_root))
+            target.git_branch = worktree_info.branch
+
+            # Auto-stage untracked artifacts into worktree
+            worktree_abs = worktree_info.path
+            staged = await self._git.stage_untracked_artifacts(
+                self._repo_root,
+                worktree_abs,
+                target.artifact_paths,
+                target.scope_path,
+            )
+            if staged:
+                logger.info(
+                    "Staged %d untracked artifact(s) on branch %s: %s",
+                    len(staged), target.git_branch, staged,
+                )
+
+            # Warn if artifacts are still missing after staging attempt
+            still_missing = [
+                p for p in target.artifact_paths
+                if not (worktree_abs / p).exists()
+            ]
+            if still_missing:
+                logger.warning(
+                    "Artifacts still missing from worktree for %s after staging: %s. "
+                    "These files do not exist in the repo working directory either.",
+                    target.id, still_missing,
+                )
 
         # Configure gc to preserve experiment history
         await self._git.configure_gc(self._repo_root)
@@ -152,6 +188,7 @@ class Registry:
         self.save()
 
         logger.info("Registered target %s (worktree: %s)", target.id, target.worktree_path)
+        return staged
 
     async def deregister_target(self, target_id: str) -> None:
         """Remove target: remove worktree, remove from config, preserve experiment history.

@@ -3,8 +3,10 @@
 ## Core
 
 - **Scope enforcement** — declare what the agent can and cannot modify. Path traversal attempts and absolute paths are rejected. Violations are reverted automatically.
+- **Auto-staging** — untracked artifact files are automatically copied into the worktree and committed on the anneal branch during registration. No manual `git add` required.
+- **In-place mode** — `--in-place` flag skips worktree creation for local-only artifacts. Uses file backup for rollback instead of git. Useful for skills, configs, and files not in version control.
 - **Knowledge compounding** — experiment history + consolidated learnings + cross-condition insights available for agent context. Per-criterion feedback (PASS/FAIL per criterion) helps the agent target specific weaknesses.
-- **Cost control** — per-experiment and daily budget caps. Pricing loaded from `~/.anneal/pricing.toml` with hardcoded defaults. Local models tracked at $0.
+- **Cost control** — per-experiment and daily budget caps. Pricing loaded from `~/.anneal/pricing.toml` with hardcoded defaults. Local models tracked at $0. See [Pricing Configuration](#pricing-configuration) below.
 - **Safety** — process group time-boxing (SIGKILL), consecutive failure halting, disk space checks, JSONL corruption recovery, git fsck integrity checks after kill recovery.
 - **Graceful shutdown** — `anneal stop --target <id>` writes a stop file; the runner exits cleanly after the current experiment.
 - **Verification gates** — binary pass/fail commands that run after scope enforcement, before eval. Discard mutations that fail structural checks without spending eval budget.
@@ -53,3 +55,22 @@
 - **Stale lock recovery** — scheduler detects and removes lock files older than 1 hour from crashed runners.
 - **Concurrent consolidation safety** — check-and-act consolidation is atomic under FileLock.
 - **Live dashboard** — `anneal dashboard` reads from `.anneal/` directory. No coupling to the runner process.
+
+## Pricing Configuration
+
+Anneal ships with hardcoded pricing for common models (GPT-4.1, GPT-5, Gemini 2.5, Claude Sonnet/Opus/Haiku). For new or custom models, create `~/.anneal/pricing.toml`:
+
+```toml
+# Prices in USD per million tokens (MTok)
+[models."gpt-5.4-mini"]
+input = 1.0
+output = 4.0
+
+[models."my-custom-model"]
+input = 0.5
+output = 2.0
+```
+
+User overrides merge with hardcoded defaults — you only need to add models that aren't built in. Local models (`ollama/*`, `lmstudio/*`, `local/*`) are always tracked at $0 regardless of pricing config.
+
+If a model has no pricing data, anneal uses a conservative default ($2.00/$8.00 per MTok) and logs a warning with instructions to add the model to `pricing.toml`.

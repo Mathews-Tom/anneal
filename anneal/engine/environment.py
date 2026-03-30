@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 from pathlib import Path
 
 from anneal.engine.types import WorktreeInfo
@@ -112,6 +113,54 @@ class GitEnvironment:
             branch=branch,
             head_sha=head_sha.strip(),
         )
+
+    async def stage_untracked_artifacts(
+        self,
+        repo_root: Path,
+        worktree_path: Path,
+        artifact_paths: list[str],
+        scope_path: str,
+    ) -> list[str]:
+        """Copy untracked artifacts from repo working directory into worktree.
+
+        For each path in ``artifact_paths`` plus scope-adjacent files
+        (scope.yaml, eval_criteria.toml), copies files that exist in
+        ``repo_root`` but are missing from ``worktree_path``.
+
+        Returns list of relative paths that were staged and committed.
+        """
+        staged: list[str] = []
+
+        # Collect all paths to check: artifacts + scope-adjacent files
+        scope_dir = Path(scope_path).parent
+        criteria_rel = str(scope_dir / "eval_criteria.toml")
+        paths_to_check = list(artifact_paths)
+        for adjacent in [scope_path, criteria_rel]:
+            if adjacent not in paths_to_check:
+                paths_to_check.append(adjacent)
+
+        for rel_path in paths_to_check:
+            src = repo_root / rel_path
+            dst = worktree_path / rel_path
+            if src.is_file() and not dst.exists():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+                staged.append(rel_path)
+
+        if not staged:
+            return staged
+
+        # Stage and commit on the anneal branch
+        await self._run_git(
+            ["add", "--", *staged],
+            cwd=worktree_path,
+        )
+        await self._run_git(
+            ["commit", "-m", "anneal: stage untracked artifacts"],
+            cwd=worktree_path,
+        )
+        logger.info("Staged %d untracked file(s) in worktree: %s", len(staged), staged)
+        return staged
 
     async def remove_worktree(
         self, repo_root: Path, target_id: str
@@ -327,3 +376,67 @@ class GitEnvironment:
             return True
 
         return False
+
+
+# ---------------------------------------------------------------------------
+# File-based backup for in-place mode (no git worktree)
+# ---------------------------------------------------------------------------
+
+
+class FileBackupEnvironment:
+    """File-based backup/restore for in-place optimization without git worktree.
+
+    Stores timestamped copies of artifact files in
+    ``.anneal/backups/<target_id>/<backup_id>/``. Each backup mirrors the
+    relative directory structure of the artifact paths.
+    """
+
+    def __init__(self, backup_dir: Path) -> None:
+        self._backup_dir = backup_dir
+        self._backup_dir.mkdir(parents=True, exist_ok=True)
+
+    async def backup(
+        self, artifact_paths: list[str], base_dir: Path
+    ) -> str:
+        """Copy artifact files to a timestamped backup directory.
+
+        Returns the backup_id (usable with restore/cleanup).
+        """
+        import time as _time
+
+        backup_id = f"{_time.time_ns()}"
+        dest = self._backup_dir / backup_id
+
+        for rel_path in artifact_paths:
+            src = base_dir / rel_path
+            if src.is_file():
+                target = dest / rel_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, target)
+
+        logger.info("Backed up %d artifact(s) to %s", len(artifact_paths), dest)
+        return backup_id
+
+    async def restore(
+        self, backup_id: str, artifact_paths: list[str], base_dir: Path
+    ) -> None:
+        """Restore artifact files from a previous backup."""
+        src_dir = self._backup_dir / backup_id
+        if not src_dir.exists():
+            raise FileNotFoundError(f"Backup not found: {src_dir}")
+
+        for rel_path in artifact_paths:
+            src = src_dir / rel_path
+            dst = base_dir / rel_path
+            if src.is_file():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+
+        logger.info("Restored %d artifact(s) from backup %s", len(artifact_paths), backup_id)
+
+    async def cleanup(self, backup_id: str) -> None:
+        """Remove a backup directory after a successful keep."""
+        target = self._backup_dir / backup_id
+        if target.exists():
+            shutil.rmtree(target)
+            logger.debug("Cleaned up backup %s", backup_id)

@@ -95,15 +95,24 @@ def validate_scope(
     scope: ScopeConfig,
     eval_mode: EvalMode,
     sibling_targets: list[OptimizationTarget] | None = None,
+    in_place: bool = False,
 ) -> list[str]:
     """Validate a ScopeConfig against required invariants.
+
+    When *in_place* is True, the ``metrics.yaml`` immutable requirement is
+    relaxed because in-place targets have no worktree-level scope enforcement.
 
     Returns a list of error strings. Empty list means valid.
     """
     errors: list[str] = []
 
-    # Required immutable entries
-    for required in _REQUIRED_IMMUTABLE:
+    # Required immutable entries (relaxed for in-place)
+    required_immutable = (
+        [r for r in _REQUIRED_IMMUTABLE if r != "metrics.yaml"]
+        if in_place
+        else _REQUIRED_IMMUTABLE
+    )
+    for required in required_immutable:
         if required not in scope.immutable:
             errors.append(
                 f"scope.yaml must declare '{required}' as immutable"

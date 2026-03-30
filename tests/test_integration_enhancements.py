@@ -267,6 +267,8 @@ class TestPolicyConfigDefaults:
             knowledge_path=str(tmp_path / "k"),
             worktree_path="w", git_branch="b", baseline_score=0.0,
         )
+        # Create the artifact file so context builder can read it
+        (tmp_path / "a.md").write_text("artifact content\n", encoding="utf-8")
         # No policy_instructions passed → no "Mutation Strategy" in output
         prompt, _ = build_target_context(
             target, tmp_path, tmp_path, history=[],
@@ -292,6 +294,8 @@ class TestPolicyConfigDefaults:
             knowledge_path=str(tmp_path), worktree_path=str(tmp_path),
             git_branch="b", baseline_score=0.0,
         )
+        # Create the artifact file so context builder can read it
+        (tmp_path / "a.md").write_text("artifact content\n", encoding="utf-8")
         prompt, _ = build_target_context(
             target, tmp_path, tmp_path, history=[],
             policy_instructions="Focus on output format validation.",

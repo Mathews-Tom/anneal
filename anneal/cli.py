@@ -158,14 +158,36 @@ def _handle_register(args: argparse.Namespace) -> None:
         gen = criteria_data.get("generation", {})
         meta = criteria_data.get("meta", {})
 
-        # Generation agent: use a cheap model for sample generation
+        # Generation agent
+        gen_mode = (
+            getattr(args, "generation_mode", None)
+            or gen.get("agent", {}).get("mode", "api")
+        )
+        # Claude Code subprocess needs higher budget than API due to session overhead
+        gen_budget = 0.50 if gen_mode == "claude_code" else 0.02
         gen_agent = AgentConfig(
-            mode="api",
+            mode=gen_mode,
             model=gen.get("agent", {}).get("model", "gemini-2.5-flash"),
             evaluator_model=args.evaluator_model,
-            max_budget_usd=0.02,
+            max_budget_usd=gen.get("agent", {}).get("max_budget_usd", gen_budget),
             temperature=gen.get("agent", {}).get("temperature", 0.7),
         )
+
+        # Judgment agent (optional — falls back to gen_agent.evaluator_model in eval engine)
+        judgment_agent_config = None
+        judge_section = criteria_data.get("judgment", {})
+        judge_mode = getattr(args, "judgment_mode", None) or judge_section.get("agent", {}).get("mode", None)
+        judge_model = getattr(args, "judgment_model", None) or judge_section.get("agent", {}).get("model", None)
+        if judge_mode or judge_model:
+            effective_judge_mode = judge_mode or "api"
+            judge_budget = 0.50 if effective_judge_mode == "claude_code" else 0.02
+            judgment_agent_config = AgentConfig(
+                mode=effective_judge_mode,
+                model=judge_model or args.evaluator_model,
+                evaluator_model=judge_model or args.evaluator_model,
+                max_budget_usd=judge_budget,
+                temperature=1.0,
+            )
 
         stochastic_eval = StochasticEval(
             sample_count=meta.get("sample_count", 10),
@@ -175,6 +197,7 @@ def _handle_register(args: argparse.Namespace) -> None:
             output_format=gen.get("output_format", "text"),
             confidence_level=meta.get("confidence_level", 0.95),
             generation_agent_config=gen_agent,
+            judgment_agent_config=judgment_agent_config,
         )
 
     # F1: Load held-out prompts
@@ -293,6 +316,7 @@ def _handle_register(args: argparse.Namespace) -> None:
         budget_cap=budget_cap,
         meta_depth=meta_depth,
         restart_probability=args.restart_probability,
+        in_place=args.in_place,
         policy_config=policy_config,
         approval_callback=approval_callback,
     )
@@ -339,10 +363,18 @@ def _handle_register(args: argparse.Namespace) -> None:
         return
 
     try:
-        asyncio.run(Registry(repo_root).register_target(target))
+        staged_paths = asyncio.run(Registry(repo_root).register_target(target))
     except (ScopeError, GitError) as exc:
         console.print(f"[red]Registration failed: {exc}[/red]")
         sys.exit(1)
+
+    if staged_paths:
+        console.print(
+            f"[cyan]Staged {len(staged_paths)} untracked file(s) "
+            f"on branch anneal/{args.name}:[/cyan]"
+        )
+        for sp in staged_paths:
+            console.print(f"  {sp}")
 
     # Copy custom failure categories to knowledge directory
     if args.failure_categories:
@@ -570,7 +602,7 @@ def _handle_run(args: argparse.Namespace) -> None:
         task_id = progress.add_task(
             target.id,
             total=max_exp if max_exp > 0 else None,
-            status=f"baseline={target.baseline_score:.3f}",
+            status=f"baseline={target.baseline_score:.4f}",
         )
 
         def on_experiment(record: ExperimentRecord) -> None:
@@ -597,7 +629,7 @@ def _handle_run(args: argparse.Namespace) -> None:
             progress.update(
                 task_id,
                 advance=1,
-                status=f"{tag} {record.score:.3f}  best={best_score:.3f}  ${total_cost:.3f}{failure}",
+                status=f"{tag} {record.score:.4f}  best={best_score:.4f}  ${total_cost:.4f}{failure}",
             )
 
         console.print()
@@ -636,7 +668,7 @@ def _handle_run(args: argparse.Namespace) -> None:
                 f"Target [bold]{target.id}[/bold]\n"
                 f"  Experiments:  {len(records)}\n"
                 f"  Kept:         {kept}\n"
-                f"  Best score:   {best_score:.3f}\n"
+                f"  Best score:   {best_score:.4f}\n"
                 f"  Total cost:   ${total_cost:.4f}\n"
                 f"  Total time:   {cond_time / 60:.1f} min",
                 title="anneal run — complete",
@@ -800,6 +832,37 @@ def _handle_configure(args: argparse.Namespace) -> None:
             target.eval_config.stochastic.generation_agent_config.model = args.generation_model
         changes.append(f"  generation model = {args.generation_model}")
 
+    if getattr(args, "generation_mode", None) is not None and target.eval_config.stochastic:
+        if target.eval_config.stochastic.generation_agent_config:
+            target.eval_config.stochastic.generation_agent_config.mode = args.generation_mode
+        changes.append(f"  generation mode = {args.generation_mode}")
+
+    # Update judgment agent config (model and/or mode)
+    judge_model_arg = getattr(args, "judgment_model", None)
+    judge_mode_arg = getattr(args, "judgment_mode", None)
+    if (judge_model_arg is not None or judge_mode_arg is not None) and target.eval_config.stochastic:
+        stoch = target.eval_config.stochastic
+        if stoch.judgment_agent_config is None:
+            # Create from scratch — derive defaults from generation config
+            gen_cfg = stoch.generation_agent_config
+            default_model = gen_cfg.evaluator_model if gen_cfg else "gpt-4.1"
+            stoch.judgment_agent_config = AgentConfig(
+                mode=judge_mode_arg or "api",
+                model=judge_model_arg or default_model,
+                evaluator_model=judge_model_arg or default_model,
+                max_budget_usd=0.02,
+                temperature=1.0,
+            )
+        else:
+            if judge_model_arg is not None:
+                stoch.judgment_agent_config.model = judge_model_arg
+            if judge_mode_arg is not None:
+                stoch.judgment_agent_config.mode = judge_mode_arg
+        if judge_model_arg:
+            changes.append(f"  judgment model = {judge_model_arg}")
+        if judge_mode_arg:
+            changes.append(f"  judgment mode = {judge_mode_arg}")
+
     if getattr(args, "base_url", None) is not None:
         # Store base_url as a custom field — the agent invoker reads it
         target.agent_config.temperature = target.agent_config.temperature  # no-op to keep config valid
@@ -941,7 +1004,7 @@ def _handle_list(_args: argparse.Namespace) -> None:
         console.print(
             f"  [bold]{target.id}[/bold]  "
             f"eval={target.eval_mode.value}  "
-            f"score={target.baseline_score:.3f}  "
+            f"score={target.baseline_score:.4f}  "
             f"branch={target.git_branch}"
         )
 
@@ -961,8 +1024,15 @@ def _handle_resume(args: argparse.Namespace) -> None:
         target.budget_cap.max_usd_per_day += args.increase_budget
         console.print(f"  Budget increased to ${target.budget_cap.max_usd_per_day:.2f}/day")
 
-    if args.reset_failures:
-        console.print("  Failure counter will reset on next run")
+    # Always reset consecutive failure counter on resume — the target was
+    # halted because of this counter, so resuming without clearing it would
+    # immediately re-halt.
+    loop_state_path = repo_root / target.knowledge_path / ".loop-state.json"
+    if loop_state_path.exists():
+        from anneal.engine.runner import RunLoopState
+        state = RunLoopState.load(loop_state_path)
+        state.consecutive_failures = 0
+        state.save(loop_state_path)
 
     registry.update_target(target)
     console.print(
@@ -1039,7 +1109,7 @@ def _handle_history(args: argparse.Namespace) -> None:
             style = "green" if r.outcome.value == "KEPT" else "dim"
             console.print(
                 f"  [{style}]{r.outcome.value:9s}[/{style}] "
-                f"score={r.score:.3f}  ${r.cost_usd:.4f}  "
+                f"score={r.score:.4f}  ${r.cost_usd:.4f}  "
                 f"{r.hypothesis[:70] if r.hypothesis else '-'}"
             )
 
@@ -1224,6 +1294,15 @@ def _build_parser() -> argparse.ArgumentParser:
     reg.add_argument("--n-drafts", type=int, default=1, help="Number of draft mutations per experiment cycle (1-10, default: 1)")
     reg.add_argument("--policy-model", help="Model for policy agent instruction rewriting (enables continuous meta-optimization)")
     reg.add_argument("--policy-interval", type=int, default=3, help="Rewrite mutation instructions every N experiments (default: 3)")
+    reg.add_argument("--in-place", action="store_true", default=False,
+                     help="Optimize artifact in-place without git worktree isolation. "
+                          "Uses file backup for rollback.")
+    reg.add_argument("--generation-mode", choices=["claude_code", "api"], default=None,
+                     help="Generation agent mode for stochastic eval (default: from criteria TOML or api)")
+    reg.add_argument("--judgment-model", default=None,
+                     help="Judgment model for stochastic eval (default: --evaluator-model)")
+    reg.add_argument("--judgment-mode", choices=["claude_code", "api"], default=None,
+                     help="Judgment agent mode for stochastic eval (default: api)")
 
     # -- run (stub) --
     run = subparsers.add_parser("run", help="Run optimization loop")
@@ -1284,6 +1363,9 @@ def _build_parser() -> argparse.ArgumentParser:
     conf.add_argument("--agent-mode", choices=["claude_code", "api"], help="Set agent invocation mode")
     conf.add_argument("--evaluator-model", help="Set evaluator model")
     conf.add_argument("--generation-model", help="Set sample generation model (stochastic)")
+    conf.add_argument("--generation-mode", choices=["claude_code", "api"], help="Set generation agent mode (stochastic)")
+    conf.add_argument("--judgment-model", help="Set judgment model (stochastic)")
+    conf.add_argument("--judgment-mode", choices=["claude_code", "api"], help="Set judgment agent mode (stochastic)")
     conf.add_argument("--base-url", help="Set custom API base URL (for local LLMs, e.g., http://localhost:11434/v1)")
     conf.add_argument("--baseline", type=float, help="Set baseline score manually")
     conf.add_argument("--time-budget", type=int, help="Set time budget per experiment (seconds)")

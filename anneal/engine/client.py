@@ -41,6 +41,7 @@ def _load_pricing() -> dict[str, tuple[float, float]]:
         "gpt-4.1-mini": (0.4, 1.6),
         "gpt-5": (5.0, 20.0),
         "gpt-5-mini": (1.0, 4.0),
+        "gpt-5.4-mini": (1.0, 4.0),
         "claude-sonnet-4-6": (3.0, 15.0),
         "claude-opus-4-6": (15.0, 75.0),
         "claude-haiku-4-5": (0.8, 4.0),
@@ -54,6 +55,7 @@ def _load_pricing() -> dict[str, tuple[float, float]]:
 
 
 _MODEL_COSTS = _load_pricing()
+_WARNED_MODELS: set[str] = set()
 
 
 def get_model_costs(model: str) -> tuple[float, float]:
@@ -132,7 +134,8 @@ def compute_cost(model: str, input_tokens: int, output_tokens: int) -> float:
         return 0.0
 
     # Strip prefix for cost lookup
-    if model not in _MODEL_COSTS:
+    if model not in _MODEL_COSTS and model not in _WARNED_MODELS:
+        _WARNED_MODELS.add(model)
         logger.warning("No cost data for model %s; using default pricing", model)
     costs = get_model_costs(model)
 

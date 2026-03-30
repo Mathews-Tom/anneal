@@ -602,7 +602,7 @@ def _handle_run(args: argparse.Namespace) -> None:
         task_id = progress.add_task(
             target.id,
             total=max_exp if max_exp > 0 else None,
-            status=f"baseline={target.baseline_score:.3f}",
+            status=f"baseline={target.baseline_score:.4f}",
         )
 
         def on_experiment(record: ExperimentRecord) -> None:
@@ -629,7 +629,7 @@ def _handle_run(args: argparse.Namespace) -> None:
             progress.update(
                 task_id,
                 advance=1,
-                status=f"{tag} {record.score:.3f}  best={best_score:.3f}  ${total_cost:.3f}{failure}",
+                status=f"{tag} {record.score:.4f}  best={best_score:.4f}  ${total_cost:.4f}{failure}",
             )
 
         console.print()
@@ -668,7 +668,7 @@ def _handle_run(args: argparse.Namespace) -> None:
                 f"Target [bold]{target.id}[/bold]\n"
                 f"  Experiments:  {len(records)}\n"
                 f"  Kept:         {kept}\n"
-                f"  Best score:   {best_score:.3f}\n"
+                f"  Best score:   {best_score:.4f}\n"
                 f"  Total cost:   ${total_cost:.4f}\n"
                 f"  Total time:   {cond_time / 60:.1f} min",
                 title="anneal run — complete",
@@ -1004,7 +1004,7 @@ def _handle_list(_args: argparse.Namespace) -> None:
         console.print(
             f"  [bold]{target.id}[/bold]  "
             f"eval={target.eval_mode.value}  "
-            f"score={target.baseline_score:.3f}  "
+            f"score={target.baseline_score:.4f}  "
             f"branch={target.git_branch}"
         )
 
@@ -1102,7 +1102,7 @@ def _handle_history(args: argparse.Namespace) -> None:
             style = "green" if r.outcome.value == "KEPT" else "dim"
             console.print(
                 f"  [{style}]{r.outcome.value:9s}[/{style}] "
-                f"score={r.score:.3f}  ${r.cost_usd:.4f}  "
+                f"score={r.score:.4f}  ${r.cost_usd:.4f}  "
                 f"{r.hypothesis[:70] if r.hypothesis else '-'}"
             )
 

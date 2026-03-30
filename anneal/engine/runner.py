@@ -30,7 +30,13 @@ from anneal.engine.notifications import NotificationManager
 from anneal.engine.registry import Registry
 from anneal.engine.safety import pre_experiment_check
 from anneal.engine.scope import enforce_scope, load_scope, verify_scope_hash
-from anneal.engine.search import GreedySearch, SearchStrategy, SimulatedAnnealingSearch
+from anneal.engine.search import (
+    GreedySearch,
+    ParetoSearch,
+    PopulationSearch,
+    SearchStrategy,
+    SimulatedAnnealingSearch,
+)
 from anneal.engine.policy_agent import PolicyAgent
 from anneal.engine.taxonomy import FailureTaxonomy
 from anneal.engine.tree_search import UCBTreeSearch
@@ -174,6 +180,34 @@ class ExperimentRunner:
         self._backup_envs: dict[str, FileBackupEnvironment] = {}
         self._stop_flags: set[str] = set()
         self._stop_lock = threading.Lock()
+
+    # ------------------------------------------------------------------
+    # Search strategy factory
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def make_search_strategy(target: OptimizationTarget) -> SearchStrategy:
+        """Instantiate search strategy from target configuration."""
+        strategy_name = "greedy"
+        if target.population_config:
+            strategy_name = target.population_config.search_strategy
+
+        match strategy_name:
+            case "greedy":
+                return GreedySearch()
+            case "simulated_annealing":
+                return SimulatedAnnealingSearch()
+            case "population":
+                pop_cfg = target.population_config
+                return PopulationSearch(
+                    population_size=pop_cfg.population_size if pop_cfg else 4,
+                    tournament_size=pop_cfg.tournament_size if pop_cfg else 2,
+                )
+            case "pareto":
+                return ParetoSearch()
+            case _:
+                logger.warning("Unknown strategy '%s', falling back to greedy", strategy_name)
+                return GreedySearch()
 
     # ------------------------------------------------------------------
     # Stop flag (thread-safe)

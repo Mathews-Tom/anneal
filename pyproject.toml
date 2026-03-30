@@ -29,7 +29,9 @@ build-backend = "setuptools.build_meta"
 include = ["anneal*"]
 
 [project.optional-dependencies]
-dashboard = ["aiohttp>=3.13.3"]
+dashboard = [
+    "aiohttp>=3.13.3",
+]
 mcp = ["mcp>=1.9"]
 ml = ["scikit-learn>=1.5"]
 dev = [

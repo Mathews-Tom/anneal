@@ -1024,8 +1024,15 @@ def _handle_resume(args: argparse.Namespace) -> None:
         target.budget_cap.max_usd_per_day += args.increase_budget
         console.print(f"  Budget increased to ${target.budget_cap.max_usd_per_day:.2f}/day")
 
-    if args.reset_failures:
-        console.print("  Failure counter will reset on next run")
+    # Always reset consecutive failure counter on resume — the target was
+    # halted because of this counter, so resuming without clearing it would
+    # immediately re-halt.
+    loop_state_path = repo_root / target.knowledge_path / ".loop-state.json"
+    if loop_state_path.exists():
+        from anneal.engine.runner import RunLoopState
+        state = RunLoopState.load(loop_state_path)
+        state.consecutive_failures = 0
+        state.save(loop_state_path)
 
     registry.update_target(target)
     console.print(

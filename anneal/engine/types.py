@@ -275,6 +275,7 @@ class OptimizationTarget(BaseModel):
     approval_callback: Callable[[str], bool] | None = Field(default=None, exclude=True)
     restart_probability: float = Field(default=0.0, ge=0.0, le=1.0)
     in_place: bool = False
+    strategy_mode: Literal["program_md", "manifest"] = "program_md"
     policy_config: PolicyConfig | None = None
     population_config: PopulationConfig | None = None
     eval_environment: EvalEnvironment | None = None

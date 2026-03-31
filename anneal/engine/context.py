@@ -17,6 +17,7 @@ from anneal.engine.types import ArtifactError, ExperimentRecord, Outcome, Optimi
 
 if TYPE_CHECKING:
     from anneal.engine.knowledge import KnowledgeStore
+    from anneal.engine.research import ResearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -430,6 +431,7 @@ def build_target_context(
     policy_instructions: str = "",
     tree_info: dict[str, int] | None = None,
     knowledge: KnowledgeStore | None = None,
+    research_hints: ResearchResult | None = None,
 ) -> tuple[str, int]:
     """Build the complete agent context for a target.
 
@@ -520,6 +522,22 @@ def build_target_context(
             if lineage:
                 lineage_content = _format_lineage(lineage)
                 budget.add_slot("lineage_trace", lineage_content, priority=5, required=False)
+
+    # Slot 5b: Research suggestions (injected after plateau-triggered research)
+    if research_hints is not None and research_hints.suggestions:
+        parts_hints = ["# External Research Suggestions\n"]
+        for s in research_hints.suggestions:
+            parts_hints.append(
+                f"## {s.technique}\n"
+                f"{s.description}\n"
+                f"Source: {s.source}\n"
+                f"Relevance: {s.relevance}\n"
+            )
+        parts_hints.append(
+            "These are suggestions from external research. "
+            "Use them as inspiration if relevant. Ignore if not applicable."
+        )
+        budget.add_slot("research_hints", "\n".join(parts_hints), priority=5, required=False)
 
     # Slot 6: Knowledge context (retrieved history + consolidated learnings)
     if knowledge_context:

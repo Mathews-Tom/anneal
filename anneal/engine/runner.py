@@ -28,10 +28,12 @@ from anneal.engine.knowledge import KnowledgeStore, extract_lesson
 from anneal.engine.learning_pool import LearningPool, extract_learning
 from anneal.engine.notifications import NotificationManager
 from anneal.engine.registry import Registry
+from anneal.engine.research import ResearchOperator, ResearchResult
 from anneal.engine.safety import pre_experiment_check
 from anneal.engine.scope import enforce_scope, load_scope, verify_scope_hash
 from anneal.engine.search import (
     GreedySearch,
+    IslandPopulationSearch,
     ParetoSearch,
     PopulationSearch,
     SearchStrategy,
@@ -221,6 +223,8 @@ class ExperimentRunner:
         self._learning_pool = learning_pool
         self._taxonomy = taxonomy
         self._policy_agent: PolicyAgent | None = None
+        self._research_operator: ResearchOperator | None = None
+        self._pending_research_hints: ResearchResult | None = None
         self._agent_selector = AgentSelector()
         self._backup_envs: dict[str, FileBackupEnvironment] = {}
         self._stop_flags: set[str] = set()
@@ -244,6 +248,13 @@ class ExperimentRunner:
                 return SimulatedAnnealingSearch()
             case "population":
                 pop_cfg = target.population_config
+                if pop_cfg and pop_cfg.island_count > 1:
+                    return IslandPopulationSearch(
+                        island_count=pop_cfg.island_count,
+                        population_per_island=pop_cfg.population_size,
+                        tournament_size=pop_cfg.tournament_size,
+                        migration_interval=pop_cfg.migration_interval,
+                    )
                 return PopulationSearch(
                     population_size=pop_cfg.population_size if pop_cfg else 4,
                     tournament_size=pop_cfg.tournament_size if pop_cfg else 2,
@@ -376,6 +387,7 @@ class ExperimentRunner:
                 policy_instructions=policy_instructions,
                 tree_info=tree_info,
                 knowledge=self._knowledge,
+                research_hints=self._pending_research_hints,
             )
 
         # 2b. Simplification pre-pass (optional, before mutation)
@@ -954,6 +966,11 @@ class ExperimentRunner:
         if target.policy_config and target.policy_config.enabled:
             self._policy_agent = PolicyAgent(target.policy_config)
 
+        # Initialize research operator if configured
+        if target.research_config and target.research_config.enabled:
+            self._research_operator = ResearchOperator(target.research_config)
+            self._pending_research_hints = None
+
         # Eval environment lifecycle: run setup command once before loop
         eval_env = target.eval_environment
         if eval_env and eval_env.setup_command:
@@ -1200,6 +1217,50 @@ class ExperimentRunner:
                     except (AgentTimeoutError, AgentInvocationError) as exc:
                         logger.warning("Meta-optimization failed for %s: %s", target.id, exc)
 
+            # Research operator: track outcome when hints were active, trigger on plateau
+            if self._research_operator is not None:
+                # Track whether research-informed mutation improved (only when hints were active)
+                if self._pending_research_hints is not None:
+                    if record.outcome is Outcome.KEPT:
+                        self._research_operator.record_outcome(improved=True)
+                        self._pending_research_hints = None
+                    else:
+                        self._research_operator.record_outcome(improved=False)
+
+                # Trigger new research on plateau
+                if (
+                    target.research_config
+                    and target.research_config.enabled
+                    and loop.consecutive_no_kept >= meta_m
+                    and self._pending_research_hints is None
+                ):
+                    failed_criteria = self._get_recent_failed_criteria(records[-meta_m:])
+                    recent_hypotheses = [r.hypothesis for r in records[-meta_m:]]
+                    artifact_summary = self._read_artifacts(
+                        Path(target.worktree_path), target.artifact_paths,
+                    )[:500]
+
+                    research_result = await self._research_operator.research(
+                        target_description=f"Target '{target.id}': optimize {target.eval_config.metric_name}",
+                        current_artifact_summary=artifact_summary,
+                        failed_criteria=failed_criteria,
+                        recent_hypotheses=recent_hypotheses,
+                        agent_config=target.agent_config,
+                    )
+
+                    if research_result and research_result.suggestions:
+                        self._pending_research_hints = research_result
+                        loop.cumulative_cost_usd += research_result.cost_usd
+                        logger.info(
+                            "Research operator: %d suggestions, cost=$%.4f",
+                            len(research_result.suggestions), research_result.cost_usd,
+                        )
+
+            # Island migration: transfer best candidates between islands
+            if isinstance(self._search, IslandPopulationSearch) and self._search.should_migrate():
+                migration_count = self._search.migrate(target.eval_config.direction)
+                logger.info("Island migration completed: %d transfers", migration_count)
+
             # Callback
             if on_experiment is not None:
                 on_experiment(record)
@@ -1247,6 +1308,17 @@ class ExperimentRunner:
         }
 
         status_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    @staticmethod
+    def _get_recent_failed_criteria(records: list[ExperimentRecord]) -> list[str]:
+        """Extract names of criteria that failed in recent experiments."""
+        failed: set[str] = set()
+        for record in records:
+            if record.per_criterion_scores:
+                for name, score in record.per_criterion_scores.items():
+                    if score < 0.5:
+                        failed.add(name)
+        return sorted(failed)
 
     @staticmethod
     def _read_artifacts(worktree: Path, artifact_paths: list[str]) -> str:

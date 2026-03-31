@@ -15,6 +15,8 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
+import numpy as np
+
 from filelock import FileLock
 
 from anneal.engine.client import make_client, strip_provider_prefix
@@ -199,8 +201,7 @@ def _variance(xs: list[float]) -> float:
     """Population variance of a list of floats. Returns 0.0 for empty/single."""
     if len(xs) < 2:
         return 0.0
-    mean = sum(xs) / len(xs)
-    result = sum((x - mean) ** 2 for x in xs) / len(xs)
+    result = float(np.var(xs))
     return 0.0 if result < 1e-15 else result
 
 
@@ -330,20 +331,23 @@ class KnowledgeStore:
             with open(self._hypotheses_file, "a") as f:
                 f.write(entry + "\n")
 
-    def _retrieve_similar_tfidf(
-        self, query: str, k: int = 5
-    ) -> list[tuple[str, float]]:
-        """Return top-k (record_id, score) pairs using TF-IDF cosine similarity."""
+    def _load_hypothesis_entries(self) -> list[dict[str, str]]:
+        """Load hypothesis entries from the hypotheses JSONL file."""
         if not self._hypotheses_file.exists():
             return []
-
         entries: list[dict[str, str]] = []
         with open(self._hypotheses_file) as f:
             for line in f:
                 stripped = line.strip()
                 if stripped:
                     entries.append(json.loads(stripped))
+        return entries
 
+    def _retrieve_similar_tfidf(
+        self, query: str, k: int = 5
+    ) -> list[tuple[str, float]]:
+        """Return top-k (record_id, score) pairs using TF-IDF cosine similarity."""
+        entries = self._load_hypothesis_entries()
         if not entries:
             return []
 
@@ -365,23 +369,12 @@ class KnowledgeStore:
         if model is None:
             return self._retrieve_similar_tfidf(query, k)
 
-        if not self._hypotheses_file.exists():
-            return []
-
-        entries: list[dict[str, str]] = []
-        with open(self._hypotheses_file) as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    entries.append(json.loads(line))
-
+        entries = self._load_hypothesis_entries()
         if not entries:
             return []
 
         texts = [e["hypothesis"] for e in entries]
         ids = [e["id"] for e in entries]
-
-        import numpy as np
 
         query_emb = model.encode(query, convert_to_numpy=True)  # type: ignore[union-attr]
         doc_embs = model.encode(texts, convert_to_numpy=True)  # type: ignore[union-attr]

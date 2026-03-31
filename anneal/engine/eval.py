@@ -343,6 +343,20 @@ class StochasticEvaluator:
 
         per_criterion: dict[str, float] = {}
 
+        async def _score_batch(
+            criteria: list[BinaryCriterion], batch_votes: int,
+        ) -> dict[str, tuple[float, float]]:
+            """Score all criteria concurrently. Returns {name: (score, cost)}."""
+            tasks = [
+                self._score_criterion(
+                    judge_cfg, sample_text, criterion, worktree_path,
+                    votes=batch_votes, comparison_mode=comparison_mode,
+                )
+                for criterion in criteria
+            ]
+            results = await asyncio.gather(*tasks)
+            return {c.name: (val, cost) for c, (val, cost) in zip(criteria, results)}
+
         if votes >= 2:
             # Split votes between forward and reverse criterion order to cancel position bias
             forward_criteria = list(config.criteria)
@@ -350,57 +364,28 @@ class StochasticEvaluator:
             forward_votes = votes // 2
             reverse_votes = votes - forward_votes
 
-            forward_tasks = [
-                self._score_criterion(
-                    judge_cfg, sample_text, criterion, worktree_path,
-                    votes=forward_votes, comparison_mode=comparison_mode,
-                )
-                for criterion in forward_criteria
-            ]
-            forward_results = await asyncio.gather(*forward_tasks)
-
-            reverse_tasks = [
-                self._score_criterion(
-                    judge_cfg, sample_text, criterion, worktree_path,
-                    votes=reverse_votes, comparison_mode=comparison_mode,
-                )
-                for criterion in reverse_criteria
-            ]
-            reverse_results = await asyncio.gather(*reverse_tasks)
+            forward_scores = await _score_batch(forward_criteria, forward_votes)
+            reverse_scores = await _score_batch(reverse_criteria, reverse_votes)
 
             # Merge: average forward and reverse scores per criterion
-            criterion_scores: dict[str, tuple[float, float]] = {}
-            for criterion, (binary_val, cost) in zip(forward_criteria, forward_results):
-                criterion_scores[criterion.name] = (binary_val, cost)
-            for criterion, (binary_val, cost) in zip(reverse_criteria, reverse_results):
-                fwd_val, fwd_cost = criterion_scores[criterion.name]
-                criterion_scores[criterion.name] = (
-                    (fwd_val + binary_val) / 2,
-                    fwd_cost + cost,
-                )
-
             sample_score = 0.0
-            for crit_name, (avg_val, cost) in criterion_scores.items():
+            for crit_name, (fwd_val, fwd_cost) in forward_scores.items():
+                rev_val, rev_cost = reverse_scores[crit_name]
+                avg_val = (fwd_val + rev_val) / 2
                 sample_score += avg_val
-                sample_cost += cost
+                sample_cost += fwd_cost + rev_cost
                 per_criterion[crit_name] = avg_val
         else:
             # Single vote: use random shuffle (existing behavior)
             shuffled_criteria = list(config.criteria)
             random.shuffle(shuffled_criteria)
-            score_tasks = [
-                self._score_criterion(
-                    judge_cfg, sample_text, criterion, worktree_path,
-                    votes=votes, comparison_mode=comparison_mode,
-                )
-                for criterion in shuffled_criteria
-            ]
-            criterion_results = await asyncio.gather(*score_tasks)
+            batch_scores = await _score_batch(shuffled_criteria, votes)
+
             sample_score = 0.0
-            for criterion, (binary_val, cost) in zip(shuffled_criteria, criterion_results):
-                sample_score += binary_val
+            for crit_name, (val, cost) in batch_scores.items():
+                sample_score += val
                 sample_cost += cost
-                per_criterion[criterion.name] = binary_val
+                per_criterion[crit_name] = val
 
         return sample_score, sample_cost, per_criterion
 

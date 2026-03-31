@@ -38,6 +38,12 @@ from anneal.engine.search import (
     SimulatedAnnealingSearch,
 )
 from anneal.engine.policy_agent import PolicyAgent
+from anneal.engine.strategy import (
+    StrategyManifest,
+    evolve_weakest_component,
+    load_strategy,
+    save_strategy,
+)
 from anneal.engine.strategy_selector import AgentSelector
 from anneal.engine.taxonomy import FailureTaxonomy
 from anneal.engine.tree_search import UCBTreeSearch
@@ -919,6 +925,11 @@ class ExperimentRunner:
                 target.id, loop.total_experiments, loop.kept_count, loop.consecutive_failures,
             )
 
+        # Load strategy manifest for component evolution (manifest mode only)
+        strategy: StrategyManifest | None = None
+        if target.strategy_mode == "manifest":
+            strategy = load_strategy(Path(target.knowledge_path))
+
         while True:
             # Check stop conditions
             if self.is_stop_requested(target.id):
@@ -991,6 +1002,16 @@ class ExperimentRunner:
             loop.cumulative_cost_usd += record.cost_usd
             loop.save(state_path)
 
+            # Component streak tracking (manifest mode)
+            if strategy is not None:
+                if record.outcome is Outcome.KEPT:
+                    for comp in strategy.components:
+                        comp.streak_without_improvement = 0
+                else:
+                    for comp in strategy.components:
+                        comp.streak_without_improvement += 1
+                save_strategy(strategy, Path(target.knowledge_path))
+
             # F1: Held-out evaluation at regular intervals
             held_out_interval = target.eval_config.held_out_interval
             stochastic_conf = target.eval_config.stochastic
@@ -1052,10 +1073,41 @@ class ExperimentRunner:
                 except Exception as exc:
                     logger.warning("Policy rewrite failed for %s: %s", target.id, exc)
 
-            # Plateau meta-optimization
+            # Component evolution (manifest mode): evolve weakest component at consolidation interval
+            consolidation_interval = KnowledgeStore.CONSOLIDATION_INTERVAL
+            if (
+                strategy is not None
+                and loop.total_experiments > 0
+                and loop.total_experiments % consolidation_interval == 0
+                and self._knowledge is not None
+            ):
+                target_component, evolution_prompt = evolve_weakest_component(
+                    strategy, self._knowledge.load_records(limit=consolidation_interval),
+                )
+                try:
+                    revised_text = await self._agent.invoke_api_text(
+                        target.agent_config, evolution_prompt,
+                    )
+                    if revised_text:
+                        target_component.approach = revised_text
+                        target_component.evolved_at = loop.total_experiments
+                        target_component.streak_without_improvement = 0
+                        strategy.lineage.append(
+                            f"exp_{loop.total_experiments}: evolved {target_component.name}"
+                        )
+                        save_strategy(strategy, Path(target.knowledge_path))
+                        logger.info(
+                            "Component evolution: revised '%s' at experiment %d",
+                            target_component.name, loop.total_experiments,
+                        )
+                except (AgentInvocationError, AgentTimeoutError) as exc:
+                    logger.warning("Component evolution failed for %s: %s", target.id, exc)
+
+            # Plateau meta-optimization (program_md mode only — manifest mode uses component evolution)
             meta_m = min(target.max_consecutive_failures, 10)
             if (
-                target.meta_depth > 0
+                strategy is None
+                and target.meta_depth > 0
                 and loop.consecutive_no_kept >= meta_m
                 and len(records) >= meta_m
             ):

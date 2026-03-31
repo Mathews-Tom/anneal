@@ -24,7 +24,7 @@ from anneal.engine.context import build_restart_context, build_target_context
 from anneal.engine.environment import FileBackupEnvironment, GitEnvironment
 from anneal.engine.eval import EvalEngine, EvalError, run_verifiers
 from anneal.engine.eval_cache import EvalCache
-from anneal.engine.knowledge import KnowledgeStore
+from anneal.engine.knowledge import KnowledgeStore, extract_lesson
 from anneal.engine.learning_pool import LearningPool, extract_learning
 from anneal.engine.notifications import NotificationManager
 from anneal.engine.registry import Registry
@@ -544,12 +544,39 @@ class ExperimentRunner:
         record.drafts_generated = drafts_generated
         record.drafts_survived = drafts_survived
 
-        if diagnosis is not None:
-            record.learnings = (
-                f"Diagnosis: {diagnosis.root_cause}. "
-                f"Fix direction: {diagnosis.suggested_direction}. "
-                f"Category: {diagnosis.fix_category}."
-            )
+        # Structured lesson extraction — populates learnings with JSON
+        lesson_model = target.agent_config.exploration_model or target.agent_config.model
+        previous_record = history[-1] if history else None
+        try:
+            lesson = await extract_lesson(record, previous_record, lesson_model)
+            # Incorporate diagnosis context into the structured lesson
+            if diagnosis is not None:
+                diagnosis_prefix = (
+                    f"Diagnosis: {diagnosis.root_cause}. "
+                    f"Fix direction: {diagnosis.suggested_direction}. "
+                    f"Category: {diagnosis.fix_category}. "
+                )
+                lesson = lesson.model_copy(update={
+                    "what_changed": diagnosis_prefix + lesson.what_changed,
+                })
+            record.learnings = lesson.model_dump_json()
+        except Exception as exc:
+            logger.warning("Lesson extraction failed for %s: %s", target.id, exc)
+            if diagnosis is not None:
+                record.learnings = (
+                    f"Diagnosis: {diagnosis.root_cause}. "
+                    f"Fix direction: {diagnosis.suggested_direction}. "
+                    f"Category: {diagnosis.fix_category}."
+                )
+
+        # Persist to knowledge store after all post-processing (learnings populated)
+        if self._knowledge:
+            self._knowledge.append_record(record)
+            self._knowledge.update_index(record)
+            self._knowledge.consolidate_if_due()
+
+        if self._learning_pool is not None:
+            self._learning_pool.add(extract_learning(record, source_target=target.id))
 
         return record
 
@@ -866,13 +893,13 @@ class ExperimentRunner:
             tree_path = Path(target.knowledge_path) / "search_tree.json"
             self._search.persist(tree_path)
 
-        if self._knowledge:
-            self._knowledge.append_record(record)
-            self._knowledge.update_index(record)
-            self._knowledge.consolidate_if_due()
+        # Persist Pareto front for dashboard visualization
+        if isinstance(self._search, ParetoSearch):
+            pareto_path = Path(target.knowledge_path) / "pareto_front.json"
+            self._search.save_front(pareto_path)
 
-        if self._learning_pool is not None:
-            self._learning_pool.add(extract_learning(record, source_target=target.id))
+        # Knowledge store and learning pool are updated by run_one after
+        # post-processing (lesson extraction) to ensure learnings is populated.
 
         return record
 
@@ -1047,6 +1074,23 @@ class ExperimentRunner:
                             )
                 except EvalError as exc:
                     logger.warning("Held-out eval failed for %s: %s", target.id, exc)
+
+            # Eval consistency monitoring — check for evaluator drift
+            eval_cache = getattr(self._eval, "_cache", None)
+            if eval_cache is not None and loop.total_experiments % 20 == 0:
+                flagged = eval_cache.consistency_report()
+                if flagged:
+                    logger.warning(
+                        "Eval consistency alert: %d cached entries show score variance >0.1 "
+                        "(potential evaluator drift)",
+                        len(flagged),
+                    )
+                    for entry in flagged[:3]:
+                        logger.warning(
+                            "  hash=%s mean=%.4f std=%.4f n=%d",
+                            entry["content_hash"], entry["mean_score"],
+                            entry["std_dev"], entry["n_evals"],
+                        )
 
             # Policy agent: continuous instruction rewriting
             if (

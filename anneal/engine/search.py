@@ -6,9 +6,11 @@ and paired Wilcoxon signed-rank test for stochastic evals.
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import random
+from pathlib import Path
 from typing import Protocol
 
 from scipy.stats import wilcoxon
@@ -450,6 +452,16 @@ class ParetoSearch:
             total += w * value
             weight_sum += w
         return total / max(weight_sum, 1e-10)
+
+    def save_front(self, path: Path) -> None:
+        """Persist current Pareto front to JSON for dashboard consumption."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self._pareto_front))
+
+    def load_front(self, path: Path) -> None:
+        """Restore Pareto front from JSON."""
+        if path.exists():
+            self._pareto_front = json.loads(path.read_text())
 
     @property
     def pareto_front(self) -> list[dict[str, float]]:

@@ -487,11 +487,14 @@ class TestDiagnosisPopulatesLearnings:
         # Act
         record = await runner.run_one(target)
 
-        # Assert
+        # Assert — learnings is now structured JSON with diagnosis in what_changed
         assert record is not None
-        assert "Coverage of the topic is too shallow." in record.learnings
-        assert "Expand each section with additional detail." in record.learnings
-        assert "coverage" in record.learnings
+        assert record.learnings != ""
+        import json as _json
+        lesson_data = _json.loads(record.learnings)
+        assert "Coverage of the topic is too shallow." in lesson_data["what_changed"]
+        assert "Expand each section with additional detail." in lesson_data["what_changed"]
+        assert "coverage" in lesson_data["what_changed"]
 
 
 class TestDiagnosisCostIncludedInRecord:

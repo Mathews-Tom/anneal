@@ -16,9 +16,24 @@ from pathlib import Path
 
 from anneal.engine.client import compute_cost, make_client, strip_provider_prefix
 from anneal.engine.environment import GitEnvironment
-from anneal.engine.types import AgentConfig, AgentInvocationResult
+from anneal.engine.types import (
+    AgentConfig,
+    AgentInvocationResult,
+    DiagnosisResult,
+    EvalResult,
+    ExperimentRecord,
+)
 
 logger = logging.getLogger(__name__)
+
+DIAGNOSIS_SYSTEM_PROMPT = (
+    "You are an optimization diagnostician. Analyze the artifact and evaluation results.\n"
+    "Output valid JSON with these fields:\n"
+    "- weakest_criteria: list of criterion names that failed or scored lowest\n"
+    "- root_cause: one sentence explaining why these criteria failed\n"
+    "- fix_category: one of \"structural\", \"content\", \"formatting\", \"logic\", \"coverage\", \"other\"\n"
+    "- suggested_direction: 1-2 sentences describing what change would improve the weakest criteria"
+)
 
 
 class AgentInvocationError(Exception):
@@ -264,6 +279,105 @@ class AgentInvoker:
             tags=tags,
             raw_output=raw_output,
         )
+
+    def _build_diagnosis_prompt(
+        self,
+        artifact_content: str,
+        eval_result: EvalResult,
+        recent_history: list[ExperimentRecord],
+    ) -> str:
+        lines: list[str] = []
+
+        lines.append("## Artifact")
+        lines.append(artifact_content)
+        lines.append("")
+
+        lines.append("## Evaluation Score")
+        lines.append(f"Overall: {eval_result.score:.4f}")
+        if eval_result.ci_lower is not None and eval_result.ci_upper is not None:
+            lines.append(f"CI: [{eval_result.ci_lower:.4f}, {eval_result.ci_upper:.4f}]")
+        lines.append("")
+
+        if eval_result.per_criterion_scores:
+            lines.append("## Per-Criterion Scores")
+            for criterion, score in sorted(
+                eval_result.per_criterion_scores.items(), key=lambda kv: kv[1]
+            ):
+                lines.append(f"  {criterion}: {score:.4f}")
+            lines.append("")
+
+        if recent_history:
+            lines.append("## Recent Experiment History")
+            for record in recent_history[-5:]:
+                lines.append(
+                    f"  [{record.outcome.value}] {record.hypothesis} "
+                    f"(score={record.score:.4f})"
+                )
+            lines.append("")
+
+        return "\n".join(lines)
+
+    async def diagnose(
+        self,
+        config: AgentConfig,
+        artifact_content: str,
+        eval_result: EvalResult,
+        recent_history: list[ExperimentRecord],
+        worktree_path: Path,
+    ) -> DiagnosisResult:
+        diagnosis_model = config.diagnosis_model or config.exploration_model or config.model
+        client = make_client(diagnosis_model)
+        api_model = strip_provider_prefix(diagnosis_model)
+        user_prompt = self._build_diagnosis_prompt(artifact_content, eval_result, recent_history)
+
+        try:
+            response = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=api_model,
+                    temperature=0.3,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": DIAGNOSIS_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                ),
+                timeout=60,
+            )
+        except asyncio.TimeoutError:
+            raise AgentTimeoutError("Diagnosis agent exceeded 60s timeout")
+        except Exception as exc:
+            raise AgentInvocationError(f"Diagnosis API call failed: {exc}") from exc
+
+        raw = response.choices[0].message.content or ""
+        usage = response.usage
+        input_tokens = usage.prompt_tokens if usage else 0
+        output_tokens = usage.completion_tokens if usage else 0
+        cost_usd = compute_cost(diagnosis_model, input_tokens, output_tokens)
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise AgentInvocationError(
+                f"Diagnosis returned invalid JSON: {exc}"
+            ) from exc
+
+        data["cost_usd"] = cost_usd
+        return DiagnosisResult(**data)
+
+    async def invoke_api_text(self, config: AgentConfig, prompt: str) -> str:
+        client = make_client(config.model)
+        api_model = strip_provider_prefix(config.model)
+
+        try:
+            response = await client.chat.completions.create(
+                model=api_model,
+                temperature=0.7,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as exc:
+            raise AgentInvocationError(f"invoke_api_text failed: {exc}") from exc
+
+        return response.choices[0].message.content or ""
 
     async def generate_drafts(
         self,

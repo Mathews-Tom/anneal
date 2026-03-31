@@ -45,9 +45,11 @@ from anneal.engine.types import (
     AgentInvocationResult,
     ArtifactError,
     DeterministicEval,
+    DiagnosisResult,
     Direction,
     DomainTier,
     EvalConfig,
+    EvalResult,
     ExperimentRecord,
     OptimizationTarget,
     Outcome,
@@ -359,6 +361,38 @@ class ExperimentRunner:
             except Exception as exc:
                 logger.warning("Simplification pre-pass failed: %s", exc)
 
+        # 2c. Two-phase mutation: diagnose before generating
+        diagnosis: DiagnosisResult | None = None
+        diagnosis_cost = 0.0
+        if target.agent_config.two_phase_mutation and history:
+            last_eval = EvalResult(
+                score=history[-1].score,
+                ci_lower=history[-1].score_ci_lower,
+                ci_upper=history[-1].score_ci_upper,
+                raw_scores=history[-1].raw_scores,
+                criterion_names=history[-1].criterion_names,
+                per_criterion_scores=history[-1].per_criterion_scores,
+            )
+            try:
+                diagnosis = await self._agent.diagnose(
+                    target.agent_config,
+                    artifact_content,
+                    last_eval,
+                    history[-5:],
+                    worktree,
+                )
+                diagnosis_cost = diagnosis.cost_usd
+                diagnosis_context = (
+                    "## Diagnosis\n"
+                    f"- Weakest criteria: {', '.join(diagnosis.weakest_criteria)}\n"
+                    f"- Root cause: {diagnosis.root_cause}\n"
+                    f"- Fix category: {diagnosis.fix_category}\n"
+                    f"- Suggested direction: {diagnosis.suggested_direction}\n"
+                )
+                prompt = diagnosis_context + "\n\n" + prompt
+            except (AgentInvocationError, AgentTimeoutError) as exc:
+                logger.warning("Diagnosis failed for %s: %s", target.id, exc)
+
         # 3. Invoke mutation agent (single-draft or multi-draft)
         n_drafts = target.agent_config.n_drafts
         drafts_generated = 1
@@ -429,6 +463,8 @@ class ExperimentRunner:
             hypothesis = agent_result.hypothesis or "No hypothesis provided"
             hypothesis_source = agent_result.hypothesis_source
             tags = list(agent_result.tags)
+
+        cost_usd += diagnosis_cost
 
         if is_restart:
             tags.append("restart")
@@ -501,6 +537,14 @@ class ExperimentRunner:
         )
         record.drafts_generated = drafts_generated
         record.drafts_survived = drafts_survived
+
+        if diagnosis is not None:
+            record.learnings = (
+                f"Diagnosis: {diagnosis.root_cause}. "
+                f"Fix direction: {diagnosis.suggested_direction}. "
+                f"Category: {diagnosis.fix_category}."
+            )
+
         return record
 
     # ------------------------------------------------------------------

@@ -23,13 +23,20 @@ from anneal.engine.agent import AgentInvocationError, AgentInvoker, AgentTimeout
 from anneal.engine.context import build_restart_context, build_target_context
 from anneal.engine.environment import FileBackupEnvironment, GitEnvironment
 from anneal.engine.eval import EvalEngine, EvalError, run_verifiers
+from anneal.engine.eval_cache import EvalCache
 from anneal.engine.knowledge import KnowledgeStore
 from anneal.engine.learning_pool import LearningPool, extract_learning
 from anneal.engine.notifications import NotificationManager
 from anneal.engine.registry import Registry
 from anneal.engine.safety import pre_experiment_check
 from anneal.engine.scope import enforce_scope, load_scope, verify_scope_hash
-from anneal.engine.search import GreedySearch, SearchStrategy, SimulatedAnnealingSearch
+from anneal.engine.search import (
+    GreedySearch,
+    ParetoSearch,
+    PopulationSearch,
+    SearchStrategy,
+    SimulatedAnnealingSearch,
+)
 from anneal.engine.policy_agent import PolicyAgent
 from anneal.engine.taxonomy import FailureTaxonomy
 from anneal.engine.tree_search import UCBTreeSearch
@@ -173,6 +180,34 @@ class ExperimentRunner:
         self._backup_envs: dict[str, FileBackupEnvironment] = {}
         self._stop_flags: set[str] = set()
         self._stop_lock = threading.Lock()
+
+    # ------------------------------------------------------------------
+    # Search strategy factory
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def make_search_strategy(target: OptimizationTarget) -> SearchStrategy:
+        """Instantiate search strategy from target configuration."""
+        strategy_name = "greedy"
+        if target.population_config:
+            strategy_name = target.population_config.search_strategy
+
+        match strategy_name:
+            case "greedy":
+                return GreedySearch()
+            case "simulated_annealing":
+                return SimulatedAnnealingSearch()
+            case "population":
+                pop_cfg = target.population_config
+                return PopulationSearch(
+                    population_size=pop_cfg.population_size if pop_cfg else 4,
+                    tournament_size=pop_cfg.tournament_size if pop_cfg else 2,
+                )
+            case "pareto":
+                return ParetoSearch()
+            case _:
+                logger.warning("Unknown strategy '%s', falling back to greedy", strategy_name)
+                return GreedySearch()
 
     # ------------------------------------------------------------------
     # Stop flag (thread-safe)
@@ -655,13 +690,9 @@ class ExperimentRunner:
         stochastic_conf = target.eval_config.stochastic
         confidence = stochastic_conf.confidence_level if stochastic_conf else 0.95
 
-        if isinstance(self._search, GreedySearch) and self._knowledge:
-            experiments_in_window = self._knowledge.record_count() % self._knowledge.CONSOLIDATION_INTERVAL
-            window_size = self._knowledge.CONSOLIDATION_INTERVAL
-            adjusted_alpha = GreedySearch._adjusted_alpha(
-                1 - confidence, experiments_in_window, window_size,
-            )
-            confidence = 1 - adjusted_alpha
+        experiment_index = 0
+        if self._knowledge:
+            experiment_index = self._knowledge.record_count() % self._knowledge.CONSOLIDATION_INTERVAL
 
         if target.eval_config.stochastic is not None and not target.baseline_raw_scores:
             logger.info("Cold-start for stochastic target %s: accepting first evaluation as baseline", target.id)
@@ -673,6 +704,8 @@ class ExperimentRunner:
                 target.eval_config.direction,
                 target.eval_config.min_improvement_threshold,
                 confidence,
+                experiment_index=experiment_index,
+                holm_bonferroni=stochastic_conf is not None,
             )
 
         # Check constraints before finalizing KEEP

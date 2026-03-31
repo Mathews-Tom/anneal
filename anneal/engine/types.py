@@ -210,6 +210,7 @@ class PopulationConfig(BaseModel):
 
     population_size: int = Field(default=4, gt=0)
     tournament_size: int = Field(default=2, gt=0)
+    search_strategy: str = Field(default="greedy")
 
 
 # ---------------------------------------------------------------------------

@@ -29,6 +29,8 @@ class SearchStrategy(Protocol):
         direction: Direction,
         min_improvement_threshold: float,
         confidence: float,
+        experiment_index: int = ...,
+        holm_bonferroni: bool = ...,
     ) -> bool: ...
 
 
@@ -45,6 +47,8 @@ class GreedySearch:
         direction: Direction,
         min_improvement_threshold: float = 0.0,
         confidence: float = 0.95,
+        experiment_index: int = 0,
+        holm_bonferroni: bool = False,
     ) -> bool:
         challenger_raw = challenger_result.raw_scores
 
@@ -72,6 +76,8 @@ class GreedySearch:
             baseline_raw_scores,
             direction,
             confidence,
+            experiment_index,
+            holm_bonferroni,
         )
 
     @staticmethod
@@ -91,6 +97,8 @@ class GreedySearch:
         baseline_raw: list[float],
         direction: Direction,
         confidence: float,
+        experiment_index: int = 0,
+        holm_bonferroni: bool = False,
     ) -> bool:
         n = len(challenger_raw)
         differences = [c - b for c, b in zip(challenger_raw, baseline_raw)]
@@ -127,7 +135,10 @@ class GreedySearch:
             # All differences are zero (plateau) — no evidence of improvement
             return False
 
-        return float(p_value) < (1 - confidence)
+        alpha = 1 - confidence
+        if holm_bonferroni:
+            alpha = GreedySearch._adjusted_alpha(alpha, experiment_index)
+        return float(p_value) < alpha
 
     @staticmethod
     def _adjusted_alpha(
@@ -174,6 +185,8 @@ class SimulatedAnnealingSearch:
         direction: Direction,
         min_improvement_threshold: float = 0.0,
         confidence: float = 0.95,
+        experiment_index: int = 0,
+        holm_bonferroni: bool = False,
     ) -> bool:
         """Accept improvements always. Accept regressions with probability
         exp(-delta / temperature). Cool temperature after each call."""
@@ -269,6 +282,8 @@ class PopulationSearch:
         direction: Direction,
         min_improvement_threshold: float = 0.0,
         confidence: float = 0.95,
+        experiment_index: int = 0,
+        holm_bonferroni: bool = False,
     ) -> bool:
         """Compare challenger against baseline per direction.
 
@@ -351,6 +366,8 @@ class ParetoSearch:
         direction: Direction,
         min_improvement_threshold: float = 0.0,
         confidence: float = 0.95,
+        experiment_index: int = 0,
+        holm_bonferroni: bool = False,
     ) -> bool:
         """Accept if challenger Pareto-dominates baseline or is non-dominated.
 

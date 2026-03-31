@@ -67,6 +67,41 @@ logger = logging.getLogger(__name__)
 
 DIVERGENCE_WARNING = 0.10   # 10%
 DIVERGENCE_CRITICAL = 0.25  # 25%
+KNOWLEDGE_ACTIVATION_THRESHOLD = 20
+
+
+class ExperimentContext:
+    """Groups the co-traveling state threaded through pipeline stages."""
+
+    __slots__ = (
+        "experiment_id", "target", "worktree", "pre_sha", "start_time",
+        "cost_usd", "hypothesis", "hypothesis_source", "tags", "backup_id",
+    )
+
+    def __init__(
+        self,
+        experiment_id: str,
+        target: OptimizationTarget,
+        worktree: Path,
+        pre_sha: str,
+        start_time: float,
+        *,
+        cost_usd: float = 0.0,
+        hypothesis: str = "",
+        hypothesis_source: Literal["agent", "synthesized"] = "synthesized",
+        tags: list[str] | None = None,
+        backup_id: str | None = None,
+    ) -> None:
+        self.experiment_id = experiment_id
+        self.target = target
+        self.worktree = worktree
+        self.pre_sha = pre_sha
+        self.start_time = start_time
+        self.cost_usd = cost_usd
+        self.hypothesis = hypothesis
+        self.hypothesis_source: Literal["agent", "synthesized"] = hypothesis_source
+        self.tags = tags if tags is not None else []
+        self.backup_id = backup_id
 
 
 class ScopeIntegrityError(Exception):
@@ -305,7 +340,6 @@ class ExperimentRunner:
             knowledge_context = ""
         else:
             # Auto-enable knowledge injection after sufficient KEPT experiments
-            KNOWLEDGE_ACTIVATION_THRESHOLD = 20
             inject_knowledge = target.inject_knowledge_context
             if not inject_knowledge and self._knowledge:
                 kept_total = sum(
@@ -489,12 +523,16 @@ class ExperimentRunner:
                 target.id, len(history), referenced,
             )
 
-        # 4. Enforce scope and commit valid edits
-        commit_or_record = await self._enforce_and_commit(
-            target, worktree, scope, pre_agent_status, pre_sha,
-            start_time, experiment_id, cost_usd,
-            hypothesis, hypothesis_source, tags,
+        # Build shared context for pipeline stages
+        ctx = ExperimentContext(
+            experiment_id, target, worktree, pre_sha, start_time,
+            cost_usd=cost_usd, hypothesis=hypothesis,
+            hypothesis_source=hypothesis_source, tags=tags,
+            backup_id=backup_id,
         )
+
+        # 4. Enforce scope and commit valid edits
+        commit_or_record = await self._enforce_and_commit(ctx, scope, pre_agent_status)
         if isinstance(commit_or_record, ExperimentRecord):
             return commit_or_record
         commit_sha = commit_or_record
@@ -513,11 +551,11 @@ class ExperimentRunner:
                         v_name, target.id, v_stderr[:200],
                     )
                     verifier_record = _make_early_record(
-                        experiment_id, target, pre_sha, start_time,
-                        Outcome.BLOCKED, hypothesis=hypothesis,
-                        hypothesis_source=hypothesis_source,
-                        tags=tags, failure_mode=f"verifier:{v_name}",
-                        cost_usd=cost_usd,
+                        ctx.experiment_id, target, pre_sha, start_time,
+                        Outcome.BLOCKED, hypothesis=ctx.hypothesis,
+                        hypothesis_source=ctx.hypothesis_source,
+                        tags=ctx.tags, failure_mode=f"verifier:{v_name}",
+                        cost_usd=ctx.cost_usd,
                     )
                     if self._knowledge:
                         self._knowledge.append_record(verifier_record)
@@ -527,20 +565,12 @@ class ExperimentRunner:
                     return verifier_record
 
         # 5. Run pre-checks (constraints + fidelity stages)
-        pre_check = await self._run_pre_checks(
-            target, worktree, artifact_content, pre_sha,
-            start_time, experiment_id, cost_usd,
-            hypothesis, hypothesis_source, tags,
-        )
+        pre_check = await self._run_pre_checks(ctx, artifact_content)
         if pre_check is not None:
             return pre_check
 
         # 6. Evaluate and decide
-        record = await self._evaluate_and_decide(
-            target, worktree, artifact_content, pre_sha, commit_sha,
-            start_time, experiment_id, cost_usd,
-            hypothesis, hypothesis_source, tags,
-        )
+        record = await self._evaluate_and_decide(ctx, artifact_content, commit_sha)
         record.drafts_generated = drafts_generated
         record.drafts_survived = drafts_survived
 
@@ -635,31 +665,24 @@ class ExperimentRunner:
 
     async def _enforce_and_commit(
         self,
-        target: OptimizationTarget,
-        worktree: Path,
+        ctx: ExperimentContext,
         scope: ScopeConfig,
         pre_agent_status: set[str],
-        pre_sha: str,
-        start_time: float,
-        experiment_id: str,
-        cost_usd: float,
-        hypothesis: str,
-        hypothesis_source: Literal["agent", "synthesized"],
-        tags: list[str],
     ) -> str | ExperimentRecord:
         """Enforce scope, reset violations, commit valid edits.
         Returns commit SHA on success or ExperimentRecord on early exit."""
+        target = ctx.target
         # In-place mode: skip git scope enforcement and commit — mutations
         # are managed via file backup/restore, not git.
         if target.in_place:
-            return pre_sha  # Placeholder SHA; in-place has no commits
+            return ctx.pre_sha  # Placeholder SHA; in-place has no commits
 
         _INTERNAL_FILES = {".anneal-status", ".anneal.lock"}
         git_status = [
-            (code, path) for code, path in await self._git.status_porcelain(worktree)
+            (code, path) for code, path in await self._git.status_porcelain(ctx.worktree)
             if path not in _INTERNAL_FILES and path not in pre_agent_status
         ]
-        scope_result = await enforce_scope(worktree, scope, git_status)
+        scope_result = await enforce_scope(ctx.worktree, scope, git_status)
 
         logger.info(
             "Scope check for %s: status=%s valid=%s violated=%s all_blocked=%s",
@@ -668,55 +691,52 @@ class ExperimentRunner:
         )
 
         if scope_result.all_blocked:
-            await self._reset_violated(worktree, scope_result.violated_paths, git_status)
-            await self._git.clean_untracked(worktree)
+            await self._reset_violated(ctx.worktree, scope_result.violated_paths, git_status)
+            await self._git.clean_untracked(ctx.worktree)
             return _make_early_record(
-                experiment_id, target, pre_sha, start_time,
-                Outcome.BLOCKED, hypothesis=hypothesis, hypothesis_source=hypothesis_source,
-                tags=tags, failure_mode=f"All changes violated scope: {scope_result.violated_paths}",
-                cost_usd=cost_usd,
+                ctx.experiment_id, target, ctx.pre_sha, ctx.start_time,
+                Outcome.BLOCKED, hypothesis=ctx.hypothesis,
+                hypothesis_source=ctx.hypothesis_source,
+                tags=ctx.tags, failure_mode=f"All changes violated scope: {scope_result.violated_paths}",
+                cost_usd=ctx.cost_usd,
             )
 
         if scope_result.has_violations:
-            await self._reset_violated(worktree, scope_result.violated_paths, git_status)
+            await self._reset_violated(ctx.worktree, scope_result.violated_paths, git_status)
             logger.warning("Scope violations reset for target %s: %s", target.id, scope_result.violated_paths)
 
         if not scope_result.valid_paths:
             return _make_early_record(
-                experiment_id, target, pre_sha, start_time,
-                Outcome.BLOCKED, hypothesis=hypothesis, hypothesis_source=hypothesis_source,
-                tags=tags, failure_mode="Agent made no file changes", cost_usd=cost_usd,
+                ctx.experiment_id, target, ctx.pre_sha, ctx.start_time,
+                Outcome.BLOCKED, hypothesis=ctx.hypothesis,
+                hypothesis_source=ctx.hypothesis_source,
+                tags=ctx.tags, failure_mode="Agent made no file changes", cost_usd=ctx.cost_usd,
             )
 
-        return await self._git.commit(worktree, f"hypothesis: {hypothesis}", scope_result.valid_paths)
+        return await self._git.commit(ctx.worktree, f"hypothesis: {ctx.hypothesis}", scope_result.valid_paths)
 
     async def _run_pre_checks(
         self,
-        target: OptimizationTarget,
-        worktree: Path,
+        ctx: ExperimentContext,
         artifact_content: str,
-        pre_sha: str,
-        start_time: float,
-        experiment_id: str,
-        cost_usd: float,
-        hypothesis: str,
-        hypothesis_source: Literal["agent", "synthesized"],
-        tags: list[str],
     ) -> ExperimentRecord | None:
         """Run constraint commands and fidelity stages.
         Returns ExperimentRecord if a check fails, None if all pass."""
+        target = ctx.target
         if target.eval_config.constraint_commands:
             fast_results = await self._eval.check_constraints(
-                worktree, target.eval_config, artifact_content,
+                ctx.worktree, target.eval_config, artifact_content,
             )
             for name, passed, actual in fast_results:
                 if not passed:
-                    await self._git.reset_hard(worktree, pre_sha)
+                    await self._git.reset_hard(ctx.worktree, ctx.pre_sha)
                     logger.warning("Fast constraint %s failed for target %s: actual=%.4f", name, target.id, actual)
                     early_record = _make_early_record(
-                        experiment_id, target, pre_sha, start_time,
-                        Outcome.DISCARDED, hypothesis=hypothesis, hypothesis_source=hypothesis_source,
-                        tags=tags, failure_mode=f"constraint_violated:{name}", cost_usd=cost_usd,
+                        ctx.experiment_id, target, ctx.pre_sha, ctx.start_time,
+                        Outcome.DISCARDED, hypothesis=ctx.hypothesis,
+                        hypothesis_source=ctx.hypothesis_source,
+                        tags=ctx.tags, failure_mode=f"constraint_violated:{name}",
+                        cost_usd=ctx.cost_usd,
                     )
                     if self._learning_pool is not None:
                         self._learning_pool.add(extract_learning(early_record, source_target=target.id))
@@ -734,7 +754,7 @@ class ExperimentRunner:
                     ),
                 )
                 try:
-                    stage_result = await self._eval.evaluate(worktree, stage_config, artifact_content)
+                    stage_result = await self._eval.evaluate(ctx.worktree, stage_config, artifact_content)
                 except EvalError as exc:
                     logger.warning("Fidelity stage %s failed: %s", stage.name, exc)
                     continue
@@ -745,16 +765,17 @@ class ExperimentRunner:
                     passed = stage_result.score <= stage.min_pass_score
 
                 if not passed:
-                    await self._git.reset_hard(worktree, pre_sha)
+                    await self._git.reset_hard(ctx.worktree, ctx.pre_sha)
                     logger.info(
                         "Fidelity stage %s rejected mutation for %s: score=%.4f (min=%.4f)",
                         stage.name, target.id, stage_result.score, stage.min_pass_score,
                     )
                     fidelity_record = _make_early_record(
-                        experiment_id, target, pre_sha, start_time,
-                        Outcome.DISCARDED, hypothesis=hypothesis, hypothesis_source=hypothesis_source,
-                        tags=tags, failure_mode=f"fidelity_stage:{stage.name}",
-                        cost_usd=cost_usd, score=stage_result.score,
+                        ctx.experiment_id, target, ctx.pre_sha, ctx.start_time,
+                        Outcome.DISCARDED, hypothesis=ctx.hypothesis,
+                        hypothesis_source=ctx.hypothesis_source,
+                        tags=ctx.tags, failure_mode=f"fidelity_stage:{stage.name}",
+                        cost_usd=ctx.cost_usd, score=stage_result.score,
                     )
                     if self._learning_pool is not None:
                         self._learning_pool.add(extract_learning(fidelity_record, source_target=target.id))
@@ -764,30 +785,24 @@ class ExperimentRunner:
 
     async def _evaluate_and_decide(
         self,
-        target: OptimizationTarget,
-        worktree: Path,
+        ctx: ExperimentContext,
         artifact_content: str,
-        pre_sha: str,
         commit_sha: str,
-        start_time: float,
-        experiment_id: str,
-        cost_usd: float,
-        hypothesis: str,
-        hypothesis_source: Literal["agent", "synthesized"],
-        tags: list[str],
     ) -> ExperimentRecord:
         """Evaluate mutation, decide keep/discard, persist record."""
+        target = ctx.target
         try:
-            eval_result = await self._eval.evaluate(worktree, target.eval_config, artifact_content)
+            eval_result = await self._eval.evaluate(ctx.worktree, target.eval_config, artifact_content)
         except EvalError as exc:
-            await self._safe_restore(worktree, pre_sha)
+            await self._safe_restore(ctx.worktree, ctx.pre_sha)
             return _make_early_record(
-                experiment_id, target, pre_sha, start_time,
-                Outcome.CRASHED, hypothesis=hypothesis, hypothesis_source=hypothesis_source,
-                tags=tags, failure_mode=str(exc), cost_usd=cost_usd,
+                ctx.experiment_id, target, ctx.pre_sha, ctx.start_time,
+                Outcome.CRASHED, hypothesis=ctx.hypothesis,
+                hypothesis_source=ctx.hypothesis_source,
+                tags=ctx.tags, failure_mode=str(exc), cost_usd=ctx.cost_usd,
             )
 
-        cost_usd += eval_result.cost_usd
+        ctx.cost_usd += eval_result.cost_usd
 
         # Decide: keep or discard
         stochastic_conf = target.eval_config.stochastic
@@ -815,7 +830,7 @@ class ExperimentRunner:
         constraint_failure: str | None = None
         if keep:
             constraint_results = await self._eval.check_constraints(
-                worktree, target.eval_config, artifact_content,
+                ctx.worktree, target.eval_config, artifact_content,
             )
             for name, passed, actual in constraint_results:
                 if not passed:
@@ -823,6 +838,7 @@ class ExperimentRunner:
                     logger.warning("Constraint %s failed for target %s: actual=%.4f", name, target.id, actual)
                     break
 
+        backup_id = ctx.backup_id
         if keep and constraint_failure is None:
             outcome = Outcome.KEPT
             target.baseline_score = eval_result.score
@@ -837,21 +853,21 @@ class ExperimentRunner:
             outcome = Outcome.DISCARDED
             if target.in_place and backup_id and target.id in self._backup_envs:
                 await self._backup_envs[target.id].restore(
-                    backup_id, target.artifact_paths, worktree,
+                    backup_id, target.artifact_paths, ctx.worktree,
                 )
                 await self._backup_envs[target.id].cleanup(backup_id)
             else:
-                await self._git.reset_hard(worktree, pre_sha)
-            git_sha = pre_sha
+                await self._git.reset_hard(ctx.worktree, ctx.pre_sha)
+            git_sha = ctx.pre_sha
 
         record = ExperimentRecord(
-            id=experiment_id,
+            id=ctx.experiment_id,
             target_id=target.id,
             git_sha=git_sha,
-            pre_experiment_sha=pre_sha,
+            pre_experiment_sha=ctx.pre_sha,
             timestamp=datetime.now(tz=timezone.utc),
-            hypothesis=hypothesis,
-            hypothesis_source=hypothesis_source,
+            hypothesis=ctx.hypothesis,
+            hypothesis_source=ctx.hypothesis_source,
             mutation_diff_summary="",
             score=eval_result.score,
             score_ci_lower=eval_result.ci_lower,
@@ -860,10 +876,10 @@ class ExperimentRunner:
             baseline_score=target.baseline_score,
             outcome=outcome,
             failure_mode=constraint_failure,
-            duration_seconds=time.monotonic() - start_time,
-            tags=tags,
+            duration_seconds=time.monotonic() - ctx.start_time,
+            tags=ctx.tags,
             learnings="",
-            cost_usd=cost_usd,
+            cost_usd=ctx.cost_usd,
             bootstrap_seed=0,
             agent_model=target.agent_config.model,
             criterion_names=eval_result.criterion_names,
@@ -874,7 +890,7 @@ class ExperimentRunner:
         if self._taxonomy and outcome in (Outcome.DISCARDED, Outcome.BLOCKED):
             try:
                 classification, classify_cost = await self._taxonomy.classify(
-                    hypothesis=hypothesis,
+                    hypothesis=ctx.hypothesis,
                     failure_mode=record.failure_mode,
                     score=eval_result.score,
                     model=target.agent_config.evaluator_model,
@@ -887,7 +903,7 @@ class ExperimentRunner:
         # Record outcome in tree search and persist
         if isinstance(self._search, UCBTreeSearch):
             self._search.record_outcome(
-                parent_sha=pre_sha, child_sha=record.git_sha,
+                parent_sha=ctx.pre_sha, child_sha=record.git_sha,
                 score=record.score, kept=outcome is Outcome.KEPT,
             )
             tree_path = Path(target.knowledge_path) / "search_tree.json"

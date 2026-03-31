@@ -56,7 +56,7 @@ def _make_subprocess_mock(returncode: int = 0, stdout: bytes = b"0.8", stderr: b
     proc = AsyncMock()
     proc.returncode = returncode
     proc.communicate = AsyncMock(return_value=(stdout, stderr))
-    proc.kill = AsyncMock()
+    proc.kill = MagicMock()  # Process.kill() is synchronous
     proc.wait = AsyncMock()
     return proc
 
@@ -278,8 +278,13 @@ class TestDeterministicEvaluatorOnce:
             call_count += 1
             return run_proc
 
+        async def _fake_wait_for(coro: object, timeout: object) -> object:
+            if hasattr(coro, "close"):
+                coro.close()  # type: ignore[union-attr]
+            return (b"", b"command failed")
+
         with patch("anneal.engine.eval.asyncio.create_subprocess_shell", side_effect=_fake_create):
-            with patch("anneal.engine.eval.asyncio.wait_for", return_value=(b"", b"command failed")):
+            with patch("anneal.engine.eval.asyncio.wait_for", side_effect=_fake_wait_for):
                 with pytest.raises(EvalError, match="run_command exited with code 1"):
                     await evaluator._evaluate_once(tmp_path, config)
 
@@ -308,6 +313,8 @@ class TestDeterministicEvaluatorOnce:
         wait_calls = 0
 
         async def _fake_wait_for(coro: object, timeout: object) -> object:
+            if hasattr(coro, "close"):
+                coro.close()  # type: ignore[union-attr]
             nonlocal wait_calls
             wait_calls += 1
             if wait_calls == 1:
@@ -346,6 +353,8 @@ class TestDeterministicEvaluatorOnce:
         wait_calls = 0
 
         async def _fake_wait_for(coro: object, timeout: object) -> object:
+            if hasattr(coro, "close"):
+                coro.close()  # type: ignore[union-attr]
             nonlocal wait_calls
             wait_calls += 1
             if wait_calls == 1:
@@ -381,6 +390,8 @@ class TestDeterministicEvaluatorOnce:
         wait_calls = 0
 
         async def _fake_wait_for(coro: object, timeout: object) -> object:
+            if hasattr(coro, "close"):
+                coro.close()  # type: ignore[union-attr]
             nonlocal wait_calls
             wait_calls += 1
             if wait_calls == 1:

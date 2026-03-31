@@ -467,3 +467,119 @@ class ParetoSearch:
     def pareto_front(self) -> list[dict[str, float]]:
         """Current Pareto front."""
         return list(self._pareto_front)
+
+
+class IslandPopulationSearch:
+    """Island-based population search with periodic migration.
+
+    Maintains N independent PopulationSearch instances ("islands").
+    Every K experiments, migrates the best individual from each island
+    to every other island.
+    """
+
+    def __init__(
+        self,
+        island_count: int = 2,
+        population_per_island: int = 4,
+        tournament_size: int = 2,
+        migration_interval: int = 10,
+        crossover_rate: float = 0.3,
+    ) -> None:
+        self._islands = [
+            PopulationSearch(
+                population_size=population_per_island,
+                tournament_size=tournament_size,
+                crossover_rate=crossover_rate,
+            )
+            for _ in range(island_count)
+        ]
+        self._migration_interval = migration_interval
+        self._experiment_count = 0
+        self._current_island: int = 0
+
+    def should_keep(
+        self,
+        challenger_result: EvalResult,
+        baseline_score: float,
+        baseline_raw_scores: list[float] | None,
+        direction: Direction,
+        min_improvement_threshold: float = 0.0,
+        confidence: float = 0.95,
+        experiment_index: int = 0,
+        holm_bonferroni: bool = False,
+    ) -> bool:
+        """Delegate to current island's should_keep."""
+        return self._current_island_instance.should_keep(
+            challenger_result, baseline_score, baseline_raw_scores,
+            direction, min_improvement_threshold, confidence,
+        )
+
+    def select_island(self) -> int:
+        """Round-robin island selection. Returns island index."""
+        self._current_island = self._experiment_count % len(self._islands)
+        self._experiment_count += 1
+        return self._current_island
+
+    def add_candidate(self, branch: str, score: float, hypothesis: str = "") -> None:
+        """Add candidate to current island."""
+        self._current_island_instance.add_candidate(branch, score, hypothesis)
+
+    def migrate(self, direction: Direction) -> int:
+        """Migrate best individual from each island to every other island.
+
+        Returns number of migrations performed.
+        """
+        if len(self._islands) < 2:
+            return 0
+
+        migrations = 0
+        bests: list[tuple[str, float, str]] = []
+
+        for island in self._islands:
+            if not island.population:
+                continue
+            if direction is Direction.HIGHER_IS_BETTER:
+                best = max(island.population, key=lambda c: c[1])
+            else:
+                best = min(island.population, key=lambda c: c[1])
+            hyp = island._hypotheses.get(best[0], "")
+            bests.append((best[0], best[1], hyp))
+
+        for i, (branch, score, hyp) in enumerate(bests):
+            for j, island in enumerate(self._islands):
+                if i != j:
+                    island.add_candidate(branch, score, hyp)
+                    migrations += 1
+
+        logger.info(
+            "Island migration: %d candidates transferred across %d islands",
+            migrations, len(self._islands),
+        )
+        return migrations
+
+    def should_migrate(self) -> bool:
+        """Check if migration is due based on experiment count."""
+        return (
+            self._experiment_count > 0
+            and self._experiment_count % self._migration_interval == 0
+        )
+
+    @property
+    def _current_island_instance(self) -> PopulationSearch:
+        return self._islands[self._current_island]
+
+    def get_crossover_parents(self) -> tuple[str, str] | None:
+        """Get crossover parents from current island."""
+        return self._current_island_instance.get_crossover_parents()
+
+    @property
+    def island_summaries(self) -> list[dict[str, int | float]]:
+        """Summary stats per island for logging."""
+        return [
+            {
+                "island": i,
+                "population_size": len(island.population),
+                "best_score": max((s for _, s in island.population), default=0.0),
+            }
+            for i, island in enumerate(self._islands)
+        ]

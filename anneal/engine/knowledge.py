@@ -17,8 +17,9 @@ from pathlib import Path
 
 from filelock import FileLock
 
+from anneal.engine.client import make_client, strip_provider_prefix
 from anneal.engine.taxonomy import FailureTaxonomy
-from anneal.engine.types import ConsolidationRecord, DriftEntry, ExperimentRecord, Outcome
+from anneal.engine.types import ConsolidationRecord, DriftEntry, ExperimentRecord, Lesson, Outcome
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,61 @@ def _json_to_record(line: str) -> ExperimentRecord:
     data["timestamp"] = datetime.fromisoformat(data["timestamp"])
     data["outcome"] = Outcome(data["outcome"])
     return ExperimentRecord(**data)
+
+
+async def extract_lesson(
+    record: ExperimentRecord,
+    previous_record: ExperimentRecord | None,
+    model: str,
+) -> Lesson:
+    """Extract structured lesson from experiment outcome.
+
+    Uses a cheap LLM call to distill what happened and why.
+    Falls back to deterministic extraction if LLM call fails.
+    """
+    improved: list[str] = []
+    regressed: list[str] = []
+    if record.per_criterion_scores and previous_record and previous_record.per_criterion_scores:
+        for name, score in record.per_criterion_scores.items():
+            prev = previous_record.per_criterion_scores.get(name, 0.0)
+            if score >= 0.5 and prev < 0.5:
+                improved.append(f"{name}: PASS (was FAIL)")
+            elif score < 0.5 and prev >= 0.5:
+                regressed.append(f"{name}: FAIL (was PASS)")
+
+    prompt = (
+        f"Experiment hypothesis: {record.hypothesis}\n"
+        f"Outcome: {record.outcome.value}\n"
+        f"Score delta: {record.score - record.baseline_score:+.4f}\n"
+        f"What improved: {improved}\n"
+        f"What regressed: {regressed}\n\n"
+        "Extract a single transferable insight (one sentence, domain-independent) "
+        "and 1-3 domain tags. Output JSON: "
+        '{"transferable_insight": "...", "domain_tags": ["...", "..."]}'
+    )
+
+    try:
+        client = make_client(model)
+        response = await client.chat.completions.create(
+            model=strip_provider_prefix(model),
+            temperature=0.2,
+            response_format={"type": "json_object"},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        data = json.loads(response.choices[0].message.content or "{}")
+        transferable = data.get("transferable_insight", record.hypothesis[:120])
+        tags = data.get("domain_tags", [])
+    except Exception:
+        transferable = record.hypothesis[:120]
+        tags = list(record.tags)
+
+    return Lesson(
+        what_changed=record.mutation_diff_summary[:200],
+        what_improved=improved,
+        what_regressed=regressed,
+        transferable_insight=transferable,
+        domain_tags=tags,
+    )
 
 
 def _consolidation_to_json(record: ConsolidationRecord) -> str:

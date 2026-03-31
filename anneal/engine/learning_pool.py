@@ -230,6 +230,7 @@ class LearningPool:
         project_id: str | None = None,
         domain: str | None = None,
         domain_penalty: float = 0.5,
+        domain_tags: list[str] | None = None,
     ) -> list[Learning]:
         """Retrieve top-K learnings by decay-adjusted |score_delta| descending.
 
@@ -273,8 +274,25 @@ class LearningPool:
 
         candidates = sorted(candidates, key=_domain_adjusted_score, reverse=True)
 
+        if domain_tags:
+            def _tag_boost(learning: Learning) -> float:
+                lesson_tags = self._extract_tags(learning.observation)
+                overlap = len(set(domain_tags) & set(lesson_tags))
+                return overlap / max(len(domain_tags), 1)
+
+            candidates = sorted(candidates, key=_tag_boost, reverse=True)
+
         # Return with decayed confidence values
         return [self._decay_confidence(l) for l in candidates[:k]]
+
+    @staticmethod
+    def _extract_tags(observation: str) -> list[str]:
+        """Extract domain_tags from a learning observation that may contain JSON lesson data."""
+        try:
+            data = json.loads(observation)
+            return data.get("domain_tags", [])
+        except (json.JSONDecodeError, TypeError):
+            return []
 
     def summarize(
         self,

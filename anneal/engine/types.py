@@ -366,6 +366,16 @@ class FailureClassification(BaseModel):
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
+class Lesson(BaseModel):
+    """Structured lesson extracted from a completed experiment."""
+
+    what_changed: str
+    what_improved: list[str]  # "criterion_name: PASS (was FAIL)"
+    what_regressed: list[str]  # "criterion_name: FAIL (was PASS)"
+    transferable_insight: str  # Domain-independent takeaway
+    domain_tags: list[str]  # e.g., ["code_style", "error_handling"]
+
+
 class ExperimentRecord(BaseModel):
     """One experiment's complete record. Written by runner, read by
     knowledge store, cost tracker, and consolidation."""

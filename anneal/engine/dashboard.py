@@ -205,6 +205,9 @@ class AnnealStateReader:
                 "avg_duration": avg_duration,
                 "best_score": best_score,
             }
+            pareto_front = self._read_pareto_front(tid)
+            if pareto_front is not None:
+                target_info["pareto_front"] = pareto_front
             targets[tid] = target_info
             score_history[tid] = scores[-MAX_SCORE_HISTORY:]
 
@@ -212,6 +215,20 @@ class AnnealStateReader:
             "targets": targets,
             "score_history": score_history,
         }
+
+    def _read_pareto_front(self, target_id: str) -> list[dict[str, float]] | None:
+        """Read Pareto front from target's search state if using Pareto search."""
+        candidates = [
+            self._root / "targets" / target_id / "pareto_front.json",
+            self._root / target_id / "pareto_front.json",
+        ]
+        for pareto_path in candidates:
+            if pareto_path.exists():
+                try:
+                    return json.loads(pareto_path.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    return None
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +282,13 @@ class FilePollingBus:
                         "cost": record.get("cost_usd", 0.0),
                         "duration": record.get("duration_seconds", 0.0),
                     })
+                    pareto_front = self._reader._read_pareto_front(tid)
+                    if pareto_front:
+                        self.publish("pareto_update", {
+                            "target_id": tid,
+                            "front": pareto_front,
+                            "criterion_names": list(pareto_front[0].keys()) if pareto_front else [],
+                        })
 
     def stop(self) -> None:
         self._polling = False
@@ -323,6 +347,11 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
 .legend-discarded::before{background:#f85149 !important}
 .legend-blocked::before{background:#d29922 !important}
 .legend-crashed::before{background:#f85149 !important}
+.pareto-section{margin-bottom:24px}
+.pareto-title{font-size:0.9rem;color:#8b949e;margin-bottom:8px}
+.pareto-container{display:flex;flex-wrap:wrap;gap:16px}
+.pareto-card{background:#161b22;border:1px solid #21262d;border-radius:6px;padding:16px;min-width:400px}
+.pareto-card h4{font-size:0.85rem;color:#58a6ff;margin-bottom:8px}
 </style>
 </head>
 <body>
@@ -335,6 +364,10 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
 <div class="chart-section">
   <div class="chart-title">Score Trajectory (last 50 per target)</div>
   <canvas id="chart" width="900" height="260"></canvas>
+</div>
+<div id="pareto-section" class="pareto-section" style="display:none">
+  <div class="pareto-title">Pareto Front (multi-objective trade-offs)</div>
+  <div id="pareto-container" class="pareto-container"></div>
 </div>
 <div id="target-cards" class="target-cards"></div>
 <table>
@@ -366,6 +399,12 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
     });
     Object.keys(sh).forEach(function(tid){
       scoreHistory[tid] = sh[tid].slice(-MAX_HISTORY);
+    });
+    Object.keys(st).forEach(function(tid){
+      if(st[tid].pareto_front){
+        targets[tid].pareto_front = st[tid].pareto_front;
+        targets[tid].pareto_criterion_names = Object.keys(st[tid].pareto_front[0] || {});
+      }
     });
     render();
   });
@@ -407,12 +446,21 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
     render();
   });
 
+  es.addEventListener('pareto_update', function(e){
+    const d = JSON.parse(e.data);
+    if(!targets[d.target_id]) targets[d.target_id] = {};
+    targets[d.target_id].pareto_front = d.front;
+    targets[d.target_id].pareto_criterion_names = d.criterion_names;
+    render();
+  });
+
   function render(){
     updEl.textContent = 'Last update: ' + new Date().toLocaleTimeString();
     evtEl.textContent = 'Events: ' + eventCount;
     renderCards();
     renderTable();
     renderChart();
+    renderPareto();
   }
 
   function renderCards(){
@@ -536,6 +584,92 @@ canvas{background:#161b22;border-radius:6px;display:block;margin-bottom:16px}
       ctx.beginPath(); ctx.arc(lastX, lastY, 3, 0, Math.PI * 2); ctx.fillStyle = colorFor(idx); ctx.fill();
       ctx.fillStyle = colorFor(idx); ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
       ctx.fillText(tid, lastX + 6, lastY + 4);
+    });
+  }
+
+  function renderPareto(){
+    var section = document.getElementById('pareto-section');
+    var container = document.getElementById('pareto-container');
+    var ids = Object.keys(targets).sort();
+    var hasPareto = false;
+    var html = '';
+
+    ids.forEach(function(tid){
+      var t = targets[tid];
+      var front = t.pareto_front;
+      if(!front || front.length === 0) return;
+      hasPareto = true;
+      var cnames = t.pareto_criterion_names || Object.keys(front[0] || {});
+      if(cnames.length < 2) return;
+      var xAxis = cnames[0], yAxis = cnames[1];
+      var canvasId = 'pareto-' + tid.replace(/[^a-zA-Z0-9]/g, '_');
+
+      html += '<div class="pareto-card">'
+        + '<h4>' + esc(tid) + ' (' + esc(xAxis) + ' vs ' + esc(yAxis) + ')</h4>'
+        + '<canvas id="' + canvasId + '" width="380" height="260" style="background:#0d1117;border-radius:4px"></canvas>'
+        + '</div>';
+    });
+
+    container.innerHTML = html;
+    section.style.display = hasPareto ? 'block' : 'none';
+
+    ids.forEach(function(tid){
+      var t = targets[tid];
+      var front = t.pareto_front;
+      if(!front || front.length === 0) return;
+      var cnames = t.pareto_criterion_names || Object.keys(front[0] || {});
+      if(cnames.length < 2) return;
+      var xAxis = cnames[0], yAxis = cnames[1];
+      var canvasId = 'pareto-' + tid.replace(/[^a-zA-Z0-9]/g, '_');
+      var canvas = document.getElementById(canvasId);
+      if(!canvas) return;
+      var ctx = canvas.getContext('2d');
+      var W = canvas.width, H = canvas.height;
+      var pad = {t:20, r:20, b:30, l:40};
+      var plotW = W - pad.l - pad.r;
+      var plotH = H - pad.t - pad.b;
+
+      ctx.clearRect(0, 0, W, H);
+
+      ctx.fillStyle = '#484f58'; ctx.font = '10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(xAxis, pad.l + plotW/2, H - 4);
+      ctx.save(); ctx.translate(10, pad.t + plotH/2); ctx.rotate(-Math.PI/2);
+      ctx.fillText(yAxis, 0, 0); ctx.restore();
+
+      ctx.strokeStyle = '#21262d'; ctx.lineWidth = 1;
+      for(var i = 0; i <= 4; i++){
+        var gy = pad.t + plotH * (i/4);
+        ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(W-pad.r, gy); ctx.stroke();
+        var gx = pad.l + plotW * (i/4);
+        ctx.beginPath(); ctx.moveTo(gx, pad.t); ctx.lineTo(gx, H-pad.b); ctx.stroke();
+      }
+
+      ctx.fillStyle = '#484f58'; ctx.font = '9px monospace';
+      ctx.textAlign = 'right';
+      for(var i = 0; i <= 4; i++){
+        ctx.fillText((i*0.25).toFixed(2), pad.l - 4, pad.t + plotH * (1 - i/4) + 3);
+      }
+      ctx.textAlign = 'center';
+      for(var i = 0; i <= 4; i++){
+        ctx.fillText((i*0.25).toFixed(2), pad.l + plotW * (i/4), H - pad.b + 14);
+      }
+
+      front.forEach(function(point){
+        var x = pad.l + (point[xAxis] || 0) * plotW;
+        var y = pad.t + plotH * (1 - (point[yAxis] || 0));
+        ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#4CAF50'; ctx.fill();
+      });
+
+      var sorted = front.slice().sort(function(a,b){ return (a[xAxis]||0) - (b[xAxis]||0); });
+      ctx.beginPath(); ctx.strokeStyle = '#FF5722'; ctx.lineWidth = 2;
+      sorted.forEach(function(point, i){
+        var x = pad.l + (point[xAxis] || 0) * plotW;
+        var y = pad.t + plotH * (1 - (point[yAxis] || 0));
+        if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
     });
   }
 

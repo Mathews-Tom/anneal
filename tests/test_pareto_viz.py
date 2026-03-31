@@ -2,13 +2,10 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock
 
 import pytest
 
-from anneal.engine.dashboard import AnnealStateReader, FilePollingBus
 from anneal.engine.search import ParetoSearch
 
 
@@ -37,7 +34,6 @@ class TestParetoFrontPersistence:
         search = ParetoSearch()
         search._pareto_front = [{"x": 0.5}]
         search.load_front(tmp_path / "missing.json")
-        # Front should remain unchanged
         assert search.pareto_front == [{"x": 0.5}]
 
     def test_empty_front_roundtrip(self, tmp_path: Path) -> None:
@@ -50,6 +46,16 @@ class TestParetoFrontPersistence:
         assert loaded.pareto_front == []
 
 
+try:
+    from anneal.engine.dashboard import AnnealStateReader, FilePollingBus
+    _has_dashboard = True
+except ImportError:
+    _has_dashboard = False
+
+_skip_no_dashboard = pytest.mark.skipif(not _has_dashboard, reason="aiohttp not installed")
+
+
+@_skip_no_dashboard
 class TestDashboardParetoFront:
     def test_read_pareto_front_targets_layout(self, tmp_path: Path) -> None:
         reader = AnnealStateReader(tmp_path)
@@ -77,14 +83,11 @@ class TestDashboardParetoFront:
 
     def test_build_snapshot_includes_pareto(self, tmp_path: Path) -> None:
         reader = AnnealStateReader(tmp_path)
-        # Create target with experiments and pareto front
         target_dir = tmp_path / "targets" / "t1"
         target_dir.mkdir(parents=True)
         front = [{"style": 0.8, "correctness": 0.6}]
         (target_dir / "pareto_front.json").write_text(json.dumps(front))
-        # Need experiments.jsonl for target discovery
         (target_dir / "experiments.jsonl").write_text("")
-        # Need config.toml for discovery
         (tmp_path / "config.toml").write_text('[targets.t1]\neval_mode = "stochastic"\n')
 
         snapshot = reader.build_snapshot()
@@ -102,26 +105,23 @@ class TestDashboardParetoFront:
         assert "pareto_front" not in snapshot["targets"]["t1"]
 
 
+@_skip_no_dashboard
 class TestParetoSSEEvent:
     @pytest.mark.asyncio
     async def test_pareto_update_published(self, tmp_path: Path) -> None:
         reader = AnnealStateReader(tmp_path)
         bus = FilePollingBus(reader)
 
-        # Set up target with experiment and pareto front
         target_dir = tmp_path / "targets" / "t1"
         target_dir.mkdir(parents=True)
 
         front = [{"style": 0.8, "correctness": 0.6}]
         (target_dir / "pareto_front.json").write_text(json.dumps(front))
 
-        # Write a config and experiment record
         (tmp_path / "config.toml").write_text('[targets.t1]\neval_mode = "stochastic"\n')
 
-        # Initialize cursors
         reader.build_snapshot()
 
-        # Add new experiment record after cursor init
         record = {
             "id": "1", "target_id": "t1", "score": 0.8,
             "baseline_score": 0.5, "outcome": "KEPT",
@@ -130,10 +130,8 @@ class TestParetoSSEEvent:
         }
         (target_dir / "experiments.jsonl").write_text(json.dumps(record) + "\n")
 
-        # Subscribe and manually trigger one poll cycle
         queue = await bus.subscribe()
 
-        # Simulate one poll iteration
         targets_meta = reader.discover_targets()
         for tid in targets_meta:
             new_records = reader.read_new_experiments(tid)
@@ -147,7 +145,6 @@ class TestParetoSSEEvent:
                         "criterion_names": list(pareto_front[0].keys()) if pareto_front else [],
                     })
 
-        # Check events were published
         events = []
         while not queue.empty():
             events.append(queue.get_nowait())

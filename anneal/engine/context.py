@@ -234,6 +234,18 @@ def _format_experiment_summary(record: ExperimentRecord) -> str:
     return f"- Exp {record.id[:8]}: {outcome} | {record.score:.4f} ({sign}{delta:.4f}) | {record.hypothesis[:80]}"
 
 
+def _format_lineage(lineage: list[ExperimentRecord]) -> str:
+    if not lineage:
+        return ""
+    parts = ["# Lineage (chain of accepted mutations leading to current best)"]
+    for record in lineage:
+        parts.append(
+            f"- Exp {record.id[:8]} (score {record.score:.4f}): "
+            f"{record.hypothesis[:120]}"
+        )
+    return "\n".join(parts)
+
+
 def _deduplicate_criteria(history: list[ExperimentRecord]) -> str:
     if not history:
         return ""

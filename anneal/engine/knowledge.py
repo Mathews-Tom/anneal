@@ -238,6 +238,27 @@ class KnowledgeStore:
                     count += 1
         return count
 
+    def get_lineage(self, current_best_sha: str, depth: int = 5) -> list[ExperimentRecord]:
+        """Trace the chain of KEPT mutations from current best back to initial."""
+        records = self.load_records()
+
+        sha_to_record: dict[str, ExperimentRecord] = {}
+        for r in records:
+            if r.outcome is Outcome.KEPT:
+                sha_to_record[r.git_sha] = r
+
+        chain: list[ExperimentRecord] = []
+        current_sha = current_best_sha
+        for _ in range(depth):
+            if current_sha not in sha_to_record:
+                break
+            record = sha_to_record[current_sha]
+            chain.append(record)
+            current_sha = record.pre_experiment_sha
+
+        chain.reverse()
+        return chain
+
     # ------------------------------------------------------------------
     # 2.12, 2.13 — Vector Index (MVP: Jaccard similarity)
     # ------------------------------------------------------------------

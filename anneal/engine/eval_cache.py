@@ -4,6 +4,16 @@ from __future__ import annotations
 import hashlib
 from collections import OrderedDict
 from dataclasses import dataclass
+from typing import TypedDict
+
+
+class ConsistencyEntry(TypedDict):
+    """A single flagged entry from the consistency report."""
+
+    content_hash: str
+    mean_score: float
+    std_dev: float
+    n_evals: int
 
 
 @dataclass(frozen=True)
@@ -14,6 +24,7 @@ class CacheEntry:
     raw_scores: tuple[float, ...]
     criterion_names: tuple[str, ...]
     hit_count: int = 0
+    score_history: tuple[float, ...] = ()
 
 
 class EvalCache:
@@ -49,11 +60,17 @@ class EvalCache:
     ) -> None:
         """Store evaluation result. Evicts LRU entry if at capacity."""
         key = self._hash_content(artifact_content, criteria_names)
+        existing = self._cache.get(key)
+        if existing is not None:
+            history: tuple[float, ...] = existing.score_history + (score,)
+        else:
+            history = (score,)
         self._cache[key] = CacheEntry(
             content_hash=key,
             score=score,
             raw_scores=tuple(raw_scores),
             criterion_names=tuple(sorted(criteria_names)),
+            score_history=history,
         )
         if len(self._cache) > self._max_size:
             self._cache.popitem(last=False)  # Evict LRU
@@ -70,3 +87,25 @@ class EvalCache:
     def size(self) -> int:
         """Number of entries currently cached."""
         return len(self._cache)
+
+    def consistency_report(self) -> list[ConsistencyEntry]:
+        """Return entries with high score variance (potential evaluator drift).
+
+        Only reports entries with 2 or more evaluations.
+        """
+        flagged: list[ConsistencyEntry] = []
+        for entry in self._cache.values():
+            if len(entry.score_history) < 2:
+                continue
+            scores = list(entry.score_history)
+            mean = sum(scores) / len(scores)
+            variance = sum((s - mean) ** 2 for s in scores) / (len(scores) - 1)
+            std_dev = variance ** 0.5
+            if std_dev > 0.1:
+                flagged.append({
+                    "content_hash": entry.content_hash,
+                    "mean_score": mean,
+                    "std_dev": std_dev,
+                    "n_evals": len(scores),
+                })
+        return flagged

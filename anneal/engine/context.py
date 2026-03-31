@@ -11,8 +11,12 @@ import hashlib
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from anneal.engine.types import ArtifactError, ExperimentRecord, OptimizationTarget
+from anneal.engine.types import ArtifactError, ExperimentRecord, Outcome, OptimizationTarget
+
+if TYPE_CHECKING:
+    from anneal.engine.knowledge import KnowledgeStore
 
 logger = logging.getLogger(__name__)
 
@@ -227,15 +231,110 @@ def _format_experiment_record(record: ExperimentRecord) -> str:
     return base
 
 
-def _format_recent_history(history: list[ExperimentRecord]) -> str:
-    """Format last 5 experiment records as structured context."""
+def _format_experiment_summary(record: ExperimentRecord) -> str:
+    outcome = record.outcome.value
+    delta = record.score - record.baseline_score
+    sign = "+" if delta >= 0 else ""
+    return f"- Exp {record.id[:8]}: {outcome} | {record.score:.4f} ({sign}{delta:.4f}) | {record.hypothesis[:80]}"
+
+
+def _format_lineage(lineage: list[ExperimentRecord]) -> str:
+    if not lineage:
+        return ""
+    parts = ["# Lineage (chain of accepted mutations leading to current best)"]
+    for record in lineage:
+        parts.append(
+            f"- Exp {record.id[:8]} (score {record.score:.4f}): "
+            f"{record.hypothesis[:120]}"
+        )
+    return "\n".join(parts)
+
+
+def _deduplicate_criteria(history: list[ExperimentRecord]) -> str:
+    if not history:
+        return ""
+
+    # Collect all criterion names in order of first appearance
+    criterion_names: list[str] = []
+    seen: set[str] = set()
+    for rec in history:
+        if rec.per_criterion_scores:
+            for name in rec.per_criterion_scores:
+                if name not in seen:
+                    criterion_names.append(name)
+                    seen.add(name)
+
+    if not criterion_names:
+        return ""
+
+    lines: list[str] = []
+    for name in criterion_names:
+        # Build list of (index, status) for each record that has this criterion
+        statuses: list[tuple[int, str]] = []
+        for i, rec in enumerate(history):
+            if rec.per_criterion_scores and name in rec.per_criterion_scores:
+                status = "PASS" if rec.per_criterion_scores[name] >= 0.5 else "FAIL"
+                statuses.append((i, status))
+
+        if not statuses:
+            continue
+
+        # Collapse consecutive runs of same status
+        runs: list[tuple[int, int, str]] = []
+        run_start, run_status = statuses[0]
+        run_end = run_start
+        for idx, status in statuses[1:]:
+            if status == run_status and idx == run_end + 1:
+                run_end = idx
+            else:
+                runs.append((run_start, run_end, run_status))
+                run_start, run_end, run_status = idx, idx, status
+        runs.append((run_start, run_end, run_status))
+
+        for start, end, status in runs:
+            if start == end:
+                lines.append(f"{name}: {status} (exp {start})")
+            else:
+                lines.append(f"{name}: {status} (exp {start}-{end})")
+
+    return "\n".join(lines)
+
+
+def _format_recent_history(
+    history: list[ExperimentRecord],
+    compression: str = "none",
+) -> str:
     recent = history[-5:]
     if not recent:
         return "# Recent Experiments\nNo experiments yet."
 
     parts = ["# Recent Experiments"]
-    for record in recent:
-        parts.append(_format_experiment_record(record))
+
+    if compression == "moderate":
+        # First 2 as summaries, last 3 as full records
+        summary_count = max(0, len(recent) - 3)
+        for record in recent[:summary_count]:
+            parts.append(_format_experiment_summary(record))
+        for record in recent[summary_count:]:
+            parts.append(_format_experiment_record(record))
+
+    elif compression == "aggressive":
+        # First 3 as summaries, last 2 as full records
+        summary_count = max(0, len(recent) - 2)
+        for record in recent[:summary_count]:
+            parts.append(_format_experiment_summary(record))
+        for record in recent[summary_count:]:
+            parts.append(_format_experiment_record(record))
+        # Append deduplicated criteria
+        criteria_summary = _deduplicate_criteria(recent)
+        if criteria_summary:
+            parts.append(f"## Criterion Trends\n{criteria_summary}")
+
+    else:
+        # compression="none" — original behavior
+        for record in recent:
+            parts.append(_format_experiment_record(record))
+
     return "\n\n".join(parts)
 
 
@@ -330,6 +429,7 @@ def build_target_context(
     global_learnings: str = "",
     policy_instructions: str = "",
     tree_info: dict[str, int] | None = None,
+    knowledge: KnowledgeStore | None = None,
 ) -> tuple[str, int]:
     """Build the complete agent context for a target.
 
@@ -337,23 +437,30 @@ def build_target_context(
     """
     budget = ContextBudget(max_tokens=target.agent_config.max_context_tokens)
 
-    # Slot 1: System prompt (program.md + scope rules + eval description)
-    program_path = repo_root / target.knowledge_path / "program.md"
-    program_content = _read_file_safe(program_path)
-    if program_content is None:
-        program_content = (
-            f"# Optimization Target: {target.id}\n\n"
-            f"You are optimizing artifacts to improve the metric "
-            f"'{target.eval_config.metric_name}' "
-            f"({target.eval_config.direction.value}).\n\n"
-            f"Current baseline score: {target.baseline_score}\n\n"
-            f"## Scope Rules\n"
-            f"- Editable files: {', '.join(target.artifact_paths)}\n"
-            f"- Eval mode: {target.eval_mode.value}\n"
-        )
-        logger.info(
-            "No program.md found at %s, using generated default", program_path
-        )
+    # Slot 1: System prompt — from strategy manifest or legacy program.md
+    from anneal.engine.strategy import load_strategy, render_manifest_as_prompt
+
+    knowledge_dir = repo_root / target.knowledge_path
+    strategy = load_strategy(knowledge_dir)
+    if strategy is not None:
+        program_content = render_manifest_as_prompt(strategy)
+    else:
+        program_path = knowledge_dir / "program.md"
+        program_content = _read_file_safe(program_path)
+        if program_content is None:
+            program_content = (
+                f"# Optimization Target: {target.id}\n\n"
+                f"You are optimizing artifacts to improve the metric "
+                f"'{target.eval_config.metric_name}' "
+                f"({target.eval_config.direction.value}).\n\n"
+                f"Current baseline score: {target.baseline_score}\n\n"
+                f"## Scope Rules\n"
+                f"- Editable files: {', '.join(target.artifact_paths)}\n"
+                f"- Eval mode: {target.eval_mode.value}\n"
+            )
+            logger.info(
+                "No program.md found at %s, using generated default", program_path
+            )
 
     budget.add_slot("system_prompt", program_content, priority=1, required=True)
 
@@ -401,13 +508,23 @@ def build_target_context(
     budget.add_slot("artifact", artifact_content, priority=3, required=True)
 
     # Slot 4: Recent history (last 5 experiment records)
-    history_content = _format_recent_history(history)
+    compression = getattr(target.agent_config, "context_compression", "none")
+    history_content = _format_recent_history(history, compression=compression)
     budget.add_slot("recent_history", history_content, priority=4, required=True)
 
-    # Slot 5: Knowledge context (retrieved history + consolidated learnings)
+    # Slot 4b: Lineage trace (chain of KEPT mutations to current best)
+    if knowledge is not None and history:
+        kept_records = [r for r in history if r.outcome is Outcome.KEPT]
+        if kept_records:
+            lineage = knowledge.get_lineage(kept_records[-1].git_sha, depth=5)
+            if lineage:
+                lineage_content = _format_lineage(lineage)
+                budget.add_slot("lineage_trace", lineage_content, priority=5, required=False)
+
+    # Slot 6: Knowledge context (retrieved history + consolidated learnings)
     if knowledge_context:
         budget.add_slot(
-            "knowledge_context", knowledge_context, priority=5, required=False
+            "knowledge_context", knowledge_context, priority=6, required=False
         )
 
     # Slot 6: Verifier failure warnings (when a verifier blocks >60% of recent experiments)

@@ -78,6 +78,9 @@ class AgentConfig(BaseModel):
     temperature: float = Field(default=0.7, ge=0, le=2.0)
     sandbox: bool = False
     n_drafts: int = Field(default=1, ge=1, le=10)
+    context_compression: Literal["none", "moderate", "aggressive"] = "none"
+    exploration_model: str = ""
+    exploration_ratio: Literal["adaptive", "fixed"] | float = "adaptive"
 
 
 class DeterministicEval(BaseModel):
@@ -275,6 +278,8 @@ class OptimizationTarget(BaseModel):
     approval_callback: Callable[[str], bool] | None = Field(default=None, exclude=True)
     restart_probability: float = Field(default=0.0, ge=0.0, le=1.0)
     in_place: bool = False
+    simplify_before_mutate: bool = False
+    strategy_mode: Literal["program_md", "manifest"] = "program_md"
     policy_config: PolicyConfig | None = None
     population_config: PopulationConfig | None = None
     eval_environment: EvalEnvironment | None = None

@@ -46,3 +46,38 @@ class StrategySelector:
             name: {"mean": arm.alpha / (arm.alpha + arm.beta), "n": arm.alpha + arm.beta - 2}
             for name, arm in self._arms.items()
         }
+
+
+class AgentSelector:
+    """Thompson Sampling selector for primary vs exploration agent."""
+
+    def __init__(self) -> None:
+        self._primary = StrategyArm(name="primary")
+        self._exploration = StrategyArm(name="exploration")
+
+    def select(self, experiment_ratio: float) -> str:
+        """Select agent based on Thompson Sampling + experiment progress.
+
+        experiment_ratio: current_experiment / max_experiments (0.0 to 1.0)
+        Returns "primary" or "exploration".
+        """
+        if experiment_ratio < 0.2:
+            exploration_boost = 0.7
+        elif experiment_ratio > 0.8:
+            exploration_boost = 0.2
+        else:
+            exploration_boost = 0.5
+
+        primary_sample = self._primary.sample()
+        exploration_sample = self._exploration.sample() * exploration_boost / 0.5
+        return "exploration" if exploration_sample > primary_sample else "primary"
+
+    def update(self, agent_name: str, improved: bool) -> None:
+        arm = self._primary if agent_name == "primary" else self._exploration
+        arm.update(improved)
+
+    def summary(self) -> dict[str, dict[str, float]]:
+        return {
+            "primary": {"mean": self._primary.alpha / (self._primary.alpha + self._primary.beta)},
+            "exploration": {"mean": self._exploration.alpha / (self._exploration.alpha + self._exploration.beta)},
+        }

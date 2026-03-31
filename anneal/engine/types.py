@@ -79,6 +79,8 @@ class AgentConfig(BaseModel):
     sandbox: bool = False
     n_drafts: int = Field(default=1, ge=1, le=10)
     context_compression: Literal["none", "moderate", "aggressive"] = "none"
+    exploration_model: str = ""
+    exploration_ratio: Literal["adaptive", "fixed"] | float = "adaptive"
 
 
 class DeterministicEval(BaseModel):

@@ -306,106 +306,121 @@ class StochasticEvaluator:
                 temperature=1.0,
             )
 
-        total_cost = 0.0
-
-        # 1. Generate N samples from fixed prompts
-        samples: list[str] = []
-        gen_tasks = [
-            self._generate_sample(
-                gen_cfg,
-                config.generation_prompt_template.format(
-                    test_prompt=prompt,
-                    artifact_content=artifact_content,
-                ),
-                config.output_format,
-                worktree_path,
+        if config.adaptive_sampling:
+            return await self._evaluate_adaptive(
+                worktree_path, config, artifact_content, prompts, gen_cfg, judge_cfg,
             )
-            for prompt in prompts
-        ]
-        gen_results = await asyncio.gather(*gen_tasks)
-        for text, cost in gen_results:
-            samples.append(text)
-            total_cost += cost
+        return await self._evaluate_fixed(
+            worktree_path, config, artifact_content, prompts, gen_cfg, judge_cfg,
+        )
 
-        # 2. Score each sample against K criteria independently
+    async def _evaluate_single_sample(
+        self,
+        worktree_path: Path,
+        config: StochasticEval,
+        artifact_content: str,
+        prompt: str,
+        gen_cfg: AgentConfig,
+        judge_cfg: AgentConfig,
+    ) -> tuple[float, float, dict[str, float]]:
+        """Generate one sample and score it against all criteria.
+
+        Returns (sample_score, sample_cost, per_criterion_scores).
+        sample_score is the sum of per-criterion scores for this sample.
+        """
         votes = config.judgment_votes
         comparison_mode = getattr(config, "comparison_mode", "majority_vote")
-        per_sample_scores: list[float] = []
-        per_criterion_totals: dict[str, list[float]] = {c.name: [] for c in config.criteria}
-        for sample in samples:
-            if votes >= 2:
-                # Split votes between forward and reverse criterion order to cancel position bias
-                forward_criteria = list(config.criteria)
-                reverse_criteria = list(reversed(config.criteria))
-                forward_votes = votes // 2
-                reverse_votes = votes - forward_votes
 
-                forward_tasks = [
-                    self._score_criterion(
-                        judge_cfg, sample, criterion, worktree_path,
-                        votes=forward_votes, comparison_mode=comparison_mode,
-                    )
-                    for criterion in forward_criteria
-                ]
-                forward_results = await asyncio.gather(*forward_tasks)
+        # Generate sample
+        formatted_prompt = config.generation_prompt_template.format(
+            test_prompt=prompt,
+            artifact_content=artifact_content,
+        )
+        sample_text, gen_cost = await self._generate_sample(
+            gen_cfg, formatted_prompt, config.output_format, worktree_path,
+        )
+        sample_cost = gen_cost
 
-                reverse_tasks = [
-                    self._score_criterion(
-                        judge_cfg, sample, criterion, worktree_path,
-                        votes=reverse_votes, comparison_mode=comparison_mode,
-                    )
-                    for criterion in reverse_criteria
-                ]
-                reverse_results = await asyncio.gather(*reverse_tasks)
+        per_criterion: dict[str, float] = {}
 
-                # Merge: average forward and reverse scores per criterion
-                criterion_scores: dict[str, tuple[float, float]] = {}
-                for criterion, (binary_val, cost) in zip(forward_criteria, forward_results):
-                    criterion_scores[criterion.name] = (binary_val, cost)
-                for criterion, (binary_val, cost) in zip(reverse_criteria, reverse_results):
-                    fwd_val, fwd_cost = criterion_scores[criterion.name]
-                    criterion_scores[criterion.name] = (
-                        (fwd_val + binary_val) / 2,
-                        fwd_cost + cost,
-                    )
+        if votes >= 2:
+            # Split votes between forward and reverse criterion order to cancel position bias
+            forward_criteria = list(config.criteria)
+            reverse_criteria = list(reversed(config.criteria))
+            forward_votes = votes // 2
+            reverse_votes = votes - forward_votes
 
-                sample_score = 0.0
-                for crit_name, (avg_val, cost) in criterion_scores.items():
-                    sample_score += avg_val
-                    total_cost += cost
-                    per_criterion_totals[crit_name].append(avg_val)
-            else:
-                # Single vote: use random shuffle (existing behavior)
-                shuffled_criteria = list(config.criteria)
-                random.shuffle(shuffled_criteria)
-                score_tasks = [
-                    self._score_criterion(
-                        judge_cfg, sample, criterion, worktree_path,
-                        votes=votes, comparison_mode=comparison_mode,
-                    )
-                    for criterion in shuffled_criteria
-                ]
-                criterion_results = await asyncio.gather(*score_tasks)
-                sample_score = 0.0
-                for criterion, (binary_val, cost) in zip(shuffled_criteria, criterion_results):
-                    sample_score += binary_val
-                    total_cost += cost
-                    per_criterion_totals[criterion.name].append(binary_val)
-            per_sample_scores.append(sample_score)
+            forward_tasks = [
+                self._score_criterion(
+                    judge_cfg, sample_text, criterion, worktree_path,
+                    votes=forward_votes, comparison_mode=comparison_mode,
+                )
+                for criterion in forward_criteria
+            ]
+            forward_results = await asyncio.gather(*forward_tasks)
 
-        # 3. Aggregate
+            reverse_tasks = [
+                self._score_criterion(
+                    judge_cfg, sample_text, criterion, worktree_path,
+                    votes=reverse_votes, comparison_mode=comparison_mode,
+                )
+                for criterion in reverse_criteria
+            ]
+            reverse_results = await asyncio.gather(*reverse_tasks)
+
+            # Merge: average forward and reverse scores per criterion
+            criterion_scores: dict[str, tuple[float, float]] = {}
+            for criterion, (binary_val, cost) in zip(forward_criteria, forward_results):
+                criterion_scores[criterion.name] = (binary_val, cost)
+            for criterion, (binary_val, cost) in zip(reverse_criteria, reverse_results):
+                fwd_val, fwd_cost = criterion_scores[criterion.name]
+                criterion_scores[criterion.name] = (
+                    (fwd_val + binary_val) / 2,
+                    fwd_cost + cost,
+                )
+
+            sample_score = 0.0
+            for crit_name, (avg_val, cost) in criterion_scores.items():
+                sample_score += avg_val
+                sample_cost += cost
+                per_criterion[crit_name] = avg_val
+        else:
+            # Single vote: use random shuffle (existing behavior)
+            shuffled_criteria = list(config.criteria)
+            random.shuffle(shuffled_criteria)
+            score_tasks = [
+                self._score_criterion(
+                    judge_cfg, sample_text, criterion, worktree_path,
+                    votes=votes, comparison_mode=comparison_mode,
+                )
+                for criterion in shuffled_criteria
+            ]
+            criterion_results = await asyncio.gather(*score_tasks)
+            sample_score = 0.0
+            for criterion, (binary_val, cost) in zip(shuffled_criteria, criterion_results):
+                sample_score += binary_val
+                sample_cost += cost
+                per_criterion[criterion.name] = binary_val
+
+        return sample_score, sample_cost, per_criterion
+
+    def _aggregate_eval_result(
+        self,
+        config: StochasticEval,
+        per_sample_scores: list[float],
+        per_criterion_totals: dict[str, list[float]],
+        total_cost: float,
+    ) -> EvalResult:
+        """Aggregate collected per-sample data into a final EvalResult."""
         aggregate_score = float(np.mean(per_sample_scores))
 
-        # Criterion names in stable original order
         criterion_names = [c.name for c in config.criteria]
 
-        # Per-criterion mean scores
         per_criterion_scores = {
             name: float(np.mean(per_criterion_totals[name]))
             for name in criterion_names
         }
 
-        # 4. Bootstrap CI with reproducible seed from hash of scores
         score_bytes = ",".join(f"{s:.6f}" for s in per_sample_scores).encode()
         seed = int(hashlib.sha256(score_bytes).hexdigest(), 16) % 2**32
         ci_lower, ci_upper = _bootstrap_ci(
@@ -422,6 +437,107 @@ class StochasticEvaluator:
             cost_usd=total_cost,
             criterion_names=criterion_names,
             per_criterion_scores=per_criterion_scores,
+        )
+
+    async def _evaluate_fixed(
+        self,
+        worktree_path: Path,
+        config: StochasticEval,
+        artifact_content: str,
+        prompts: list[str],
+        gen_cfg: AgentConfig,
+        judge_cfg: AgentConfig,
+    ) -> EvalResult:
+        """Fixed-count evaluation: score exactly sample_count samples.
+
+        Produces identical results to the pre-adaptive-sampling logic.
+        Each prompt in prompts corresponds to one sample (prompts length == sample_count).
+        """
+        total_cost = 0.0
+        per_sample_scores: list[float] = []
+        per_criterion_totals: dict[str, list[float]] = {c.name: [] for c in config.criteria}
+
+        sample_tasks = [
+            self._evaluate_single_sample(
+                worktree_path, config, artifact_content, prompt, gen_cfg, judge_cfg,
+            )
+            for prompt in prompts
+        ]
+        sample_results = await asyncio.gather(*sample_tasks)
+
+        for sample_score, sample_cost, per_criterion in sample_results:
+            per_sample_scores.append(sample_score)
+            total_cost += sample_cost
+            for crit_name, crit_val in per_criterion.items():
+                per_criterion_totals[crit_name].append(crit_val)
+
+        return self._aggregate_eval_result(
+            config, per_sample_scores, per_criterion_totals, total_cost,
+        )
+
+    async def _evaluate_adaptive(
+        self,
+        worktree_path: Path,
+        config: StochasticEval,
+        artifact_content: str,
+        prompts: list[str],
+        gen_cfg: AgentConfig,
+        judge_cfg: AgentConfig,
+    ) -> EvalResult:
+        """Adaptive-count evaluation using Cohen's d effect size for early stop / extend.
+
+        Starts with max(min_sample_count, sample_count // 2) samples.
+        Stops early when effect size exceeds early_stop_effect_size.
+        Extends by up to sample_count // 2 additional samples when effect size
+        is below extend_effect_size. Hard ceiling is sample_count * 1.5.
+        """
+        initial_count = max(config.min_sample_count, config.sample_count // 2)
+        max_count = config.sample_count + config.sample_count // 2
+
+        total_cost = 0.0
+        all_scores: list[float] = []
+        per_criterion_totals: dict[str, list[float]] = {c.name: [] for c in config.criteria}
+
+        async def _collect_sample(index: int) -> None:
+            prompt = prompts[index % len(prompts)]
+            sample_score, sample_cost, per_criterion = await self._evaluate_single_sample(
+                worktree_path, config, artifact_content, prompt, gen_cfg, judge_cfg,
+            )
+            all_scores.append(sample_score)
+            nonlocal total_cost
+            total_cost += sample_cost
+            for crit_name, crit_val in per_criterion.items():
+                per_criterion_totals[crit_name].append(crit_val)
+
+        # Collect initial samples sequentially to allow effect-size checks
+        for i in range(initial_count):
+            await _collect_sample(i)
+
+        # Decide: early stop or extend based on Cohen's d against zero
+        n = len(all_scores)
+        if n >= 2:
+            mean = sum(all_scores) / n
+            variance = sum((s - mean) ** 2 for s in all_scores) / (n - 1)
+            std = variance ** 0.5
+            if std > 0:
+                effect_size = abs(mean) / std
+
+                if effect_size > config.early_stop_effect_size:
+                    logger.info(
+                        "Adaptive sampling: early stop at %d/%d samples (d=%.2f)",
+                        n, config.sample_count, effect_size,
+                    )
+                elif effect_size < config.extend_effect_size:
+                    extend_count = min(config.sample_count // 2, max_count - n)
+                    logger.info(
+                        "Adaptive sampling: extending by %d samples (d=%.2f)",
+                        extend_count, effect_size,
+                    )
+                    for i in range(extend_count):
+                        await _collect_sample(n + i)
+
+        return self._aggregate_eval_result(
+            config, all_scores, per_criterion_totals, total_cost,
         )
 
     async def _generate_sample(

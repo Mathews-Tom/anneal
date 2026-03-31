@@ -81,6 +81,8 @@ class AgentConfig(BaseModel):
     context_compression: Literal["none", "moderate", "aggressive"] = "none"
     exploration_model: str = ""
     exploration_ratio: Literal["adaptive", "fixed"] | float = "adaptive"
+    two_phase_mutation: bool = False
+    diagnosis_model: str = ""
 
 
 class DeterministicEval(BaseModel):
@@ -116,6 +118,10 @@ class StochasticEval(BaseModel):
     min_criterion_scores: dict[str, float] = Field(default_factory=dict)
     judgment_votes: int = Field(default=3, gt=0)
     comparison_mode: str = "majority_vote"
+    adaptive_sampling: bool = False
+    min_sample_count: int = Field(default=3, gt=0)
+    early_stop_effect_size: float = Field(default=1.0, gt=0)
+    extend_effect_size: float = Field(default=0.3, gt=0)
 
 
 class MetricConstraint(BaseModel):
@@ -297,6 +303,18 @@ class ArtifactError(Exception):
 # ---------------------------------------------------------------------------
 # Inter-component result types (frozen contracts)
 # ---------------------------------------------------------------------------
+
+
+class DiagnosisResult(BaseModel):
+    """Structured output from the diagnosis step of two-phase mutation."""
+
+    weakest_criteria: list[str]
+    root_cause: str
+    fix_category: Literal[
+        "structural", "content", "formatting", "logic", "coverage", "other"
+    ]
+    suggested_direction: str
+    cost_usd: float = 0.0
 
 
 class EvalResult(NamedTuple):

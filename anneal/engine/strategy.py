@@ -5,6 +5,8 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field
 
+from anneal.engine.types import ExperimentRecord, Outcome
+
 
 class StrategyComponent(BaseModel):
     name: str
@@ -77,6 +79,74 @@ def migrate_program_md(program_md_path: Path) -> StrategyManifest:
     manifest = StrategyManifest()
     manifest.hypothesis_generation.approach = content
     return manifest
+
+
+def _summarize_criterion_performance(records: list[ExperimentRecord]) -> str:
+    """Build per-criterion PASS/FAIL summary from recent experiment records."""
+    if not records:
+        return "No experiments available."
+
+    criterion_stats: dict[str, dict[str, int]] = {}
+    for r in records:
+        if r.per_criterion_scores:
+            for name, score in r.per_criterion_scores.items():
+                if name not in criterion_stats:
+                    criterion_stats[name] = {"pass": 0, "fail": 0}
+                if score >= 0.5:
+                    criterion_stats[name]["pass"] += 1
+                else:
+                    criterion_stats[name]["fail"] += 1
+
+    if not criterion_stats:
+        return "No per-criterion data available."
+
+    lines: list[str] = []
+    for name, stats in sorted(criterion_stats.items(), key=lambda kv: kv[1]["fail"], reverse=True):
+        total = stats["pass"] + stats["fail"]
+        lines.append(f"- {name}: {stats['pass']}/{total} passed ({stats['fail']} failures)")
+    return "\n".join(lines)
+
+
+def evolve_weakest_component(
+    manifest: StrategyManifest,
+    records: list[ExperimentRecord],
+) -> tuple[StrategyComponent, str]:
+    """Identify and prepare evolution prompt for weakest strategy component.
+
+    Returns (target_component, evolution_prompt).
+    """
+    target = manifest.weakest_component()
+
+    relevant_records = [
+        r for r in records
+        if r.outcome in (Outcome.KEPT, Outcome.DISCARDED)
+    ]
+
+    kept_count = sum(1 for r in relevant_records if r.outcome is Outcome.KEPT)
+    scores = [r.score for r in relevant_records] if relevant_records else []
+
+    prompt = (
+        f"## Component Evolution: {target.name}\n\n"
+        f"### Current approach\n{target.approach}\n\n"
+        f"### Performance since last evolution\n"
+        f"- Experiments: {len(relevant_records)}\n"
+        f"- Kept: {kept_count}\n"
+    )
+    if scores:
+        prompt += f"- Score range: [{min(scores):.4f}, {max(scores):.4f}]\n\n"
+    else:
+        prompt += "- Score range: N/A\n\n"
+
+    prompt += (
+        f"### Per-criterion feedback from relevant experiments\n"
+        + _summarize_criterion_performance(relevant_records)
+        + "\n\n"
+        f"Revise ONLY the '{target.name}' component. "
+        f"Keep the revision concise (2-5 sentences). "
+        f"Explain what you're changing and why."
+    )
+
+    return target, prompt
 
 
 def render_manifest_as_prompt(manifest: StrategyManifest) -> str:

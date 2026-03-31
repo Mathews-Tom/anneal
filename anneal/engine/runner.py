@@ -38,6 +38,7 @@ from anneal.engine.search import (
     SimulatedAnnealingSearch,
 )
 from anneal.engine.policy_agent import PolicyAgent
+from anneal.engine.strategy_selector import AgentSelector
 from anneal.engine.taxonomy import FailureTaxonomy
 from anneal.engine.tree_search import UCBTreeSearch
 from anneal.engine.types import (
@@ -177,6 +178,7 @@ class ExperimentRunner:
         self._learning_pool = learning_pool
         self._taxonomy = taxonomy
         self._policy_agent: PolicyAgent | None = None
+        self._agent_selector = AgentSelector()
         self._backup_envs: dict[str, FileBackupEnvironment] = {}
         self._stop_flags: set[str] = set()
         self._stop_lock = threading.Lock()
@@ -331,7 +333,31 @@ class ExperimentRunner:
                 knowledge_context=knowledge_context,
                 policy_instructions=policy_instructions,
                 tree_info=tree_info,
+                knowledge=self._knowledge,
             )
+
+        # 2b. Simplification pre-pass (optional, before mutation)
+        if target.simplify_before_mutate:
+            simplify_prompt = (
+                "Simplify the current artifact without changing its behavior or output. "
+                "Remove redundancy, improve clarity, reduce complexity. "
+                "Do not add new features or change functionality."
+            )
+            try:
+                simplify_result = await self._agent.invoke(
+                    target.agent_config, simplify_prompt, worktree,
+                    target.time_budget_seconds,
+                )
+                if simplify_result.success and target.eval_config.verifiers:
+                    verifier_results = await run_verifiers(worktree, target.eval_config.verifiers)
+                    if not all(passed for _, passed, _ in verifier_results):
+                        if not target.in_place:
+                            await self._git.reset_hard(worktree, pre_sha)
+                        logger.info("Simplification pre-pass reverted (verifier failure)")
+                    else:
+                        logger.info("Simplification pre-pass accepted")
+            except Exception as exc:
+                logger.warning("Simplification pre-pass failed: %s", exc)
 
         # 3. Invoke mutation agent (single-draft or multi-draft)
         n_drafts = target.agent_config.n_drafts

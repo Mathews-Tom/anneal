@@ -214,12 +214,24 @@ class ScopeConfig(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class ResearchConfig(BaseModel):
+    """Configuration for the research operator (external knowledge injection)."""
+
+    enabled: bool = False
+    model: str = ""  # Defaults to agent model
+    max_budget_usd: float = Field(default=0.50, gt=0)
+    max_suggestions: int = Field(default=3, ge=1, le=5)
+    disable_after_failures: int = Field(default=3, gt=0)
+
+
 class PopulationConfig(BaseModel):
     """Configuration for population-based search strategy."""
 
     population_size: int = Field(default=4, gt=0)
     tournament_size: int = Field(default=2, gt=0)
     search_strategy: str = Field(default="greedy")
+    island_count: int = Field(default=1, ge=1, le=5)
+    migration_interval: int = Field(default=10, gt=0)
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +300,7 @@ class OptimizationTarget(BaseModel):
     strategy_mode: Literal["program_md", "manifest"] = "program_md"
     policy_config: PolicyConfig | None = None
     population_config: PopulationConfig | None = None
+    research_config: ResearchConfig | None = None
     eval_environment: EvalEnvironment | None = None
 
 

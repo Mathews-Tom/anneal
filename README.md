@@ -124,11 +124,12 @@ anneal register \
 | [Features](docs/features.md)           | Search strategies, statistical methods, knowledge system |
 | [Architecture](docs/architecture.md)   | Module map and design principles                         |
 | [System Design](docs/system-design.md) | Full technical design document                           |
+| [CI Integration](docs/ci-integration.md) | GitHub Actions workflow and status JSON output          |
 
 ## Testing
 
 ```bash
-uv run pytest tests/ -x -q          # 514 tests
+uv run pytest tests/ -x -q          # 820 tests
 uv run pytest tests/ --cov=anneal    # With coverage
 ```
 

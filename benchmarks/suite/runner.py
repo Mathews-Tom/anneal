@@ -302,6 +302,14 @@ def _execute_run(run: BenchmarkRun, dry_run: bool = False) -> dict[str, object]:
         capture_output=True,
         text=True,
     )  # ignore errors — target may not exist yet
+    # Delete the anneal branch so the worktree starts fresh from HEAD.
+    # Without this, a stale branch retains optimized artifacts from prior runs.
+    subprocess.run(
+        ["git", "branch", "-D", f"anneal/{run.target_name}"],
+        cwd=str(_REPO_ROOT),
+        capture_output=True,
+        text=True,
+    )  # ignore errors — branch may not exist
     reg_result = subprocess.run(
         reg_cmd,
         cwd=str(_REPO_ROOT),

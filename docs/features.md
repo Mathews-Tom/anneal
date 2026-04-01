@@ -28,6 +28,7 @@
 - **Greedy** (default) — accept only strict improvements, verified by statistical test.
 - **Simulated annealing** — adaptive cooling with reheat when acceptance drops below target rate. Escapes local optima early, converges to greedy behavior over time.
 - **Population-based** — tournament selection with LLM-guided crossover. Top candidates' hypotheses are combined into crossover prompts.
+- **Island-based population** — wraps multiple independent population islands with round-robin experiment assignment. Periodic migration copies each island's best candidate to all other islands, balancing solution diversity with cross-pollination. `island_count=1` (default) falls back to standard population search.
 - **Pareto** — multi-objective search over per-criterion score vectors. Maintains a Pareto front; non-dominated trade-off solutions are preserved.
 - **Thompson Sampling** — contextual bandit meta-strategy that adaptively selects between search algorithms based on observed reward.
 - **Bayesian surrogate** — Gaussian Process model predicts mutation quality from experiment history. Expected Improvement acquisition balances exploration and exploitation. Requires optional `scikit-learn`.
@@ -40,6 +41,7 @@
 - **Bradley-Terry comparison** — calibrated Bayesian strength estimation with early stopping.
 - **Eval result caching** — content-hash LRU cache avoids re-evaluating identical artifact content.
 - **Multi-fidelity pipeline** — cheap deterministic stages filter out bad mutations before expensive stochastic evaluation.
+- **Eval consistency monitoring** — tracks per-criterion score variance over sliding windows. Generates consistency reports at configurable intervals to detect evaluator drift.
 
 ## Knowledge System
 
@@ -48,10 +50,17 @@
 - **Domain-aware learning transfer** — cross-domain learnings are penalized by a configurable factor, preventing negative transfer.
 - **Criterion delta exposure** — learning summaries show per-criterion improvements/regressions, not just aggregate score deltas.
 - **MAP-Elites archive** — quality-diversity archive maintaining best solutions per behavioral region.
+- **Episodic memory** — structured `Lesson` objects extracted from each experiment capturing what changed, what improved/regressed, and transferable insights. Stored in experiment records for cross-experiment learning.
+- **Lineage tracking** — traces the chain of accepted mutations leading to the current best artifact, providing causal context for the agent.
 
 ## Operations
 
 - **Meta-optimization** — two complementary timescales: (1) policy agent rewrites mutation instructions every N experiments (continuous), (2) plateau-triggered program.md rewriting (episodic).
+- **Research operator** — external knowledge injection triggered on optimization plateaus. Queries an LLM for technique suggestions and injects them as advisory context hints into mutation prompts. Plateau-gated, budget-capped, and self-disabling after consecutive failures.
+- **Strategy manifest** — structured YAML strategy with named components. Component-level evolution rewrites the weakest component when progress stalls, instead of rewriting the entire strategy.
+- **Two-phase mutation** — structured diagnosis step identifies weakest criteria and root cause before generating a targeted mutation. Diagnosis model can be cheaper than the mutation model.
+- **Context compression** — three modes (none, moderate, aggressive) that trade history detail for token budget. Aggressive mode deduplicates per-criterion trends across experiments.
+- **Adaptive sample sizing** — dynamically extends or early-stops stochastic evaluation based on observed effect size. Reduces eval cost for clear winners and losers.
 - **Stale lock recovery** — scheduler detects and removes lock files older than 1 hour from crashed runners.
 - **Concurrent consolidation safety** — check-and-act consolidation is atomic under FileLock.
 - **Live dashboard** — `anneal dashboard` reads from `.anneal/` directory. No coupling to the runner process.

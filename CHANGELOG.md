@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.3.0] - 2026-04-01
+
+### Features
+
+- **Research Operator**: External knowledge injection triggered on optimization plateaus. Queries an LLM for technique suggestions and injects them as advisory context hints. Plateau-gated, budget-capped, and self-disabling after consecutive failures
+- **Island-Based Population Search**: Multiple independent population islands with round-robin experiment assignment and periodic best-candidate migration. `island_count=1` (default) preserves standard population search behavior
+- **Strategy Manifest**: Structured YAML strategy with named components and component-level evolution. Weakest components are rewritten independently instead of rewriting the entire strategy
+- **Two-Phase Mutation**: Structured diagnosis step identifies weakest criteria and root cause before generating a targeted fix. Diagnosis model can be cheaper than the mutation model
+- **Episodic Memory**: Structured `Lesson` objects extracted from each experiment capturing changes, improvements/regressions, and transferable insights
+- **Eval Consistency Monitoring**: Per-criterion score variance tracking over sliding windows with periodic consistency reports for evaluator drift detection
+- **Adaptive Sample Sizing**: Dynamically extends or early-stops stochastic evaluation based on observed effect size, reducing eval cost for clear outcomes
+- **Context Compression**: Three compression modes (none, moderate, aggressive) trade history detail for token budget. Aggressive mode deduplicates per-criterion trends
+- **Lineage Tracking**: Traces the chain of accepted mutations leading to the current best artifact, providing causal context for the agent
+- **Dual-Agent Selector**: Thompson Sampling meta-strategy that adaptively selects between exploration and exploitation agent configurations
+- **Pareto Front Persistence**: Pareto front saved to JSON for dashboard visualization after each experiment
+- **Component Evolution**: Strategy manifest components track streak-without-improvement and trigger targeted rewriting when stalled
+
+### CLI
+
+- `--island-count` and `--migration-interval` flags for island-based population search
+- `--research-model` and `--research-budget` flags for research operator configuration
+
+### Refactoring
+
+- Extract `ExperimentContext` to reduce pipeline parameter lists across runner methods
+- Deduplicate hypothesis loading with shared loader function and use numpy for variance calculation
+- Deduplicate criterion scoring logic in stochastic evaluator
+- Wire Holm-Bonferroni correction into all search strategies
+- Integrate EvalCache into stochastic evaluation pipeline
+- Add search_strategy config field and strategy factory method
+
+### Fixes
+
+- Resolve unawaited coroutine warnings in eval tests
+- Resolve CI failures from optional dashboard dependency and serialization order
+- Reset consecutive failure counter on `anneal resume`
+- Detect Claude Code error responses and scale eval budgets correctly
+- Use temperature 1.0 in taxonomy classifier and judgment for gpt-5 compatibility
+- Add gpt-5.4-mini pricing and deduplicate cost warnings
+- Fail fast on missing artifact files during registration
+
+### Documentation
+
+- Add CI integration guide with GitHub Actions workflow
+- Improve pricing discoverability and unknown model guidance
+- Document auto-staging and in-place optimization mode
+- Update architecture module map and experiment loop description
+- Update features list with all new capabilities
+
 ## [0.2.0] - 2026-03-24
 
 ### Features

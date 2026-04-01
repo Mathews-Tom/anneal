@@ -17,178 +17,307 @@
       <stop stop-color="#47FF9C"/>
       <stop offset="1" stop-color="#7AA2F7"/>
     </linearGradient>
+    <linearGradient id="loopGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#47FF9C" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#7AA2F7" stop-opacity="0.06"/>
+    </linearGradient>
     <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
-      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#000000" flood-opacity="0.35"/>
+      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+    <filter id="glow">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6"/>
     </filter>
     <style>
-      .title { font: 700 54px Inter, Arial, sans-serif; fill: #F3F7FF; letter-spacing: -0.02em; }
-      .subtitle { font: 400 24px Inter, Arial, sans-serif; fill: #9CB0C9; }
-      .panelTitle { font: 700 24px Inter, Arial, sans-serif; fill: #F3F7FF; letter-spacing: 0.01em; }
-      .h3 { font: 700 20px Inter, Arial, sans-serif; fill: #DCE7F6; }
-      .body { font: 400 17px Inter, Arial, sans-serif; fill: #AFC1D8; }
-      .small { font: 500 14px Inter, Arial, sans-serif; fill: #8EA4BF; }
+      .title { font: 700 48px Inter, Arial, sans-serif; fill: #F3F7FF; letter-spacing: -0.02em; }
+      .subtitle { font: 400 22px Inter, Arial, sans-serif; fill: #9CB0C9; }
+      .panelTitle { font: 700 22px Inter, Arial, sans-serif; fill: #F3F7FF; letter-spacing: 0.01em; }
+      .h3 { font: 700 18px Inter, Arial, sans-serif; fill: #DCE7F6; }
+      .body { font: 400 16px Inter, Arial, sans-serif; fill: #AFC1D8; }
+      .small { font: 500 13px Inter, Arial, sans-serif; fill: #8EA4BF; }
       .mono { font: 600 14px "JetBrains Mono", "SFMono-Regular", Consolas, monospace; fill: #DCE7F6; }
-      .chipText { font: 600 15px Inter, Arial, sans-serif; fill: #DCE7F6; }
-      .metricNum { font: 700 28px Inter, Arial, sans-serif; fill: #47FF9C; }
-      .metricLabel { font: 500 15px Inter, Arial, sans-serif; fill: #9CB0C9; }
+      .chipText { font: 600 14px Inter, Arial, sans-serif; }
+      .stepNum { font: 700 16px Inter, Arial, sans-serif; fill: #47FF9C; }
+      .stepLabel { font: 700 15px Inter, Arial, sans-serif; fill: #F3F7FF; }
+      .stepBody { font: 400 13px Inter, Arial, sans-serif; fill: #8EA4BF; }
+      .tagText { font: 600 12px Inter, Arial, sans-serif; }
     </style>
   </defs>
 
   <rect width="1600" height="900" fill="url(#bg)"/>
 
   <!-- ambient glows -->
-  <circle cx="1360" cy="90" r="240" fill="#47FF9C" opacity="0.05"/>
-  <circle cx="1450" cy="750" r="220" fill="#7AA2F7" opacity="0.05"/>
-  <circle cx="160" cy="780" r="180" fill="#F7768E" opacity="0.04"/>
+  <circle cx="800" cy="450" r="380" fill="#47FF9C" opacity="0.025"/>
+  <circle cx="1400" cy="120" r="200" fill="#7AA2F7" opacity="0.04"/>
+  <circle cx="200" cy="800" r="200" fill="#F7768E" opacity="0.03"/>
 
-  <!-- hero -->
-  <rect x="60" y="48" width="1480" height="160" rx="28" fill="url(#hero)" stroke="#233248" stroke-width="1.5"/>
-  <text x="100" y="176" class="title">anneal</text>
-  <text x="100" y="216" class="subtitle">Autonomous optimization for any measurable artifact</text>
-  <text x="100" y="252" class="body">Let an AI agent improve code, prompts, and configs overnight by mutating a target, evaluating results, and keeping only winning changes.</text>
+  <!-- ========== HERO ========== -->
+  <rect x="60" y="36" width="1480" height="120" rx="24" fill="url(#hero)" stroke="#233248" stroke-width="1.5"/>
+  <text x="100" y="90" class="title">anneal</text>
+  <text x="290" y="82" class="subtitle">How autonomous optimization works</text>
+  <text x="290" y="110" class="body">Register a target, define "better," and let the agent run experiments in a loop until your artifact improves.</text>
 
-  <!-- right hero card -->
+  <!-- install badge -->
   <g filter="url(#shadow)">
-    <rect x="1110" y="78" width="360" height="102" rx="22" fill="#0E1520" stroke="#26364D"/>
+    <rect x="1180" y="56" width="320" height="72" rx="18" fill="#0E1520" stroke="#26364D"/>
   </g>
-  <text x="1140" y="118" class="small">Quick install</text>
-  <text x="1140" y="150" class="mono">uv tool install anneal-cli</text>
-  <text x="1140" y="176" class="small">Python 3.12+</text>
+  <text x="1210" y="86" class="small">Quick install</text>
+  <text x="1210" y="112" class="mono">uv tool install anneal-cli</text>
 
-  <!-- metrics -->
+  <!-- ========== MAIN LOOP: Central circular flow ========== -->
+  <!-- Loop background -->
+  <rect x="60" y="176" width="1060" height="540" rx="24" fill="url(#panel)" stroke="#233248" filter="url(#shadow)"/>
+  <text x="92" y="215" class="panelTitle">The optimization loop</text>
+  <rect x="92" y="226" width="180" height="4" rx="2" fill="url(#accentLine)"/>
+
+  <!-- Circular flow: 8 steps arranged in a rounded rectangle path -->
+  <!-- Top row: steps 1-4 (left to right) -->
+
+  <!-- Step 1: Context Assembly -->
   <g>
-    <rect x="1090" y="214" width="110" height="74" rx="18" fill="#0E1520" stroke="#223146"/>
-    <text x="1116" y="247" class="metricNum">245</text>
-    <text x="1116" y="271" class="metricLabel">commits</text>
-
-    <rect x="1216" y="214" width="110" height="74" rx="18" fill="#0E1520" stroke="#223146"/>
-    <text x="1246" y="247" class="metricNum">492</text>
-    <text x="1237" y="271" class="metricLabel">tests</text>
-
-    <rect x="1342" y="214" width="128" height="74" rx="18" fill="#0E1520" stroke="#223146"/>
-    <text x="1368" y="247" class="metricNum">v0.2.0</text>
-    <text x="1367" y="271" class="metricLabel">latest release</text>
+    <rect x="100" y="260" width="220" height="80" rx="16" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="122" y="286" class="stepNum">1</text>
+    <text x="142" y="286" class="stepLabel">Assemble Context</text>
+    <text x="122" y="308" class="stepBody">Artifact + history + learnings</text>
+    <text x="122" y="324" class="stepBody">+ research hints + lineage</text>
   </g>
 
-  <!-- row 1 -->
-  <g filter="url(#shadow)">
-    <rect x="60" y="252" width="460" height="270" rx="24" fill="url(#panel)" stroke="#233248"/>
-    <rect x="540" y="252" width="520" height="270" rx="24" fill="url(#panel)" stroke="#233248"/>
-    <rect x="1080" y="252" width="460" height="270" rx="24" fill="url(#panel)" stroke="#233248"/>
+  <!-- Arrow 1→2 -->
+  <path d="M320 300H356" stroke="#5B769B" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M354 300l-7-5v10l7-5z" fill="#5B769B"/>
+
+  <!-- Step 2: Hypothesize -->
+  <g>
+    <rect x="360" y="260" width="220" height="80" rx="16" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="382" y="286" class="stepNum">2</text>
+    <text x="402" y="286" class="stepLabel">Hypothesize</text>
+    <text x="382" y="308" class="stepBody">LLM generates mutation</text>
+    <text x="382" y="324" class="stepBody">Multi-draft + two-phase diagnosis</text>
   </g>
 
-  <!-- panel 1 -->
-  <text x="90" y="295" class="panelTitle">What it does</text>
-  <rect x="90" y="308" width="120" height="4" rx="2" fill="url(#accentLine)"/>
-  <text x="90" y="350" class="body">You register a target file, define how “better” is measured, and let the system run autonomous experiments in a git repo.</text>
+  <!-- Arrow 2→3 -->
+  <path d="M580 300H616" stroke="#5B769B" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M614 300l-7-5v10l7-5z" fill="#5B769B"/>
+
+  <!-- Step 3: Validate -->
+  <g>
+    <rect x="620" y="260" width="220" height="80" rx="16" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="642" y="286" class="stepNum">3</text>
+    <text x="662" y="286" class="stepLabel">Validate</text>
+    <text x="642" y="308" class="stepBody">Scope enforcement</text>
+    <text x="642" y="324" class="stepBody">Verification gates</text>
+  </g>
+
+  <!-- Arrow 3→4 -->
+  <path d="M840 300H876" stroke="#5B769B" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M874 300l-7-5v10l7-5z" fill="#5B769B"/>
+
+  <!-- Step 4: Evaluate -->
+  <g>
+    <rect x="880" y="260" width="220" height="80" rx="16" fill="#0D1520" stroke="#47FF9C" stroke-opacity="0.5"/>
+    <text x="902" y="286" class="stepNum">4</text>
+    <text x="922" y="286" class="stepLabel">Evaluate</text>
+    <text x="902" y="308" class="stepBody">Deterministic: run + parse score</text>
+    <text x="902" y="324" class="stepBody">Stochastic: LLM judge N samples</text>
+  </g>
+
+  <!-- Arrow 4→5 (down right) -->
+  <path d="M990 340V376" stroke="#5B769B" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M990 374l-5-7h10l-5 7z" fill="#5B769B"/>
+
+  <!-- Middle row: steps 5-6 (right to left) -->
+
+  <!-- Step 5: Decide -->
+  <g>
+    <rect x="880" y="380" width="220" height="80" rx="16" fill="#0D1520" stroke="#47FF9C" stroke-opacity="0.5"/>
+    <text x="902" y="406" class="stepNum">5</text>
+    <text x="922" y="406" class="stepLabel">Statistical Decision</text>
+    <text x="902" y="428" class="stepBody">Wilcoxon / effect-size test</text>
+    <text x="902" y="444" class="stepBody">Keep winner or revert</text>
+  </g>
+
+  <!-- Arrow 5→6 -->
+  <path d="M880 420H844" stroke="#5B769B" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M846 420l7-5v10l-7-5z" fill="#5B769B"/>
+
+  <!-- Step 6: Learn -->
+  <g>
+    <rect x="620" y="380" width="220" height="80" rx="16" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="642" y="406" class="stepNum">6</text>
+    <text x="662" y="406" class="stepLabel">Learn</text>
+    <text x="642" y="428" class="stepBody">Extract structured lessons</text>
+    <text x="642" y="444" class="stepBody">Update knowledge store</text>
+  </g>
+
+  <!-- Arrow 6→7 -->
+  <path d="M620 420H584" stroke="#5B769B" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M586 420l7-5v10l-7-5z" fill="#5B769B"/>
+
+  <!-- Step 7: Adapt -->
+  <g>
+    <rect x="360" y="380" width="220" height="80" rx="16" fill="#0D1520" stroke="#7AA2F7" stroke-opacity="0.5"/>
+    <text x="382" y="406" class="stepNum">7</text>
+    <text x="402" y="406" class="stepLabel">Adapt Strategy</text>
+    <text x="382" y="428" class="stepBody">Policy rewrite / component evolve</text>
+    <text x="382" y="444" class="stepBody">Research operator on plateau</text>
+  </g>
+
+  <!-- Arrow 7→8 -->
+  <path d="M360 420H324" stroke="#5B769B" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M326 420l7-5v10l-7-5z" fill="#5B769B"/>
+
+  <!-- Step 8: Consolidate -->
+  <g>
+    <rect x="100" y="380" width="220" height="80" rx="16" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="122" y="406" class="stepNum">8</text>
+    <text x="142" y="406" class="stepLabel">Consolidate</text>
+    <text x="122" y="428" class="stepBody">Periodic summary + drift check</text>
+    <text x="122" y="444" class="stepBody">Island migration if due</text>
+  </g>
+
+  <!-- Loop-back arrow: 8 → 1 (left side, going up) -->
+  <path d="M210 380V360 M210 340V266" stroke="#47FF9C" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="6 4" opacity="0.5"/>
+  <text x="140" y="360" class="tagText" fill="#47FF9C">repeat</text>
+
+  <!-- ========== SEARCH STRATEGIES (below loop) ========== -->
+  <text x="92" y="510" class="h3">Search Strategies</text>
+
+  <!-- Strategy tags -->
+  <g>
+    <rect x="92" y="524" width="80" height="30" rx="10" fill="#47FF9C" fill-opacity="0.12" stroke="#47FF9C" stroke-opacity="0.3"/>
+    <text x="110" y="544" class="tagText" fill="#47FF9C">Greedy</text>
+
+    <rect x="184" y="524" width="148" height="30" rx="10" fill="#47FF9C" fill-opacity="0.12" stroke="#47FF9C" stroke-opacity="0.3"/>
+    <text x="204" y="544" class="tagText" fill="#47FF9C">Simulated Annealing</text>
+
+    <rect x="344" y="524" width="100" height="30" rx="10" fill="#7AA2F7" fill-opacity="0.12" stroke="#7AA2F7" stroke-opacity="0.3"/>
+    <text x="358" y="544" class="tagText" fill="#7AA2F7">Population</text>
+
+    <rect x="456" y="524" width="130" height="30" rx="10" fill="#7AA2F7" fill-opacity="0.12" stroke="#7AA2F7" stroke-opacity="0.3"/>
+    <text x="470" y="544" class="tagText" fill="#7AA2F7">Island Migration</text>
+
+    <rect x="598" y="524" width="72" height="30" rx="10" fill="#7AA2F7" fill-opacity="0.12" stroke="#7AA2F7" stroke-opacity="0.3"/>
+    <text x="614" y="544" class="tagText" fill="#7AA2F7">Pareto</text>
+
+    <rect x="682" y="524" width="110" height="30" rx="10" fill="#F7768E" fill-opacity="0.12" stroke="#F7768E" stroke-opacity="0.3"/>
+    <text x="696" y="544" class="tagText" fill="#F7768E">UCB Tree Search</text>
+
+    <rect x="804" y="524" width="120" height="30" rx="10" fill="#F7768E" fill-opacity="0.12" stroke="#F7768E" stroke-opacity="0.3"/>
+    <text x="818" y="544" class="tagText" fill="#F7768E">Thompson Sampling</text>
+
+    <rect x="936" y="524" width="150" height="30" rx="10" fill="#F7768E" fill-opacity="0.12" stroke="#F7768E" stroke-opacity="0.3"/>
+    <text x="950" y="544" class="tagText" fill="#F7768E">Bayesian Surrogate</text>
+  </g>
+
+  <!-- Eval modes row -->
+  <text x="92" y="592" class="h3">Evaluation</text>
+  <rect x="92" y="608" width="480" height="44" rx="14" fill="#0D1520" stroke="#2A3A50"/>
+  <text x="114" y="633" class="stepLabel">Deterministic</text>
+  <text x="262" y="633" class="stepBody">Shell command produces a score (coverage, latency, file size)</text>
+
+  <rect x="588" y="608" width="510" height="44" rx="14" fill="#0D1520" stroke="#2A3A50"/>
+  <text x="610" y="633" class="stepLabel">Stochastic</text>
+  <text x="724" y="633" class="stepBody">LLM judges N samples against K binary criteria (YES/NO)</text>
+
+  <!-- Stats row -->
+  <text x="92" y="690" class="h3">Statistical Rigor</text>
+  <g>
+    <rect x="92" y="702" width="168" height="28" rx="9" fill="#141C27" stroke="#233248"/>
+    <text x="110" y="722" class="tagText" fill="#AFC1D8">Wilcoxon signed-rank</text>
+
+    <rect x="272" y="702" width="158" height="28" rx="9" fill="#141C27" stroke="#233248"/>
+    <text x="290" y="722" class="tagText" fill="#AFC1D8">Holm-Bonferroni</text>
+
+    <rect x="442" y="702" width="130" height="28" rx="9" fill="#141C27" stroke="#233248"/>
+    <text x="460" y="722" class="tagText" fill="#AFC1D8">Bootstrap CI</text>
+
+    <rect x="584" y="702" width="148" height="28" rx="9" fill="#141C27" stroke="#233248"/>
+    <text x="602" y="722" class="tagText" fill="#AFC1D8">Held-out validation</text>
+
+    <rect x="744" y="702" width="120" height="28" rx="9" fill="#141C27" stroke="#233248"/>
+    <text x="762" y="722" class="tagText" fill="#AFC1D8">Drift detection</text>
+
+    <rect x="876" y="702" width="148" height="28" rx="9" fill="#141C27" stroke="#233248"/>
+    <text x="894" y="722" class="tagText" fill="#AFC1D8">Adaptive sampling</text>
+  </g>
+
+  <!-- ========== RIGHT COLUMN: Features ========== -->
+  <rect x="1140" y="176" width="400" height="540" rx="24" fill="url(#panel)" stroke="#233248" filter="url(#shadow)"/>
+
+  <!-- Safety & Control -->
+  <text x="1172" y="215" class="panelTitle">Safety &amp; Control</text>
+  <rect x="1172" y="228" width="140" height="4" rx="2" fill="url(#accentLine)"/>
 
   <g>
-    <circle cx="106" cy="397" r="7" fill="#47FF9C"/>
-    <text x="126" y="403" class="body">Mutates an artifact</text>
-    <circle cx="106" cy="437" r="7" fill="#7AA2F7"/>
-    <text x="126" y="443" class="body">Runs an evaluation loop</text>
-    <circle cx="106" cy="477" r="7" fill="#F7768E"/>
-    <text x="126" y="483" class="body">Keeps winners, reverts losers</text>
+    <circle cx="1188" cy="262" r="5" fill="#47FF9C"/>
+    <text x="1204" y="268" class="body">Scope enforcement (editable/immutable)</text>
+    <circle cx="1188" cy="290" r="5" fill="#47FF9C"/>
+    <text x="1204" y="296" class="body">Git isolation per target (worktree)</text>
+    <circle cx="1188" cy="318" r="5" fill="#47FF9C"/>
+    <text x="1204" y="324" class="body">Budget caps (per-experiment + daily)</text>
+    <circle cx="1188" cy="346" r="5" fill="#47FF9C"/>
+    <text x="1204" y="352" class="body">Time-boxing with SIGKILL fallback</text>
+    <circle cx="1188" cy="374" r="5" fill="#47FF9C"/>
+    <text x="1204" y="380" class="body">Verification gates before eval</text>
   </g>
 
-  <rect x="90" y="488" width="400" height="1" fill="#243348"/>
-  <text x="90" y="514" class="small">Good fit</text>
-  <text x="90" y="540" class="body">Prompt tuning · test coverage · code golf · measurable docs or config optimization</text>
-
-  <!-- panel 2 core loop -->
-  <text x="570" y="295" class="panelTitle">Core optimization loop</text>
-  <rect x="570" y="308" width="170" height="4" rx="2" fill="url(#accentLine)"/>
-
-  <!-- flow boxes -->
-  <g>
-    <rect x="586" y="350" width="128" height="46" rx="14" fill="#0D1520" stroke="#2A3A50"/>
-    <text x="611" y="379" class="chipText">Register</text>
-
-    <rect x="742" y="350" width="128" height="46" rx="14" fill="#0D1520" stroke="#2A3A50"/>
-    <text x="776" y="379" class="chipText">Mutate</text>
-
-    <rect x="898" y="350" width="128" height="46" rx="14" fill="#0D1520" stroke="#2A3A50"/>
-    <text x="926" y="379" class="chipText">Evaluate</text>
-
-    <path d="M714 373H740" stroke="#5B769B" stroke-width="3" stroke-linecap="round"/>
-    <path d="M870 373H896" stroke="#5B769B" stroke-width="3" stroke-linecap="round"/>
-    <path d="M732 373l-8 -6v12l8 -6z" fill="#5B769B"/>
-    <path d="M888 373l-8 -6v12l8 -6z" fill="#5B769B"/>
-
-    <rect x="664" y="428" width="160" height="46" rx="14" fill="#0D1520" stroke="#2A3A50"/>
-    <text x="704" y="457" class="chipText">Keep / Revert</text>
-
-    <rect x="850" y="428" width="160" height="46" rx="14" fill="#0D1520" stroke="#2A3A50"/>
-    <text x="896" y="457" class="chipText">Learn</text>
-
-    <path d="M962 396V418" stroke="#5B769B" stroke-width="3" stroke-linecap="round"/>
-    <path d="M744 428V407" stroke="#5B769B" stroke-width="3" stroke-linecap="round"/>
-    <path d="M824 451H848" stroke="#5B769B" stroke-width="3" stroke-linecap="round"/>
-    <path d="M846 451l-8 -6v12l8 -6z" fill="#5B769B"/>
-
-    <path d="M1010 451C1038 451 1038 503 980 503H690C635 503 635 430 660 430" stroke="#314662" stroke-width="3" fill="none"/>
-    <path d="M655 430l12 2l-6 10z" fill="#314662"/>
-  </g>
-  <text x="572" y="505" class="small">All experiments are tracked as git history, so review and rollback stay auditable.</text>
-
-  <!-- panel 3 eval modes -->
-  <text x="1110" y="295" class="panelTitle">Two evaluation modes</text>
-  <rect x="1110" y="308" width="180" height="4" rx="2" fill="url(#accentLine)"/>
-
-  <rect x="1110" y="340" width="400" height="74" rx="18" fill="#0D1520" stroke="#2A3A50"/>
-  <text x="1134" y="370" class="h3">Deterministic</text>
-  <text x="1134" y="395" class="body">A shell command produces a numeric score. Good for coverage, performance, file size, or build time.</text>
-
-  <rect x="1110" y="430" width="400" height="74" rx="18" fill="#0D1520" stroke="#2A3A50"/>
-  <text x="1134" y="460" class="h3">Stochastic</text>
-  <text x="1134" y="485" class="body">An LLM judges multiple samples against binary criteria. Good for prompts, docs, and variable-output tasks.</text>
-
-  <!-- row 2 -->
-  <g filter="url(#shadow)">
-    <rect x="60" y="548" width="710" height="292" rx="24" fill="url(#panel)" stroke="#233248"/>
-    <rect x="790" y="548" width="750" height="292" rx="24" fill="url(#panel)" stroke="#233248"/>
-  </g>
-
-  <!-- left bottom: examples -->
-  <text x="90" y="591" class="panelTitle">Representative examples</text>
-  <rect x="90" y="604" width="210" height="4" rx="2" fill="url(#accentLine)"/>
+  <!-- Knowledge System -->
+  <text x="1172" y="420" class="panelTitle">Knowledge System</text>
+  <rect x="1172" y="433" width="160" height="4" rx="2" fill="url(#accentLine)"/>
 
   <g>
-    <rect x="90" y="632" width="650" height="52" rx="16" fill="#0D1520" stroke="#2A3A50"/>
-    <text x="114" y="664" class="h3">Prompt optimization</text>
-    <text x="356" y="664" class="body">Rewrite a system prompt and score summaries with LLM-based criteria.</text>
-
-    <rect x="90" y="698" width="650" height="52" rx="16" fill="#0D1520" stroke="#2A3A50"/>
-    <text x="114" y="730" class="h3">Test coverage</text>
-    <text x="268" y="730" class="body">Add pytest cases, run coverage, and maximize the measured score.</text>
-
-    <rect x="90" y="764" width="650" height="52" rx="16" fill="#0D1520" stroke="#2A3A50"/>
-    <text x="114" y="796" class="h3">Code golf</text>
-    <text x="234" y="796" class="body">Minimize file size while preserving byte-identical output.</text>
+    <circle cx="1188" cy="464" r="5" fill="#7AA2F7"/>
+    <text x="1204" y="470" class="body">Episodic memory (structured lessons)</text>
+    <circle cx="1188" cy="492" r="5" fill="#7AA2F7"/>
+    <text x="1204" y="498" class="body">TF-IDF + embedding retrieval</text>
+    <circle cx="1188" cy="520" r="5" fill="#7AA2F7"/>
+    <text x="1204" y="526" class="body">Cross-project learning transfer</text>
+    <circle cx="1188" cy="548" r="5" fill="#7AA2F7"/>
+    <text x="1204" y="554" class="body">Lineage tracking (mutation chain)</text>
+    <circle cx="1188" cy="576" r="5" fill="#7AA2F7"/>
+    <text x="1204" y="582" class="body">MAP-Elites quality-diversity archive</text>
   </g>
 
-  <!-- right bottom: architecture/docs -->
-  <text x="820" y="591" class="panelTitle">Repo shape</text>
-  <rect x="820" y="604" width="120" height="4" rx="2" fill="url(#accentLine)"/>
+  <!-- Adaptation -->
+  <text x="1172" y="620" class="panelTitle">Adaptation</text>
+  <rect x="1172" y="633" width="120" height="4" rx="2" fill="url(#accentLine)"/>
 
   <g>
-    <rect x="820" y="634" width="132" height="42" rx="14" fill="#0D1520" stroke="#2A3A50"/>
-    <text x="856" y="661" class="chipText">anneal/</text>
-
-    <rect x="968" y="634" width="132" height="42" rx="14" fill="#0D1520" stroke="#2A3A50"/>
-    <text x="997" y="661" class="chipText">docs/</text>
-
-    <rect x="1116" y="634" width="150" height="42" rx="14" fill="#0D1520" stroke="#2A3A50"/>
-    <text x="1152" y="661" class="chipText">examples/</text>
-
-    <rect x="1282" y="634" width="140" height="42" rx="14" fill="#0D1520" stroke="#2A3A50"/>
-    <text x="1316" y="661" class="chipText">tests/</text>
+    <circle cx="1188" cy="662" r="5" fill="#F7768E"/>
+    <text x="1204" y="668" class="body">Policy agent (instruction rewriting)</text>
+    <circle cx="1188" cy="690" r="5" fill="#F7768E"/>
+    <text x="1204" y="696" class="body">Research operator (plateau escape)</text>
   </g>
 
-  <text x="820" y="720" class="body">The repo includes documentation for overview, evaluation guidance, recipes, use cases, features, architecture, and system design.</text>
+  <!-- ========== BOTTOM BAR: Examples ========== -->
+  <rect x="60" y="740" width="1480" height="120" rx="24" fill="url(#panel)" stroke="#233248" filter="url(#shadow)"/>
 
-  <text x="820" y="770" class="small">Key positioning</text>
-  <text x="820" y="800" class="body">This is not a generic optimizer package. It is an agentic experimentation loop for measurable artifacts inside a git-based workflow.</text>
+  <text x="92" y="778" class="panelTitle">Works for</text>
+  <rect x="92" y="790" width="100" height="4" rx="2" fill="url(#accentLine)"/>
 
-  <!-- footer -->
+  <g>
+    <rect x="92" y="808" width="170" height="36" rx="12" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="116" y="832" class="chipText" fill="#47FF9C">Prompt tuning</text>
+
+    <rect x="278" y="808" width="158" height="36" rx="12" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="298" y="832" class="chipText" fill="#47FF9C">Test coverage</text>
+
+    <rect x="452" y="808" width="124" height="36" rx="12" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="474" y="832" class="chipText" fill="#7AA2F7">Code golf</text>
+
+    <rect x="592" y="808" width="164" height="36" rx="12" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="612" y="832" class="chipText" fill="#7AA2F7">Config tuning</text>
+
+    <rect x="772" y="808" width="192" height="36" rx="12" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="792" y="832" class="chipText" fill="#7AA2F7">RAG optimization</text>
+
+    <rect x="980" y="808" width="186" height="36" rx="12" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="1000" y="832" class="chipText" fill="#F7768E">Agent orchestration</text>
+
+    <rect x="1182" y="808" width="200" height="36" rx="12" fill="#0D1520" stroke="#2A3A50"/>
+    <text x="1202" y="832" class="chipText" fill="#F7768E">ML training configs</text>
+  </g>
+
+  <!-- Right side: positioning -->
+  <text x="1166" y="778" class="small">Every experiment is a git commit. Every mutation is scope-enforced. Every decision is logged.</text>
+
 </svg>

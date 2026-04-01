@@ -1,70 +1,158 @@
-% introduction.tex
-%
-% Flow:
-%   1. Hook: LLMs as optimization oracles — the opportunity
-%   2. Problem: current approaches lack rigor
-%   3. Gap analysis: what is missing
-%   4. Contributions: anneal framework
-%   5. Results preview
-%   6. Paper structure
-
 \section{Introduction}
 \label{sec:introduction}
 
-% --- 1. Hook ---
-% Describe the general opportunity: LLMs can propose improvements to software
-% artifacts (prompts, code, configs). Give 2-3 concrete motivating examples.
-\TODO{Write the hook paragraph: LLMs as optimization oracles. Cite 2-3 recent
-examples of LLM-guided optimization (AlphaEvolve, OPRO, DSPy).}
+Large language models have demonstrated a striking capacity to act as
+optimization oracles: given a text artifact and a description of what ``better''
+means, an LLM can propose targeted mutations that improve performance on
+measurable objectives~\cite{novikov2025alphaevolve, romera2024funsearch}.
+This capability extends far beyond code---prompts, configuration files, system
+instructions, and any other text-based artifact amenable to automated evaluation
+are candidates for LLM-guided search.
+Yet the gap between ``an LLM can suggest edits'' and ``an LLM reliably improves
+artifacts'' remains wide.
+Bridging it requires solving four interrelated problems that current tools
+address only partially, if at all.
 
-% --- 2. Problem Statement ---
-% Describe how existing approaches treat optimization as ad hoc trial-and-error:
-%   - No statistical significance testing between iterations
-%   - Greedy hillclimbing without diversity maintenance
-%   - No cross-run knowledge accumulation
-%   - Expensive stochastic evaluation without adaptive stopping
-\TODO{Write the problem paragraph. Key point: existing systems produce results
-that cannot be reliably reproduced or compared across runs.}
+\paragraph{Statistical rigor.}
+When evaluation is stochastic---an LLM judge scoring prompt outputs, a noisy
+benchmark, a test suite with non-deterministic ordering---raw score comparisons
+are unreliable.
+A candidate that scores 0.82 versus a baseline of 0.80 may reflect genuine
+improvement or sampling noise.
+Prompt optimization tools such as DSPy~\cite{khattab2024dspy} and
+EvoPrompt~\cite{guo2023evoprompt} typically compare mean scores without
+hypothesis testing, leading to false-positive acceptances that compound over
+sequential experiments.
+The machine learning evaluation literature has long warned against this
+practice~\cite{dror2018hitchhiker}, yet optimization frameworks rarely
+incorporate the recommended statistical machinery.
 
-% --- 3. Gap Analysis ---
-% Enumerate the specific gaps:
-%   G1: Statistical rigor — no hypothesis testing over optimization runs
-%   G2: Structured search — no strategy selection or diversity mechanisms
-%   G3: Knowledge accumulation — no memory across optimization sessions
-%   G4: Evaluation efficiency — stochastic eval cost not controlled
-\TODO{Write the gap analysis paragraph.}
+\paragraph{Structured search.}
+Most LLM-guided optimization systems use greedy hill-climbing: accept an edit if
+the score improves, reject otherwise.
+Greedy search is prone to local optima, particularly in the combinatorial space
+of text mutations where small edits can interact non-linearly.
+Metaheuristic search---simulated annealing, population-based methods, bandit
+algorithms---offers well-understood mechanisms for escaping local optima and
+balancing exploration with exploitation, yet these strategies have seen limited
+adoption in LLM-guided settings.
+AlphaEvolve~\cite{novikov2025alphaevolve} uses an island-based evolutionary
+approach but is tightly coupled to code optimization;
+Promptbreeder~\cite{fernando2023promptbreeder} evolves mutation operators but
+provides no formal search strategy selection.
 
-% --- 4. Contributions ---
-% We present anneal, making the following contributions:
-\TODO{Introduce anneal. Frame as a framework, not a tool.}
+\paragraph{Knowledge accumulation.}
+Each experiment in an optimization run generates information: what changed, what
+improved, what regressed, and why.
+Current systems discard this information after the accept/reject decision,
+forcing the optimizer to rediscover lessons from prior experiments.
+Effective optimization requires episodic memory---structured records of past
+experiments that inform future mutations---and cross-target knowledge transfer
+that lets insights from one optimization task accelerate another.
 
-The contributions of this paper are:
-\begin{itemize}
-  \item \textbf{Framework}: \textsc{anneal}, an open-source framework for
-    artifact-agnostic LLM-guided optimization with a clean
-    artifact--eval--agent abstraction (\cref{sec:system-design}).
-  \item \textbf{Enhancements}: \NUM{16} enhancements across four tracks
-    (Representation, Search, Knowledge, Evaluation) with design rationale
-    (\cref{sec:enhancements}).
-  \item \textbf{Evaluation}: A benchmark suite of 5 targets across 3 domains,
-    with 10 independent runs per configuration and Wilcoxon signed-rank
-    testing with Holm-Bonferroni correction (\cref{sec:evaluation}).
-  \item \textbf{Empirical Results}: \TODO{Summarize top-line result here after
-    benchmarks are complete.} (\cref{sec:results}).
-\end{itemize}
+\paragraph{Safety and reproducibility.}
+LLM-guided optimization involves executing generated code, running evaluation
+commands, and making irreversible file changes.
+Without isolation, a bad mutation can corrupt the working directory; without
+budget controls, a stochastic evaluation loop can exhaust API credits overnight.
+Reproducibility demands that every experiment state be recoverable, every
+comparison be auditable, and every cost be tracked.
 
-% --- 5. Results Preview ---
-% One paragraph summarizing the key experimental finding.
-% Fill in after Task 5.4.
-\TODO{Write results preview paragraph. Reference specific targets where
-treatment outperforms control.}
+\medskip
 
-% --- 6. Paper Structure ---
-The remainder of this paper is organized as follows.
-\Cref{sec:related-work} surveys related work.
-\Cref{sec:system-design} describes the \textsc{anneal} architecture.
-\Cref{sec:enhancements} details the four enhancement tracks.
-\Cref{sec:evaluation} describes the experimental setup.
-\Cref{sec:results} presents empirical results.
-\Cref{sec:discussion} discusses limitations and threats to validity.
+No existing system addresses all four concerns simultaneously.
+DSPy~\cite{khattab2024dspy} and OPRO~\cite{yang2024opro} focus on prompt
+optimization without structured search or statistical testing.
+AlphaEvolve~\cite{novikov2025alphaevolve} provides evolutionary search for code
+but lacks statistical comparison and knowledge transfer.
+ProTeGi~\cite{pryzant2023protegi} uses gradient-inspired textual feedback but
+operates greedily with no memory.
+FunSearch~\cite{romera2024funsearch} pairs LLMs with evaluators but is
+restricted to function-level code search with best-shot selection.
+
+\subsection{Contributions}
+
+We present \textsc{anneal}, an open-source framework for autonomous artifact
+optimization that addresses the four gaps above.
+Our contributions are:
+
+\begin{enumerate}
+  \item \textbf{Statistically grounded comparison.}
+    Stochastic evaluations are compared via the Wilcoxon signed-rank
+    test~\cite{wilcoxon1945individual} with Holm--Bonferroni
+    correction~\cite{holm1979simple} for sequential multiplicity.
+    %
+    Position-bias-cancelled Bradley--Terry scoring~\cite{bradley1952rank}
+    calibrates the LLM judge by splitting votes between forward and reverse
+    criterion orderings.
+    %
+    Adaptive sample sizing extends or early-stops evaluation based on observed
+    effect size, reducing cost for clear outcomes.
+
+  \item \textbf{Structured, strategy-diverse search.}
+    Beyond greedy hill-climbing, \textsc{anneal} implements simulated annealing
+    with adaptive cooling and reheat, population-based search with tournament
+    selection and LLM-guided crossover, island migration for diversity
+    maintenance, and Pareto search for multi-objective optimization.
+    %
+    A Thompson Sampling meta-strategy~\cite{thompson1933likelihood,
+    chapelle2011empirical} selects among these algorithms based on observed
+    reward, treating strategy selection itself as a bandit problem.
+
+  \item \textbf{Episodic knowledge and cross-domain transfer.}
+    Each experiment produces a structured \texttt{Lesson} capturing what changed,
+    which criteria improved or regressed, and transferable insights.
+    %
+    A cross-target learning pool shares knowledge across optimization tasks with
+    domain-aware relevance filtering.
+    %
+    A strategy manifest decomposes the mutation approach into named
+    components---hypothesis generation, context assembly, mutation style, failure
+    analysis---and evolves only the weakest component when progress stalls.
+    %
+    A research operator injects external knowledge during plateaus.
+
+  \item \textbf{Git-native isolation and safety.}
+    Every experiment runs in a dedicated git worktree, making all mutations
+    reversible via \texttt{git reset}.
+    %
+    Scope enforcement restricts agent edits to declared file paths, rejecting
+    path traversal and absolute paths.
+    %
+    Budget caps (per-experiment and daily), cost tracking per model, disk space
+    checks, and process-group time-boxing prevent runaway resource consumption.
+
+  \item \textbf{Domain-agnostic design.}
+    The framework optimizes any text artifact evaluable by a shell command
+    (deterministic mode) or an LLM judge against binary criteria (stochastic
+    mode), with no domain-specific assumptions.
+    %
+    Verification gates---binary pass/fail commands run before evaluation---let
+    users enforce structural invariants (compilation, type-checking, format
+    compliance) without spending evaluation budget on structurally invalid
+    mutations.
+\end{enumerate}
+
+\subsection{Results Preview}
+
+On a benchmark suite of \NUM{X} optimization targets, \textsc{anneal} achieves
+\NUM{Y\%} average improvement within \NUM{Z} experiments per target, at an
+average cost of \NUM{\$C} per run.
+The Wilcoxon-based comparison reduces false-positive acceptance by
+\NUM{W\%} compared to mean-score comparison, and Holm--Bonferroni correction
+reduces it by a further \NUM{V\%} over uncorrected Wilcoxon testing.
+Thompson Sampling strategy selection matches or exceeds the best fixed strategy
+on \NUM{T/X} targets.
+
+\subsection{Paper Organization}
+
+\Cref{sec:related_work} surveys related work in LLM-guided optimization,
+prompt engineering, metaheuristic search, and statistical evaluation.
+\Cref{sec:system_design} describes the \textsc{anneal} architecture, including
+the experiment loop, evaluation engine, search strategies, and knowledge system.
+\Cref{sec:methods} details the statistical methods---Wilcoxon testing,
+Holm--Bonferroni correction, Bradley--Terry scoring, and adaptive sampling.
+\Cref{sec:experiments} presents experimental results across prompt, code, and
+configuration optimization targets.
+\Cref{sec:discussion} discusses limitations and future work.
 \Cref{sec:conclusion} concludes.

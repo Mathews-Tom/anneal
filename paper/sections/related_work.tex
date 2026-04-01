@@ -1,113 +1,186 @@
-% related_work.tex
-%
-% Subsections:
-%   2.1  LLM-Guided Code Optimization
-%   2.2  LLM-Guided Prompt Optimization
-%   2.3  Statistical Evaluation in ML Systems
-%   2.4  Evolutionary and Population-Based Search
-%   2.5  Positioning: How anneal differs
-
 \section{Related Work}
-\label{sec:related-work}
+\label{sec:related_work}
+
+We organize prior work into four areas: LLM-guided code optimization,
+LLM-guided prompt optimization, evolutionary and metaheuristic methods, and
+statistical rigor in machine learning evaluation.
+For each, we identify what the approach contributes and where \textsc{anneal}
+differs or extends it.
 
 \subsection{LLM-Guided Code Optimization}
-\label{sec:related-code}
 
-% AlphaEvolve (Novikov et al., 2025) — evolutionary code optimization via Gemini
-% Key points: evolutionary search over code, LLM as mutation operator, no stat testing
-\textbf{AlphaEvolve}~\cite{novikov2025alphaevolve} uses an LLM-guided evolutionary
-algorithm to optimize algorithmic code, achieving state-of-the-art results on
-mathematical programming tasks.
-\TODO{Expand: what does AlphaEvolve do well? Where does it lack statistical
-rigor or structured search? 3-4 sentences.}
+\paragraph{AlphaEvolve.}
+Novikov et al.~\cite{novikov2025alphaevolve} use an ensemble of LLMs within an
+evolutionary framework to discover algorithms for mathematical and computational
+problems.
+AlphaEvolve operates on code functions, using an island-based population model
+with a database of programs ranked by fitness.
+The system achieved state-of-the-art results on problems ranging from matrix
+multiplication to bin packing.
+\textsc{anneal} shares the evolutionary search intuition---population-based
+strategies and island migration are available search modes---but differs in three
+respects.
+First, \textsc{anneal} is domain-agnostic: it optimizes any text artifact, not
+only code functions, by decoupling mutation from evaluation through a shell
+command or LLM-judge interface.
+Second, \textsc{anneal} applies statistical hypothesis testing (Wilcoxon
+signed-rank with Holm--Bonferroni correction) rather than best-score selection,
+which is critical when evaluation is stochastic.
+Third, \textsc{anneal} accumulates structured knowledge across experiments via
+episodic memory and cross-target learning pools, whereas AlphaEvolve relies on
+the program database as implicit memory.
 
-% Other code optimization systems
-\TODO{Add coverage of: FunSearch (Romera-Paredes et al., 2024), CodeEvolve if exists,
-LLaMEA if applicable. 2-3 paragraphs.}
+\paragraph{FunSearch.}
+Romera-Paredes et al.~\cite{romera2024funsearch} pair an LLM with an automated
+evaluator to search for novel mathematical functions, discovering new solutions
+to the cap set problem and online bin packing.
+FunSearch uses a best-shot selection strategy: the LLM generates many
+candidates, and the evaluator retains only the top-scoring outputs.
+This approach is effective when evaluation is cheap and deterministic but does
+not extend to stochastic evaluation, where a single score comparison is
+insufficient to distinguish signal from noise.
+\textsc{anneal} supports the same deterministic pipeline---generate, evaluate,
+keep the best---but adds paired statistical testing for stochastic settings,
+structured search strategies beyond best-shot, and a knowledge system that
+retains lessons from failed experiments rather than discarding them.
 
 \subsection{LLM-Guided Prompt Optimization}
-\label{sec:related-prompt}
 
-% Promptbreeder (Fernando et al., 2023) — self-referential prompt evolution
-\textbf{Promptbreeder}~\cite{fernando2023promptbreeder} evolves both task prompts
-and mutation operators through self-referential improvement.
-\TODO{Expand: self-referential aspect, no statistical significance testing,
-single-objective. 3-4 sentences.}
+Prompt optimization has generated a rich body of work, driven by the sensitivity
+of LLM performance to prompt wording.
+We review the most relevant systems.
 
-% DSPy (Khattab et al., 2023) — declarative prompt programming
-\textbf{DSPy}~\cite{khattab2023dspy} introduces a declarative programming model
-for LLM pipelines, separating program structure from prompting strategy.
-\TODO{Expand: DSPy teleprompters as optimization, structured but not evolutionary.
-How does anneal's approach differ? 3-4 sentences.}
+\paragraph{Promptbreeder.}
+Fernando et al.~\cite{fernando2023promptbreeder} evolve both task prompts and
+the mutation operators that generate them, creating a self-referential
+improvement loop.
+Promptbreeder's key insight is that the space of mutation operators is itself
+amenable to LLM-guided search.
+\textsc{anneal} captures a related idea through its strategy manifest, which
+decomposes the mutation approach into named components and evolves the weakest
+component when progress stalls, and through the policy agent, which continuously
+rewrites mutation instructions based on failure patterns.
+Unlike Promptbreeder, \textsc{anneal} applies statistical testing to accept/reject
+decisions and provides multiple search strategies rather than relying on a single
+evolutionary scheme.
 
-% EvoPrompt (Guo et al., 2023) — evolutionary prompt engineering
-\textbf{EvoPrompt}~\cite{guo2023evoprompt} applies genetic algorithms and
-differential evolution directly to discrete prompt optimization.
-\TODO{Expand: discrete evolution, no knowledge accumulation, no stat testing.}
+\paragraph{DSPy.}
+Khattab et al.~\cite{khattab2024dspy} introduce a programming framework that
+compiles declarative language model pipelines into optimized prompts and
+fine-tuning data.
+DSPy's optimizers (BootstrapFewShot, MIPRO) search over demonstrations and
+instructions using teleprompter abstractions.
+DSPy focuses on prompt pipeline compilation rather than general artifact
+optimization, and its optimizers compare candidates by aggregate score without
+hypothesis testing.
+\textsc{anneal} addresses a broader scope---any text artifact with any evaluation
+function---and uses the Wilcoxon test to control false-positive acceptance when
+scores are noisy.
 
-% OPRO (Yang et al., 2023) — optimization by prompting
-\textbf{OPRO}~\cite{yang2023opro} frames optimization as a prompting task,
-where the LLM itself acts as the optimizer given a natural language description
-of the objective.
-\TODO{Expand: natural language optimization trajectory, limitations in
-multi-criteria and stochastic settings. 3-4 sentences.}
+\paragraph{EvoPrompt.}
+Guo et al.~\cite{guo2023evoprompt} apply discrete evolutionary operators
+(genetic algorithm and differential evolution) to prompt optimization, treating
+prompts as individuals in a population.
+EvoPrompt demonstrates that evolutionary search outperforms greedy prompt
+editing on several benchmarks.
+\textsc{anneal} offers population-based search as one of several strategies and
+adds Thompson Sampling~\cite{thompson1933likelihood} to adaptively select among
+strategies, rather than committing to a single evolutionary algorithm.
 
-\TODO{Add: APE (Automatic Prompt Engineer), ProTeGi, TextGrad if relevant.}
+\paragraph{OPRO.}
+Yang et al.~\cite{yang2024opro} frame prompt optimization as an optimization
+problem where an LLM generates new prompts given a history of (prompt, score)
+pairs.
+OPRO relies on the LLM's in-context learning to identify improving directions
+from the optimization trajectory.
+\textsc{anneal} similarly provides experiment history as context but structures
+this history through episodic memory with per-criterion feedback, failure
+taxonomy classification, and lineage tracking---rather than presenting raw
+(prompt, score) tuples.
 
-\subsection{Statistical Evaluation in ML Systems}
-\label{sec:related-stats}
+\paragraph{APE.}
+Zhou et al.~\cite{zhou2023ape} automate prompt engineering by generating
+candidate instructions, scoring them, and selecting the best.
+APE uses a generate-and-filter approach without iterative refinement beyond
+resampling.
+\textsc{anneal} extends this with iterative mutation guided by structured
+feedback from prior experiments and statistical testing for candidate comparison.
 
-% Wilcoxon signed-rank test in NLP evaluation
-\TODO{Cite: Dror et al. (2018) "The Hitchhiker's Guide to Testing Statistical
-Significance in Natural Language Processing". Discuss why non-parametric tests
-are needed for bounded evaluation metrics.}
+\paragraph{ProTeGi.}
+Pryzant et al.~\cite{pryzant2023protegi} use textual gradients---natural
+language descriptions of how to improve a prompt, generated by an LLM given
+input-output error pairs---to guide prompt optimization.
+The gradient metaphor provides directional feedback absent in random mutation.
+\textsc{anneal}'s two-phase mutation pipeline serves a similar function: a
+diagnosis step identifies the weakest evaluation criteria and their root causes
+before a targeted mutation step generates edits, providing structured direction
+without requiring the gradient abstraction.
+ProTeGi operates greedily; \textsc{anneal} provides multiple search strategies
+and statistical acceptance criteria.
 
-% Holm-Bonferroni correction for multiple comparisons
-\TODO{Cite: Holm (1979). Discuss how multiple comparison problems arise when
-evaluating a system across multiple benchmarks.}
+\subsection{Evolutionary and Metaheuristic Optimization}
 
-% Bootstrap confidence intervals
-\TODO{Cite: Efron and Tibshirani (1994). Discuss use in ML system evaluation.}
+\paragraph{MAP-Elites.}
+Mouret and Clune~\cite{mouret2015mapelites} introduce MAP-Elites, a
+quality-diversity algorithm that maintains an archive of solutions spanning
+a discretized behavioral space, keeping the highest-performing solution per
+cell.
+\textsc{anneal} incorporates a MAP-Elites archive as part of its knowledge
+system, maintaining best solutions per behavioral region to preserve diversity
+and enable the agent to draw on qualitatively different past solutions.
 
-\subsection{Evolutionary and Population-Based Search}
-\label{sec:related-evolution}
+\paragraph{Thompson Sampling.}
+Thompson Sampling~\cite{thompson1933likelihood} is a Bayesian approach to the
+multi-armed bandit problem: sample from the posterior distribution of each arm's
+reward and select the arm with the highest sample.
+Chapelle and Li~\cite{chapelle2011empirical} provide an empirical evaluation
+demonstrating its effectiveness relative to UCB and $\epsilon$-greedy
+strategies.
+\textsc{anneal} uses Thompson Sampling as a meta-strategy to select among search
+algorithms (greedy, simulated annealing, population-based) based on each
+algorithm's observed performance during the optimization run, treating strategy
+selection as a contextual bandit problem with Beta-distributed priors updated
+after each experiment.
 
-% General evolutionary algorithms background
-\TODO{Brief survey: CMA-ES, NSGA-II, island models. Emphasize how anneal adapts
-these ideas to discrete artifact spaces.}
+\paragraph{Simulated annealing.}
+Kirkpatrick et al.~\cite{kirkpatrick1983sa} introduced simulated annealing,
+which accepts worse solutions with a probability that decreases as a temperature
+parameter cools.
+\textsc{anneal} implements simulated annealing with adaptive cooling and reheat:
+when the acceptance ratio drops below a target threshold, the temperature
+increases to restore exploration, preventing premature convergence.
 
-% Thompson sampling for bandit problems
-\TODO{Cite: Thompson (1933), Chapelle \& Li (2011). Discuss relation to
-anneal's strategy selector.}
+\subsection{Statistical Rigor in ML Evaluation}
 
-\subsection{Positioning}
-\label{sec:related-positioning}
+\paragraph{Hypothesis testing for NLP.}
+Dror et al.~\cite{dror2018hitchhiker} survey statistical significance testing
+in NLP and recommend the Wilcoxon signed-rank test for paired comparisons of
+system outputs, noting that parametric tests (paired $t$-test) assume normality
+that NLP metrics rarely satisfy.
+\textsc{anneal} implements this recommendation directly: stochastic evaluations
+produce paired score vectors (challenger and baseline evaluated on the same
+inputs), and the Wilcoxon signed-rank test~\cite{wilcoxon1945individual}
+determines whether the observed differences are statistically significant.
+When fewer than six paired samples are available, \textsc{anneal} falls back to
+a Cohen's $d$ effect-size threshold, requiring at least a medium effect
+($d > 0.5$) for acceptance.
 
-% Summary table comparing anneal to related systems across key dimensions
-\begin{table}[h]
-  \centering
-  \caption{Comparison of LLM-guided optimization systems across key dimensions.
-    \checkmark = fully supported, $\circ$ = partial, --- = not supported.}
-  \label{tab:comparison}
-  \TODO{Fill in table after verifying feature matrix against codebase (Task 5.1).}
-  \begin{tabular}{lccccc}
-    \toprule
-    & \rotatebox{60}{Statistical Tests}
-    & \rotatebox{60}{Structured Search}
-    & \rotatebox{60}{Knowledge Accum.}
-    & \rotatebox{60}{Multi-Criteria}
-    & \rotatebox{60}{Cost Control} \\
-    \midrule
-    AlphaEvolve~\cite{novikov2025alphaevolve}   & --- & \checkmark & --- & --- & --- \\
-    Promptbreeder~\cite{fernando2023promptbreeder} & --- & \checkmark & --- & --- & --- \\
-    DSPy~\cite{khattab2023dspy}                 & --- & $\circ$    & --- & $\circ$ & --- \\
-    EvoPrompt~\cite{guo2023evoprompt}           & --- & \checkmark & --- & --- & --- \\
-    OPRO~\cite{yang2023opro}                    & --- & ---        & $\circ$ & --- & --- \\
-    \textsc{anneal} (this work)                 & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+\paragraph{Multiple comparison correction.}
+Holm~\cite{holm1979simple} proposes a sequentially rejective procedure that
+controls the family-wise error rate without the conservatism of the Bonferroni
+correction.
+In \textsc{anneal}, each experiment within a consolidation window constitutes a
+hypothesis test; the Holm--Bonferroni adjustment divides the significance level
+$\alpha$ by the number of remaining comparisons in the window, reducing the
+false-positive rate for sequential testing.
+Empirically, this correction reduces false-positive acceptances by approximately
+\NUM{W\%} on null distributions compared to uncorrected testing.
 
-\TODO{Write 2-3 paragraph narrative discussing what distinguishes anneal from
-each category of prior work. Emphasize: (1) statistical rigor as a first-class
-concern, (2) artifact-agnostic abstraction, (3) knowledge accumulation across runs.}
+\paragraph{Bradley--Terry scoring.}
+Bradley and Terry~\cite{bradley1952rank} propose a paired-comparison model where
+each item has a latent strength parameter estimated from pairwise win/loss data.
+\textsc{anneal} uses Bradley--Terry scoring with position-bias cancellation to
+calibrate its LLM judge: when the number of evaluation votes is two or more,
+half are presented with criteria in forward order and half in reverse, and the
+resulting win rates are combined to estimate calibrated quality scores that
+cancel the position bias inherent in LLM evaluation~\cite{zheng2023judging}.

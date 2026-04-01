@@ -1,161 +1,179 @@
-% enhancements.tex
-%
-% Subsections:
-%   4.1  Track 1: Representation
-%   4.2  Track 2: Search
-%   4.3  Track 3: Knowledge
-%   4.4  Track 4: Evaluation
-%   4.5  Enhancement Summary Table
+% !TEX root = ../main.tex
+\section{Enhancements}\label{sec:enhancements}
 
-\section{Enhancements}
-\label{sec:enhancements}
+The base system described in \cref{sec:system-design} operates with greedy search, flat mutation instructions, and no cross-experiment memory.
+This section describes four tracks of enhancements that improve representation, search, knowledge transfer, and evaluation fidelity.
+\Cref{tab:enhancements} summarizes all enhancements with their track, mechanism, and benefit.
 
-\textsc{anneal} introduces \NUM{16} enhancements organized into four tracks.
-Each track targets a distinct weakness in baseline LLM-guided optimization.
-\Cref{tab:enhancements} summarizes all enhancements; the following subsections
-describe the design rationale and implementation of the most impactful ones.
+% ==================================================================
+\subsection{Track 1: Representation}\label{sec:track-representation}
 
-% --- 4.1 Representation Track ---
-\subsection{Track 1: Representation}
-\label{sec:enhancements-representation}
+\subsubsection{Strategy Manifest}\label{sec:strategy-manifest}
 
-% Enhancement 1.1: Strategy Manifest
-% Replaces monolithic program.md with a structured YAML/TOML manifest that
-% separates: objective, constraints, search strategy, evaluation criteria.
-% Design rationale: monolithic prompts cause LLMs to optimize for prompt length
-% rather than artifact quality.
-\subsubsection{Strategy Manifest (1.1)}
-\TODO{Write 2-3 paragraphs on Strategy Manifest. Include:
-  (1) Problem with monolithic program.md.
-  (2) Manifest structure (objective, constraints, strategy, eval criteria).
-  (3) How structured input reduces prompt-following variance.}
+The baseline mutation instruction is a monolithic \texttt{program.md} file.
+The strategy manifest (\texttt{StrategyManifest} in \texttt{anneal/engine/strategy.py}) replaces this with a structured YAML document containing four named components: \texttt{hypothesis\_generation}, \texttt{context\_assembly}, \texttt{mutation\_style}, and \texttt{failure\_analysis}.
+Each component is a \texttt{StrategyComponent} with an \texttt{approach} field (natural-language instructions), an \texttt{evolved\_at} counter tracking the last experiment at which it was rewritten, and a \texttt{streak\_without\_improvement} counter.
 
-% Enhancement 1.2: Component Evolution
-% Decomposes complex artifacts into components evolved independently before
-% recombination. Analogous to genetic algorithm crossover.
-\subsubsection{Component Evolution (1.2)}
-\TODO{Write 2-3 paragraphs on Component Evolution.}
+Component-level evolution targets the weakest link: \texttt{StrategyManifest.weakest\_component()} returns the component with the longest streak without improvement.
+The \texttt{evolve\_weakest\_component} function constructs a focused rewriting prompt that includes the current approach text, recent experiment statistics (kept/discarded counts, score ranges), and per-criterion pass/fail summaries.
+The agent rewrites only the targeted component, leaving the remaining three stable.
+This decomposition avoids catastrophic forgetting of working strategies when only one aspect of the mutation policy is underperforming.
 
-% Enhancement 1.3: Token-Efficient Context
-% Compresses lineage context to fit within context window without losing
-% signal. Key technique: score-sorted summarization.
-\subsubsection{Token-Efficient Context (1.3)}
-\TODO{Write 2-3 paragraphs on Token-Efficient Context.}
+The manifest also records a \texttt{lineage} (list of SHA hashes for experiments that triggered evolution) and an \texttt{aggregate\_score\_delta}, providing a traceable record of strategy drift.
+Migration from \texttt{program.md} is automatic: \texttt{migrate\_program\_md} converts the monolithic content into the \texttt{hypothesis\_generation} component of a new manifest.
 
-% --- 4.2 Search Track ---
-\subsection{Track 2: Search}
-\label{sec:enhancements-search}
+\subsubsection{Token-Efficient Context}\label{sec:context-compression}
 
-% Enhancement 2.1: Dual-Agent Mutation
-% Separates critic (identifies weaknesses) from writer (implements improvements).
-% Design rationale: a single agent conflates diagnosis and repair.
-\subsubsection{Dual-Agent Mutation (2.1)}
-\TODO{Write 2-3 paragraphs on Dual-Agent Mutation. Include:
-  (1) Separation of concerns between critic and writer agents.
-  (2) How the critic's diagnosis is passed to the writer.
-  (3) Expected cost reduction from targeted mutations vs. full rewrites.}
+Agent context grows with experiment history. The \texttt{context\_compression} field on \texttt{AgentConfig} supports three modes:
+\begin{itemize}
+    \item \texttt{none}: full context (experiment records, artifact content, knowledge).
+    \item \texttt{moderate}: recent experiment records are truncated to hypothesis and outcome; full artifact content is retained.
+    \item \texttt{aggressive}: only the last $N$ hypotheses and their outcomes are included; artifact content is summarized; duplicate information across knowledge context and experiment history is deduplicated.
+\end{itemize}
+Compression reduces input token cost and keeps the agent within its context window budget (\texttt{max\_context\_tokens}) without discarding the most recent signal.
 
-% Enhancement 2.2: Two-Phase Mutation
-% Phase A: coarse exploration (large mutations, high temperature).
-% Phase B: fine-tuning (small mutations, low temperature).
-% Triggered by convergence detector.
-\subsubsection{Two-Phase Mutation (2.2)}
-\TODO{Write 2-3 paragraphs on Two-Phase Mutation.}
+% ==================================================================
+\subsection{Track 2: Search}\label{sec:track-search}
 
-% Enhancement 2.3: Island Population
-% Maintains K independent sub-populations. Periodic migration of elite
-% artifacts between islands prevents premature convergence.
-\subsubsection{Island Population (2.3)}
-\TODO{Write 2-3 paragraphs on Island Population.}
+\subsubsection{Dual-Agent Mutation via Thompson Sampling}\label{sec:dual-agent}
 
-% Enhancement 2.4: Simplification Pre-Pass
-% Before mutation, prune unnecessary complexity from current artifact.
-% Prevents accumulation of prompt bloat across generations.
-\subsubsection{Simplification Pre-Pass (2.4)}
-\TODO{Write 2-3 paragraphs on Simplification Pre-Pass.}
+The \texttt{AgentSelector} class (\texttt{anneal/engine/strategy\_selector.py}) maintains two Beta-Binomial arms---\texttt{primary} and \texttt{exploration}---and selects between them using Thompson Sampling.
+The primary agent uses the model and temperature specified in \texttt{AgentConfig}; the exploration agent uses a separate model (\texttt{exploration\_model}) at higher temperature, biased toward novel mutations.
 
-% --- 4.3 Knowledge Track ---
-\subsection{Track 3: Knowledge}
-\label{sec:enhancements-knowledge}
+Selection is modulated by experiment progress: early in the run (\texttt{experiment\_ratio} $< 0.2$), exploration receives a $1.4\times$ boost; late in the run ($> 0.8$), exploration is dampened to $0.4\times$ its posterior sample.
+After each experiment, the selected arm's posterior is updated with a binary reward (whether the mutation was kept).
+This produces an adaptive explore-exploit balance without requiring manual scheduling.
 
-% Enhancement 3.1: Episodic Memory
-% Stores successful mutation strategies with their context. Retrieved by
-% semantic similarity to current artifact + objective.
-\subsubsection{Episodic Memory (3.1)}
-\TODO{Write 2-3 paragraphs on Episodic Memory. Include:
-  (1) Storage format: (artifact_type, objective, mutation, delta_score).
-  (2) Retrieval: semantic similarity over artifact embedding.
-  (3) Cross-run knowledge transfer vs. within-run history.}
+\subsubsection{Two-Phase Mutation}\label{sec:two-phase}
 
-% Enhancement 3.2: Lineage Context
-% Constructs a compressed lineage tree of the current optimization trajectory.
-% Injected into mutation prompt to prevent re-exploring failed directions.
-\subsubsection{Lineage Context (3.2)}
-\TODO{Write 2-3 paragraphs on Lineage Context.}
+When \texttt{two\_phase\_mutation} is enabled on \texttt{AgentConfig}, each experiment begins with a diagnosis step before the mutation agent is invoked.
+The diagnosis call (\texttt{AgentInvoker.diagnose}) receives the current artifact, the most recent evaluation result (including per-criterion scores), and the last five experiment records.
+It produces a \texttt{DiagnosisResult} (\texttt{anneal/engine/types.py}) containing:
+\begin{itemize}
+    \item \texttt{weakest\_criteria}: the criteria with the lowest scores.
+    \item \texttt{root\_cause}: a natural-language explanation of why those criteria are failing.
+    \item \texttt{fix\_category}: one of \texttt{structural}, \texttt{content}, \texttt{formatting}, \texttt{logic}, \texttt{coverage}, \texttt{other}.
+    \item \texttt{suggested\_direction}: a concrete axis for the next mutation.
+\end{itemize}
+The diagnosis is prepended to the mutation prompt, focusing the agent on the identified weakness rather than generating undirected mutations.
 
-% Enhancement 3.3: Research Operator
-% Periodically invokes a research-mode LLM to survey external knowledge
-% (e.g., best practices for the artifact domain) and inject it into the pool.
-\subsubsection{Research Operator (3.3)}
-\TODO{Write 2-3 paragraphs on Research Operator.}
+\subsubsection{Simulated Annealing with Adaptive Reheat}\label{sec:simulated-annealing}
 
-% --- 4.4 Evaluation Track ---
-\subsection{Track 4: Evaluation}
-\label{sec:enhancements-eval}
+\texttt{SimulatedAnnealingSearch} (\texttt{anneal/engine/search.py}) accepts regressions with probability $\exp(\Delta / T)$ where $\Delta$ is the signed score delta and $T$ is the current temperature.
+Temperature decays geometrically by a configurable \texttt{cooling\_rate} (default $0.95$) after each experiment, with a floor at \texttt{min\_temperature} (default $0.01$).
 
-% Enhancement 4.1: Adaptive Sampling
-% For stochastic evaluators, stop sampling when confidence interval on the
-% Bradley-Terry score is <= epsilon. Reduces eval cost by 30-50%.
-\subsubsection{Adaptive Sampling (4.1)}
-\TODO{Write 2-3 paragraphs on Adaptive Sampling.}
+Adaptive reheat prevents premature convergence: when the acceptance ratio over the last \NUM{10} experiments drops below half the \texttt{acceptance\_target} (default $0.3$), the temperature is multiplied by \texttt{reheat\_factor} (default $2.0$), capped at the initial temperature.
+This mechanism allows the search to escape local optima when the landscape becomes flat.
 
-% Enhancement 4.2: Pareto Front Visualization
-% For multi-objective targets, maintain and visualize the Pareto front
-% across the optimization run. Enables trade-off analysis.
-\subsubsection{Pareto Front Visualization (4.2)}
-\TODO{Write 2-3 paragraphs on Pareto Front Visualization.}
+\texttt{HybridSearch} provides a sensible default for users who do not configure a search strategy: greedy for the first \NUM{10} experiments to establish a strong baseline, then simulated annealing to explore the neighborhood.
 
-% Enhancement 4.3: Evaluation Consistency
-% Detects and corrects evaluator drift (systematic change in LLM judge
-% scoring distribution across time within a run).
-\subsubsection{Evaluation Consistency (4.3)}
-\TODO{Write 2-3 paragraphs on Evaluation Consistency.}
+\subsubsection{Island Population Search}\label{sec:island-search}
 
-% Enhancement 0.3: Holm-Bonferroni Correction
-\subsubsection{Holm-Bonferroni Correction (0.3)}
-% Adjusts significance threshold when comparing across multiple targets
-% to control family-wise error rate.
-\TODO{Write 2 paragraphs on Holm-Bonferroni. Cite Holm (1979). Explain why
-FWER control is needed when evaluating across 5 benchmark targets.}
+\texttt{IslandPopulationSearch} (\texttt{anneal/engine/search.py}) maintains $N$ independent \texttt{PopulationSearch} instances, each with its own candidate pool and tournament selection.
+Islands are assigned experiments in round-robin order.
+Every \texttt{migration\_interval} experiments (default \NUM{10}), the best individual from each island is copied to every other island, injecting diversity without destroying each island's locally adapted population.
 
-% --- 4.5 Enhancement Summary Table ---
-\subsection{Enhancement Summary}
-\label{sec:enhancements-summary}
+Each \texttt{PopulationSearch} instance supports tournament selection (sample $k$ candidates, discard the worst) and optional crossover: when \texttt{crossover\_rate} $> 0$, the two highest-scoring candidates' hypotheses are paired as parent inputs for the next mutation.
 
-\begin{table}[h]
-  \centering
-  \caption{Summary of \NUM{16} enhancements across four tracks.}
-  \label{tab:enhancements}
-  \begin{tabular}{llll}
-    \toprule
-    \textbf{ID} & \textbf{Track} & \textbf{Enhancement} & \textbf{Primary Benefit} \\
-    \midrule
-    0.1 & Evaluation   & EvalCache               & Eliminates redundant eval \\
-    0.2 & Search       & ParetoSearch            & Multi-objective support \\
-    0.3 & Evaluation   & Holm-Bonferroni         & Multiple comparison control \\
-    1.1 & Representation & Strategy Manifest     & Structured search guidance \\
-    1.2 & Representation & Component Evolution   & Targeted sub-artifact optimization \\
-    1.3 & Representation & Token-Efficient Context & Context window efficiency \\
-    2.1 & Search       & Dual-Agent Mutation     & Diagnosis/repair separation \\
-    2.2 & Search       & Two-Phase Mutation      & Exploration/exploitation balance \\
-    2.3 & Search       & Island Population       & Diversity maintenance \\
-    2.4 & Search       & Simplification Pre-Pass & Prevents prompt bloat \\
-    3.1 & Knowledge    & Episodic Memory         & Cross-run transfer \\
-    3.2 & Knowledge    & Lineage Context         & Direction pruning \\
-    3.3 & Knowledge    & Research Operator       & External knowledge injection \\
-    4.1 & Evaluation   & Adaptive Sampling       & Evaluation cost reduction \\
-    4.2 & Evaluation   & Pareto Front Viz        & Multi-objective analysis \\
-    4.3 & Evaluation   & Eval Consistency        & Evaluator drift correction \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+% ==================================================================
+\subsection{Track 3: Knowledge}\label{sec:track-knowledge}
+
+\subsubsection{Episodic Memory}\label{sec:episodic-memory}
+
+After each experiment, \texttt{extract\_lesson} (\texttt{anneal/engine/knowledge.py}) produces a structured \texttt{Lesson} object (\texttt{anneal/engine/types.py}) containing:
+\begin{itemize}
+    \item \texttt{what\_changed}: a summary of the mutation diff.
+    \item \texttt{what\_improved} / \texttt{what\_regressed}: per-criterion transitions (e.g., ``\texttt{clarity: PASS (was FAIL)}'').
+    \item \texttt{transferable\_insight}: a domain-independent takeaway distilled by a lightweight LLM call.
+    \item \texttt{domain\_tags}: tags for cross-domain retrieval (e.g., \texttt{error\_handling}, \texttt{code\_style}).
+\end{itemize}
+
+The \texttt{KnowledgeStore} persists experiment records in \texttt{experiments.jsonl} and maintains a hypothesis similarity index (TF-IDF with cosine similarity, upgraded to sentence embeddings when \texttt{sentence-transformers} is installed).
+Context assembly follows a cold-start protocol: for the first \NUM{10} experiments, only raw records are injected; after that threshold, the agent receives the five most recent records, the five most similar past experiments by hypothesis embedding, and a consolidated learnings summary.
+
+Every \NUM{50} experiments, deterministic consolidation produces a \texttt{ConsolidationRecord} summarizing kept/discarded/crashed counts, score trajectories, top improvements, failed approaches, tag frequencies, per-criterion variances, verifier block rates, and failure distribution.
+Consolidation records are appended to \texttt{learnings-structured.jsonl} and rendered into a human-readable \texttt{learnings.md}.
+
+\subsubsection{Lineage Context}\label{sec:lineage}
+
+\texttt{KnowledgeStore.get\_lineage} traces the chain of \textsc{kept} mutations from the current best SHA back through \texttt{pre\_experiment\_sha} links, returning the last $d$ accepted ancestors (default $d = 5$).
+This lineage is injected into the agent prompt as a causal chain: what was changed at each step and what score improvement resulted.
+The lineage provides the agent with a narrative of how the current artifact reached its present state, avoiding mutations that revisit already-explored directions.
+
+\subsubsection{Research Operator}\label{sec:research-operator}
+
+When the optimization loop encounters a plateau (configurable consecutive experiments without improvement), the \texttt{ResearchOperator} (\texttt{anneal/engine/research.py}) injects external knowledge.
+It uses a separate LLM call with a higher budget (\texttt{ResearchConfig.max\_budget\_usd}, default \$0.50) to generate up to \texttt{max\_suggestions} (default 3) novel mutation directions grounded in domain knowledge outside the experiment history.
+Research hints are prepended to the next mutation prompt.
+The operator auto-disables after \texttt{disable\_after\_failures} (default 3) consecutive failures to avoid wasting budget on unhelpful suggestions.
+
+\subsubsection{Cross-Domain Knowledge Transfer}\label{sec:learning-pool}
+
+The \texttt{LearningPool} (\texttt{anneal/engine/learning\_pool.py}) aggregates learnings extracted from experiments across targets and projects.
+Each \texttt{Learning} is a frozen dataclass containing the observation text, signal polarity (\textsc{positive}/\textsc{negative}), score delta, per-criterion deltas, source condition, source target, and domain tags.
+
+Retrieval is scope-aware (\texttt{LearningScope}: \texttt{condition}, \texttt{target}, \texttt{project}, \texttt{global}) and decay-adjusted: each learning's effective score is $|\Delta_{\text{score}}| \cdot e^{-\lambda t}$ where $\lambda$ is the decay rate (default $0.05$) and $t$ is the age in days.
+Cross-domain learnings are penalized by a \texttt{domain\_penalty} factor (default $0.5$), prioritizing same-domain transfer.
+The pool evicts lowest-impact learnings when it exceeds \texttt{max\_size} (default \NUM{1000}).
+
+\texttt{PersistentLearningPool} backs the pool to \texttt{learnings-pool.jsonl} with file-level locking for concurrent safety.
+\texttt{GlobalLearningPool} extends this to \texttt{\~{}/.anneal/global-learnings.jsonl}, enabling knowledge transfer across unrelated projects.
+
+% ==================================================================
+\subsection{Track 4: Evaluation}\label{sec:track-evaluation}
+
+\subsubsection{Adaptive Sample Sizing}\label{sec:adaptive-sampling}
+
+Fixed sample counts waste budget when the effect is large (more samples than needed) or miss real effects when the signal is weak (too few samples).
+When \texttt{adaptive\_sampling} is enabled on \texttt{StochasticEval}, the evaluator starts with $\max(\texttt{min\_sample\_count},\; \lfloor\texttt{sample\_count} / 2\rfloor)$ samples and computes Cohen's $d$ against zero on the collected scores.
+If $d > \texttt{early\_stop\_effect\_size}$ (default $1.0$), evaluation terminates early.
+If $d < \texttt{extend\_effect\_size}$ (default $0.3$), up to $\lfloor\texttt{sample\_count} / 2\rfloor$ additional samples are collected, with a hard ceiling at $1.5 \times \texttt{sample\_count}$.
+This mechanism reduces cost by \NUM{30}--\NUM{50}\% on clear-cut experiments while increasing statistical power on marginal ones.
+
+\subsubsection{Eval Consistency Monitoring}\label{sec:drift-detection}
+
+Evaluator drift---where the same artifact receives different scores over time---undermines the optimization signal.
+The \texttt{KnowledgeStore.get\_drift\_report} method detects drift using a sliding-window comparison: within the most recent consolidation window, it splits records into first and second halves and flags any criterion whose variance increased by more than $2\times$ between halves, or whose total variance exceeds a threshold (default $0.1$).
+Flagged criteria are reported as \texttt{DriftEntry} objects containing the criterion name, variance, mean score, and window size.
+
+At the consolidation level, per-criterion variances are tracked in every \texttt{ConsolidationRecord}, producing a time series of evaluator stability.
+Criteria exceeding the variance threshold trigger a warning log, alerting the operator to potential judge model degradation or prompt sensitivity.
+
+\subsubsection{Eval Caching}\label{sec:eval-cache}
+
+When the agent produces a mutation identical to a previously evaluated artifact, re-running the full evaluation pipeline wastes budget.
+The \texttt{EvalCache} (\texttt{anneal/engine/eval\_cache.py}) is a content-addressed LRU cache keyed on the SHA-256 hash of the artifact content concatenated with the sorted criterion names.
+On a cache hit, the stored \texttt{CacheEntry} (score, raw scores, criterion names) is returned immediately.
+
+The cache also tracks \texttt{score\_history}---the sequence of scores observed for the same content hash across multiple evaluations.
+The \texttt{consistency\_report} method flags entries where the standard deviation across evaluations exceeds $0.1$, surfacing potential evaluator inconsistency independent of the drift detection in the knowledge store.
+Maximum cache size is configurable (default \NUM{200} entries) with LRU eviction.
+
+% ==================================================================
+% Summary table
+% ==================================================================
+\begin{table*}[t]
+\centering
+\caption{Summary of enhancements by track, mechanism, and benefit.}
+\label{tab:enhancements}
+\small
+\begin{tabular}{@{}llllp{5.5cm}@{}}
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Track} & \textbf{Mechanism} & \textbf{Benefit} \\
+\midrule
+E1 & Strategy Manifest & Representation & Structured YAML with named components & Component-level evolution; avoids catastrophic forgetting of working strategies \\
+E2 & Token-Efficient Context & Representation & Three compression modes & Reduces input token cost; keeps agent within context budget \\
+E3 & Dual-Agent Mutation & Search & Thompson Sampling over Beta-Binomial arms & Adaptive explore-exploit without manual scheduling \\
+E4 & Two-Phase Mutation & Search & Diagnosis step before mutation & Focuses mutations on weakest criteria and root cause \\
+E5 & Simulated Annealing & Search & $\exp(\Delta/T)$ acceptance with adaptive reheat & Escapes local optima; reheat prevents premature convergence \\
+E6 & Island Population & Search & $N$ independent populations with migration & Maintains diversity; best individuals propagate across islands \\
+E7 & Episodic Memory & Knowledge & Structured Lesson extraction + similarity retrieval & Avoids repeating failed approaches; transfers successful patterns \\
+E8 & Lineage Context & Knowledge & Causal chain of accepted mutations & Agent understands how current artifact state was reached \\
+E9 & Research Operator & Knowledge & External knowledge injection on plateau & Breaks out of exploration dead ends \\
+E10 & Cross-Domain Transfer & Knowledge & Learning pool with decay and domain penalties & Transfers insights across targets and projects \\
+E11 & Adaptive Sampling & Evaluation & Cohen's $d$ early-stop / extend & Reduces cost on clear experiments; increases power on marginal ones \\
+E12 & Drift Detection & Evaluation & Sliding-window variance comparison & Detects evaluator degradation before it corrupts optimization \\
+E13 & Eval Caching & Evaluation & Content-addressed LRU cache & Eliminates redundant evaluation of identical artifacts \\
+\bottomrule
+\end{tabular}
+\end{table*}

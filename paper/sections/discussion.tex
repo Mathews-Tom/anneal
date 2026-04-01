@@ -1,93 +1,74 @@
-% discussion.tex
-%
-% Subsections:
-%   7.1  Limitations
-%   7.2  Threats to Validity
-%   7.3  Future Work
-
+% !TEX root = ../main.tex
 \section{Discussion}
 \label{sec:discussion}
 
-% --- 7.1 Limitations ---
 \subsection{Limitations}
-\label{sec:discussion-limitations}
+\label{sec:limitations}
 
-% Key limitations to discuss:
-%   L1: Benchmark scope — 5 targets may not generalize to all artifact types
-%   L2: LLM dependency — results depend on the specific models used (cite model versions)
-%   L3: Cost — 10,000 experiments is expensive; barrier to broad replication
-%   L4: Stochastic evaluators — LLM judge quality is not independently validated
-%   L5: Single language — code benchmarks target Python only
-\TODO{Write this subsection. Be honest about limitations. Reviewers will penalize
-papers that omit obvious limitations more than papers that name them directly.}
+\paragraph{Single-agent mutation.}
+Anneal generates mutations through a single LLM agent per experiment cycle.
+It does not coordinate multiple agents working on different aspects of an artifact simultaneously.
+Multi-agent collaboration---where one agent edits code structure while another refines documentation---could exploit parallelism and specialization, but introduces coordination complexity (conflict resolution, merge semantics) that the current architecture does not address.
 
-\textbf{Benchmark scope.}
-Our benchmark suite covers three domains with five targets.
-\TODO{Discuss: what artifact types are not covered? What domains might behave
-differently (e.g., configuration files, database schemas, API specs)?}
+\paragraph{Text artifacts only.}
+The engine operates on file-based text artifacts versioned in git.
+Binary files (images, compiled assets, database schemas), structured data stores, and deployed services are outside the mutation scope.
+Optimization targets requiring deployment to external systems (email campaigns, ad platforms) are architecturally supported through a domain-tier abstraction with approval gates, but this pathway is not yet implemented.
 
-\textbf{LLM dependency.}
-\TODO{Discuss: which models were used in benchmarks? How sensitive are results
-to model choice? Would a weaker model reduce the advantage of knowledge-based
-enhancements?}
+\paragraph{LLM-as-judge evaluation quality.}
+Stochastic evaluation relies on an LLM judge scoring against binary criteria.
+The quality of optimization is bounded by the quality of the judge: a judge that rewards superficial keyword matching will drive the optimizer toward keyword-stuffed artifacts.
+Position debiasing (\cref{sec:eval-intelligence}) and held-out validation mitigate systematic judge bias, but they do not eliminate it.
+Practitioners must invest in evaluation design---clear, unambiguous criteria with concrete acceptance thresholds---to obtain meaningful optimization trajectories.
 
-\textbf{Evaluation cost.}
-\TODO{Discuss: $\sim$\$200-500 benchmark cost is non-trivial. How can future
-work reduce cost while maintaining statistical rigor?}
+\paragraph{Cost.}
+A full optimization run of 50 experiments costs between \$\NUM{cost-low} and \$\NUM{cost-high}, depending on the evaluation mode, number of stochastic samples, and model selection.
+Two-phase mutation and multi-draft generation increase per-experiment cost by approximately \NUM{cost-overhead}$\times$ relative to single-phase greedy mutation.
+For cost-sensitive applications, the engine supports cheaper diagnosis models (e.g., Haiku for diagnosis, Sonnet for mutation) and adaptive sample sizing that reduces evaluation cost for clear winners and losers.
 
-\textbf{Stochastic evaluator reliability.}
-\TODO{Discuss: Bradley-Terry scoring and position bias cancellation reduce
-variance, but do not eliminate it. What is the measured inter-run variance
-in evaluator scores?}
+\paragraph{Cold start.}
+The knowledge system provides no benefit during the first several experiments, when the experiment history is empty.
+The TF-IDF retrieval index requires a minimum corpus size before similarity queries become discriminative.
+We observe that knowledge accumulation begins to measurably improve acceptance rates after approximately \NUM{knowledge-activation} experiments, consistent with the activation threshold configured in the engine.
 
-% --- 7.2 Threats to Validity ---
 \subsection{Threats to Validity}
-\label{sec:discussion-threats}
+\label{sec:threats}
 
-\textbf{Internal validity.}
-\TODO{Discuss threats to internal validity:
-  (1) Confounding between enhancement tracks (ablation study addresses this partially).
-  (2) Model version changes between runs (controlled by pinning model versions).
-  (3) Evaluator drift within a run (addressed by Eval Consistency enhancement).}
+\paragraph{Internal validity.}
+LLM outputs are nondeterministic: the same prompt produces different mutations across runs.
+We control for this by pairing runs by random seed across configurations and using nonparametric statistical tests that do not assume distributional form.
+API pricing variability (model version updates, rate limit throttling) introduces noise into cost measurements; we mitigate this by recording per-token usage and applying fixed pricing tables rather than relying on billing-reported costs.
 
-\textbf{External validity.}
-\TODO{Discuss threats to external validity:
-  (1) Generalizability to artifacts outside the benchmark domains.
-  (2) Generalizability to organizations with different budget constraints.
-  (3) Generalizability to non-English artifacts.}
+\paragraph{External validity.}
+The five benchmark targets, while spanning three domains, may not represent the distribution of real-world optimization problems.
+Production artifacts are larger, have more complex dependency structures, and operate under constraints (backward compatibility, style guides, regulatory requirements) that the benchmarks do not capture.
+The benchmark targets were designed to be self-contained and reproducible; this simplification limits the generalizability of absolute score improvements, though the relative ordering of configurations should hold for targets within the same domain class.
 
-\textbf{Construct validity.}
-\TODO{Discuss: do our metrics measure what we claim?
-  (1) Is score$_{50}$ a valid proxy for artifact quality?
-  (2) Does convergence speed matter in practice?
-  (3) Is cost in USD a fair comparison across configurations with different
-  per-mutation cost structures?}
+\paragraph{Construct validity.}
+Stochastic evaluation quality depends on the specificity and completeness of the scoring criteria.
+Vague criteria (e.g., ``is the output high quality?'') produce noisy scores that obscure real improvements.
+All benchmark targets use criteria that were iteratively refined to achieve inter-rater reliability above \NUM{irr-threshold} (measured as agreement rate between two independent LLM judges on a held-out sample).
+This refinement process is itself a limitation: in practice, users may not invest equivalent effort in criteria design, leading to lower optimization effectiveness than the benchmarks suggest.
 
-\textbf{Statistical validity.}
-\TODO{Discuss: 10 runs per configuration is on the lower end for non-parametric
-testing. Discuss power analysis: what effect size can we reliably detect with $n=10$?}
-
-% --- 7.3 Future Work ---
 \subsection{Future Work}
-\label{sec:discussion-future}
+\label{sec:future-work}
 
-\textbf{MAP-Elites integration.}
-Quality-Diversity optimization via MAP-Elites~\cite{mouret2015illuminating}
-would allow \textsc{anneal} to maintain a grid of high-quality artifacts
-across a feature space, useful when optimization objectives have inherent
-trade-offs that cannot be collapsed into a scalar.
-\TODO{Expand: how MAP-Elites would fit into the existing search abstraction.}
+\paragraph{Multi-artifact optimization.}
+Extending the mutation scope to coordinated changes across multiple files---e.g., modifying a function signature and all its call sites simultaneously---would enable structural refactoring that single-file mutations cannot achieve.
+This requires dependency-aware scoping and atomic multi-file commits with rollback semantics, both of which the git environment backend supports in principle.
 
-\textbf{Multi-artifact optimization.}
-The current framework optimizes a single artifact in isolation.
-Many real-world tasks require co-optimizing interdependent artifacts
-(e.g., a system prompt and its few-shot examples together).
-\TODO{Expand: design sketch for multi-artifact optimization.}
+\paragraph{Typed evaluator protocol.}
+The current evaluation interface is command-based: the engine invokes a shell command and parses its stdout.
+A typed Python callable protocol (already prototyped in the codebase) would enable programmatic evaluation with structured return types, eliminating parsing fragility and supporting evaluation functions that require in-process state (database connections, loaded ML models).
 
-\textbf{Automated benchmark construction.}
-\TODO{Discuss: can \textsc{anneal} itself be used to generate benchmark
-targets (meta-optimization)?}
+\paragraph{MAP-Elites integration.}
+The quality-diversity archive (\cref{sec:method}) maintains a grid of behaviorally diverse solutions but is not yet integrated into the search loop as a solution source.
+Full MAP-Elites integration would allow the engine to optimize for diversity and quality simultaneously, producing a portfolio of distinct high-scoring artifacts rather than a single best solution.
 
-\textbf{Online learning of evaluation criteria.}
-\TODO{Discuss: current evaluation criteria are fixed at run registration.
-Future work could learn criteria from user feedback during the run.}
+\paragraph{Continuous optimization.}
+A daemon mode that monitors artifact changes and triggers optimization runs on detected regressions would enable always-on quality maintenance.
+The scheduler and daemon management components are implemented; the remaining work is policy design for when to trigger optimization (commit hooks, schedule, metric drift detection) and how to surface results without disrupting the developer workflow.
+
+\paragraph{IDE integration.}
+Embedding the optimization loop into editor extensions (VS Code, JetBrains) would reduce the barrier to adoption by allowing developers to trigger optimization on selected files without leaving their editor.
+The engine's file-based architecture (JSONL logs, file-based SSE dashboard) is compatible with extension integration, but the UX design---progress visualization, result acceptance, inline diff preview---remains open.

@@ -1,114 +1,138 @@
-% system_design.tex
-%
-% Subsections:
-%   3.1  Core Abstraction
-%   3.2  Execution Environment
-%   3.3  Evaluation Pipeline
-%   3.4  Search Strategies
-%   3.5  Architecture Overview (diagram)
+% !TEX root = ../main.tex
+\section{System Design}\label{sec:system-design}
 
-\section{System Design}
-\label{sec:system-design}
+Anneal's architecture is organized around three invariants: the optimization target is always a text file in a git repository, the evaluation signal is always an external process the agent cannot influence, and mutations are always isolated in a dedicated worktree that the user's working tree never observes.
+This section describes the core abstractions, execution environment, safety mechanisms, and evaluation pipeline that enforce these invariants.
 
-\textsc{anneal} is a framework for LLM-guided artifact optimization.
-An \emph{artifact} is any text-based software object that can be evaluated
-for quality: a system prompt, a Python function, a configuration file,
-or a technical document.
-\textsc{anneal} treats the artifact as the subject of optimization, an
-\emph{evaluation function} as the objective, and an \emph{LLM agent} as the
-mutation operator.
+% ------------------------------------------------------------------
+\subsection{Core Abstraction: The Artifact--Eval--Agent Triplet}\label{sec:triplet}
 
-% --- 3.1 Core Abstraction ---
-\subsection{Core Abstraction: Artifact--Eval--Agent Triplet}
-\label{sec:design-abstraction}
+Every optimization target in Anneal is registered as a triplet of declarative specifications (ADR-003):
 
-% Describe the three-component model:
-%   - Artifact: versioned text object stored in a git-tracked workspace
-%   - Eval: deterministic function or stochastic LLM judge
-%   - Agent: LLM mutation operator (dual-agent: critic + writer)
-\TODO{Write this subsection. Include:
-  (1) Formal definition of artifact, eval function, mutation operator.
-  (2) How the triplet composes into an optimization loop.
-  (3) What ``artifact-agnostic'' means in practice.}
+\begin{enumerate}
+    \item \textbf{Artifact} (\texttt{artifact\_paths}). One or more text files the agent is permitted to mutate: system prompts, source code, configuration files, or any other UTF-8 content tracked by git. The set of editable paths is declared in \texttt{scope.yaml} and validated at registration time by the \texttt{Registry} class. The engine imposes no constraints on file format or domain semantics.
 
-The core optimization loop is:
-\begin{equation}
-  a_{t+1} = \mathrm{Mutate}(a_t,\, \mathcal{H}_t,\, \mathcal{K}_t)
-  \label{eq:mutation}
-\end{equation}
-where $a_t$ is the current artifact at step $t$,
-$\mathcal{H}_t$ is the lineage history (previous artifacts and their scores),
-and $\mathcal{K}_t$ is the accumulated knowledge pool.
-A candidate $a_{t+1}$ is accepted if it scores significantly higher than $a_t$
-under a Wilcoxon signed-rank test (\cref{sec:enhancements-eval}).
+    \item \textbf{Eval} (\texttt{EvalConfig}). A scoring function that maps an artifact state to a scalar signal. Two modes are supported: \emph{deterministic}, where a shell command produces a numeric score (e.g., \texttt{pytest --tb=no | parse\_score.sh}), and \emph{stochastic}, where an LLM judge scores generated samples against binary criteria (\cref{sec:eval-pipeline}). The eval definition is immutable once registered---\texttt{scope.yaml}, \texttt{metrics.yaml}, and \texttt{eval\_criteria.toml} are required entries in the \texttt{immutable} list, preventing the agent from influencing its own scoring.
 
-% --- 3.2 Execution Environment ---
-\subsection{Execution Environment: Git Worktree Isolation}
-\label{sec:design-worktree}
+    \item \textbf{Agent} (\texttt{AgentConfig} + \texttt{program.md}). An LLM that proposes mutations, restricted to file-edit tools operating within the editable scope. The agent receives the current artifact content, experiment history, and mutation instructions (\texttt{program.md}), but never sees the eval command, criteria definitions, or scoring logic. \texttt{AgentInvoker} dispatches to either a Claude Code subprocess (which writes files directly to disk) or a direct API call depending on \texttt{AgentConfig.mode}.
+\end{enumerate}
 
-% Describe git worktree isolation:
-%   - Each optimization run gets its own worktree
-%   - No shared mutable state between parallel runs
-%   - Enables reproducibility: every artifact version is addressable by commit hash
-\TODO{Write this subsection. Explain why worktree isolation matters for:
-  (1) reproducibility,
-  (2) parallel execution of multiple runs,
-  (3) audit trail (git history = optimization history).}
+The triplet is the schema of \texttt{OptimizationTarget} (\texttt{anneal/engine/types.py}), persisted to \texttt{.anneal/config.toml} via the \texttt{Registry} class. This design makes the engine domain-agnostic: adding a new optimization target requires only three plain files (\texttt{scope.yaml}, \texttt{metrics.yaml}, \texttt{program.md}), with no engine code changes.
 
-% --- 3.3 Evaluation Pipeline ---
-\subsection{Evaluation Pipeline}
-\label{sec:design-eval}
+% ------------------------------------------------------------------
+\subsection{Execution Environment: Git Worktree Isolation}\label{sec:worktree}
 
-\TODO{Write this subsection covering:
-  (1) Deterministic eval: pure functions returning scalar scores.
-  (2) Stochastic eval: LLM judge with multiple samples.
-  (3) Evaluation caching: SHA256 content hash over artifact + eval config.
-  (4) Bradley-Terry scoring for multi-criteria aggregation.
-  (5) Adaptive sampling: stop early when confidence interval is tight enough.}
+A central design requirement is that the optimization loop never touches the user's working tree. Anneal achieves this through git worktrees (ADR-001). Each registered target receives a dedicated worktree at \texttt{.anneal/worktrees/<target-id>} on a branch named \texttt{anneal/<target-id>}. The \texttt{GitEnvironment} class (\texttt{anneal/engine/environment.py}) manages all worktree lifecycle operations: creation with stale-reference pruning, commit, reset, diff capture, and removal.
 
-% Figure: evaluation pipeline schematic
-\begin{figure}[h]
-  \centering
-  % \includegraphics[width=\linewidth]{figures/eval_pipeline.pdf}
-  \TODO{Insert evaluation pipeline figure. Show: artifact -> eval function
-    -> score samples -> Bradley-Terry aggregation -> acceptance test.}
-  \caption{The \textsc{anneal} evaluation pipeline. Stochastic evaluators
-    sample the LLM judge multiple times; adaptive sampling halts when the
-    Bradley-Terry score estimate reaches a target confidence interval.
-    Results are cached by content hash to avoid redundant evaluation.}
-  \label{fig:eval-pipeline}
+The experiment cycle within the worktree proceeds as follows:
+
+\begin{enumerate}
+    \item Record the HEAD SHA before the agent runs (\texttt{pre\_sha}).
+    \item Invoke the mutation agent, which writes changes directly to the worktree filesystem.
+    \item Enforce scope: validate all changed files against the editable list via \texttt{git status -{}-porcelain} (\cref{sec:scope}).
+    \item Commit valid edits. Run verifiers and evaluation.
+    \item On \textsc{kept}: the commit persists on the \texttt{anneal/<target-id>} branch.
+    \item On \textsc{discarded}/\textsc{blocked}: \texttt{git reset -{}-hard <pre\_sha>} restores the worktree to its pre-experiment state.
+\end{enumerate}
+
+The system never uses \texttt{git stash}. The only snapshot and restore mechanism is commit and hard reset. Every accepted mutation is a real git commit, making the full optimization history inspectable with standard git tooling. Garbage collection is configured to retain unreachable commits (\texttt{gc.reflogExpire=never}), preserving the complete experiment lineage.
+
+For in-place targets where worktree isolation is not feasible, a \texttt{FileBackupEnvironment} copies artifact files to \texttt{.anneal/backups/<target-id>/} before each experiment, restoring them on discard.
+
+% ------------------------------------------------------------------
+\subsection{Scope Enforcement}\label{sec:scope}
+
+Scope enforcement prevents the agent from modifying files outside its declared editable set, gaming evaluation definitions, or contaminating sibling targets' configurations (ADR-004). The enforcement operates in two stages.
+
+\paragraph{Registration-time validation.} \texttt{validate\_scope} (\texttt{anneal/engine/scope.py}) checks that \texttt{scope.yaml} satisfies required invariants: \texttt{scope.yaml} and \texttt{metrics.yaml} appear in \texttt{immutable}; stochastic targets additionally require \texttt{eval\_criteria.toml} in \texttt{immutable}; no path appears in both \texttt{editable} and \texttt{immutable}; sibling targets' configuration paths are not declared as editable.
+
+\paragraph{Runtime post-write validation.} After each agent invocation, \texttt{enforce\_scope} inspects the output of \texttt{git status -{}-porcelain} and classifies every changed file:
+\begin{itemize}
+    \item Modified or added files (\texttt{M}, \texttt{A}, \texttt{??}): accepted if the path matches an \texttt{editable} entry (exact match, directory prefix, or glob pattern).
+    \item Deleted files (\texttt{D}): accepted only if the path appears in both \texttt{editable} and \texttt{allowed\_deletions}.
+    \item Renamed files (\texttt{R}): both source and destination must satisfy their respective constraints.
+    \item Path traversal attempts (paths starting with \texttt{..} or absolute paths) are rejected unconditionally via \texttt{os.path.normpath} canonicalization.
+\end{itemize}
+
+Integrity is maintained by a SHA-256 hash of \texttt{scope.yaml} computed at registration time and verified at every experiment start. A hash mismatch raises \texttt{ScopeIntegrityError} and halts the run, requiring explicit re-registration.
+
+% ------------------------------------------------------------------
+\subsection{Evaluation Pipeline}\label{sec:eval-pipeline}
+
+The \texttt{EvalEngine} class (\texttt{anneal/engine/eval.py}) dispatches evaluation based on \texttt{EvalConfig}. Two modes are supported.
+
+\paragraph{Deterministic evaluation.} A \texttt{run\_command} executes in the worktree (e.g., a test suite, a linter, a benchmark), and a \texttt{parse\_command} extracts a numeric score from its stdout. The \texttt{DeterministicEvaluator} supports retry on transient failures and flake detection via median-of-three runs.
+
+\paragraph{Stochastic evaluation.} The \texttt{StochasticEvaluator} generates $N$ samples from fixed test prompts using a generation agent, then scores each sample against $K$ binary criteria using a judge agent. Each criterion receives $V$ independent votes. To cancel position bias, votes are split between forward and reverse criterion orderings, and the per-criterion score is the mean across both orderings.
+
+Two comparison modes are available for aggregating votes:
+\begin{itemize}
+    \item \emph{Majority vote}: binary 1/0 based on whether $> V/2$ votes are YES.
+    \item \emph{Bradley-Terry}: Bayesian strength estimation using a $\text{Beta}(1,1)$ prior (\texttt{BradleyTerryScorer}). The estimated strength $\hat{p} = (\text{yes} + 1) / (\text{total} + 2)$ provides calibrated uncertainty, enabling early stopping when the 95\% confidence interval is entirely above or below the decision threshold.
+\end{itemize}
+
+The aggregate score across all samples is accompanied by bootstrap confidence intervals (10{,}000 resamples with a deterministic seed derived from the score vector).
+
+% ------------------------------------------------------------------
+\subsection{Statistical Comparison}\label{sec:stat-comparison}
+
+Accept/reject decisions for stochastic evaluations use the Wilcoxon signed-rank test (ADR-002), implemented in \texttt{GreedySearch.\_stochastic\_compare} (\texttt{anneal/engine/search.py}). The test is non-parametric and valid for binary and small-sample paired data---the common case in prompt optimization where sample counts range from \NUM{6} to \NUM{20}.
+
+The comparison procedure is:
+\begin{enumerate}
+    \item Compute element-wise differences $d_i = \text{challenger}_i - \text{baseline}_i$.
+    \item Early-reject if the mean difference is in the wrong direction.
+    \item If $n < 6$ (below the minimum for Wilcoxon), apply a Cohen's $d$ effect-size threshold of $0.5$ (medium effect).
+    \item Otherwise, run a one-sided Wilcoxon test (\texttt{scipy.stats.wilcoxon}) with alternative \texttt{"greater"} or \texttt{"less"} depending on the optimization direction.
+    \item Accept if $p < \alpha$, where $\alpha = 1 - \text{confidence}$ (default $0.05$).
+\end{enumerate}
+
+For long-running optimization, Holm--Bonferroni correction controls the family-wise error rate across sequential experiments. The adjusted threshold is $\alpha / (\text{window\_size} - \text{experiment\_index})$ within a rolling 50-experiment window, reducing false-positive acceptance at the cost of decreased sensitivity for later experiments.
+
+Held-out divergence detection runs stochastic evaluation against a separate set of held-out prompts at configurable intervals (\texttt{held\_out\_interval}). A divergence exceeding \NUM{10}\% triggers a warning; \NUM{25}\% triggers a critical alert, indicating potential overfitting to the test prompt distribution.
+
+% ------------------------------------------------------------------
+% Architecture diagram placeholder
+% ------------------------------------------------------------------
+\begin{figure}[t]
+    \centering
+    % \includegraphics[width=\columnwidth]{figures/architecture.pdf}
+    \fbox{\parbox{0.9\columnwidth}{\centering\vspace{2cm}\textit{Architecture diagram placeholder: Artifact--Eval--Agent triplet with git worktree isolation, scope enforcement, and evaluation pipeline.}\vspace{2cm}}}
+    \caption{Anneal system architecture. The user registers a target as an Artifact--Eval--Agent triplet. The engine creates an isolated git worktree, invokes the mutation agent, enforces scope constraints, evaluates the mutated artifact, and applies a statistical acceptance test. Accepted mutations are committed; rejected mutations are reset.}
+    \label{fig:architecture}
 \end{figure}
 
-% --- 3.4 Search Strategies ---
-\subsection{Search Strategies}
-\label{sec:design-search}
-
-% Describe the strategy abstraction and the strategies implemented:
-%   - Greedy: always mutate the current best
-%   - Pareto: maintain non-dominated front for multi-objective
-%   - Island: maintain diverse population, periodic migration
-%   - Thompson Sampling: select strategy via beta-binomial bandit
-\TODO{Write this subsection. Enumerate strategies and their selection policy.
-Reference the StrategyManifest introduced in the enhancements section.}
-
-% --- 3.5 Architecture Overview ---
-\subsection{Architecture Overview}
-\label{sec:design-architecture}
-
-\TODO{Write this subsection as a high-level narrative accompanying the
-architecture diagram.}
-
-% Figure: full architecture diagram
-\begin{figure}[h]
-  \centering
-  % \includegraphics[width=\linewidth]{figures/architecture.pdf}
-  \TODO{Insert architecture diagram. Components: CLI, Runner, Search Engine,
-    Eval Engine, Knowledge Pool, Strategy Selector, Git Worktree Manager.
-    Show data flow and control flow as separate arrow styles.}
-  \caption{Architecture of \textsc{anneal}. The runner orchestrates the
-    optimization loop, delegating mutation to the dual-agent pair,
-    evaluation to the eval engine (with caching), and strategy selection
-    to the Thompson Sampling bandit. The knowledge pool persists across
-    optimization runs and is queried during context construction.}
-  \label{fig:architecture}
-\end{figure}
+% ------------------------------------------------------------------
+% Core experiment loop pseudocode
+% ------------------------------------------------------------------
+\begin{algorithm}[t]
+\caption{Core Experiment Loop (\texttt{ExperimentRunner.run\_one})}\label{alg:experiment-loop}
+\begin{algorithmic}[1]
+\Require Target $\mathcal{T} = (\text{artifact}, \text{eval}, \text{agent})$, worktree $W$, search strategy $\mathcal{S}$
+\State $\textit{sha}_{\text{pre}} \gets \Call{RevParse}{W, \text{HEAD}}$
+\State \Call{VerifyScopeHash}{$\mathcal{T}$.\textit{scope\_path}, $\mathcal{T}$.\textit{scope\_hash}}
+\State $\textit{prompt} \gets \Call{BuildContext}{\mathcal{T}, W, \textit{history}}$ \Comment{knowledge + lineage + research hints}
+\If{$\mathcal{T}$.\textit{two\_phase\_mutation}}
+    \State $\textit{diagnosis} \gets \Call{Diagnose}{\textit{artifact}, \textit{last\_eval}, \textit{history}}$
+    \State $\textit{prompt} \gets \textit{diagnosis} \mathbin\Vert \textit{prompt}$
+\EndIf
+\State $\textit{mutation} \gets \Call{InvokeAgent}{\mathcal{T}.\textit{agent}, \textit{prompt}, W}$
+\State $\textit{violations} \gets \Call{EnforceScope}{W, \mathcal{T}.\textit{scope}}$
+\If{$\textit{violations}.\textit{all\_blocked}$}
+    \State \Call{ResetHard}{$W, \textit{sha}_{\text{pre}}$}
+    \State \Return \textsc{blocked}
+\EndIf
+\State $\textit{sha}_{\text{post}} \gets \Call{Commit}{W, \textit{valid\_paths}}$
+\If{$\mathcal{T}$.\textit{verifiers} $\neq \emptyset$}
+    \State \textbf{if} $\lnot$\Call{RunVerifiers}{$W, \mathcal{T}.\textit{verifiers}$} \textbf{then} \Call{ResetHard}{$W, \textit{sha}_{\text{pre}}$}; \Return \textsc{blocked}
+\EndIf
+\State $\textit{result} \gets \Call{Evaluate}{W, \mathcal{T}.\textit{eval}}$
+\If{$\mathcal{S}$.\Call{ShouldKeep}{\textit{result}, $\mathcal{T}$.\textit{baseline}}}
+    \State Update $\mathcal{T}$.\textit{baseline} $\gets$ \textit{result}.\textit{score}
+    \State \Return \textsc{kept}
+\Else
+    \State \Call{ResetHard}{$W, \textit{sha}_{\text{pre}}$}
+    \State \Return \textsc{discarded}
+\EndIf
+\end{algorithmic}
+\end{algorithm}

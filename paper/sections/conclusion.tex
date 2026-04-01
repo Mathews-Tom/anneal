@@ -1,34 +1,26 @@
-% conclusion.tex
-
+% !TEX root = ../main.tex
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented \textsc{anneal}, a framework for statistically rigorous autonomous
-artifact optimization that addresses three gaps in prior LLM-guided optimization
-systems: lack of statistical significance testing, absence of structured search,
-and no mechanism for accumulating knowledge across optimization runs.
+We presented Anneal, a domain-agnostic autonomous optimization framework that generalizes the mutate--evaluate--decide loop beyond its origins in ML training to arbitrary text-based artifacts.
+The system operates on the minimal abstraction of an (Artifact, Eval, Agent) triplet: given any measurable artifact and an evaluation function, an LLM agent generates informed mutations, the engine evaluates them under statistical rigor, and a search strategy decides whether to accept or revert each change.
+Every experiment is git-committed, scope-enforced, and logged.
 
-\textsc{anneal} introduces \NUM{16} enhancements organized across four tracks.
-The Representation track structures the optimization context to reduce
-prompt-following variance.
-The Search track provides dual-agent mutation, two-phase refinement, and
-island populations for systematic exploration.
-The Knowledge track uses episodic memory and lineage context to prevent
-re-exploration of failed directions.
-The Evaluation track applies Wilcoxon signed-rank testing with Holm-Bonferroni
-correction to make statistically defensible accept/reject decisions.
+The key contributions are:
 
-\TODO{Fill in the empirical summary after benchmarks complete. Key claims:
-  (1) Treatment outperforms Control on X/5 targets (p < 0.05).
-  (2) Treatment reaches comparable score at X\% of greedy baseline cost.
-  (3) Effect size (Cohen's d) for the best-performing target.}
+\begin{enumerate}[nosep]
+  \item A \textbf{stochastic evaluation framework} ($N$ samples $\times$ $K$ binary criteria) that extends autonomous optimization to domains with nondeterministic outputs---prompts, content, and creative artifacts---where deterministic scalar metrics are unavailable.
 
-The framework is open-source and artifact-agnostic, supporting prompt, code,
-and documentation optimization through a unified artifact--eval--agent
-abstraction.
-\TODO{Add: repository URL or anonymous submission URL.}
+  \item A \textbf{knowledge compounding architecture} with TF-IDF retrieval, episodic memory, and cross-experiment learning transfer that enables the agent to accumulate domain-specific insights across hundreds of experiments, avoiding redundant exploration and enabling knowledge reuse across targets and projects.
 
-\TODO{Write a forward-looking closing paragraph. Mention the key open problems
-(multi-artifact co-optimization, MAP-Elites integration, online criterion learning)
-and why statistically rigorous LLM-guided optimization is important for the
-broader software engineering community.}
+  \item A \textbf{statistical decision framework} combining Wilcoxon signed-rank tests, Holm--Bonferroni correction, and bootstrap confidence intervals that reduces false positive acceptance by \NUM{fp-reduction}\% compared to uncorrected thresholding, ensuring that kept mutations represent genuine improvements.
+
+  \item A \textbf{multi-timescale meta-optimization} system---two-phase mutation for per-experiment targeting, policy agent for continuous instruction adaptation, and component-level strategy evolution for structural search adaptation---that breaks through optimization plateaus where single-strategy approaches stagnate.
+
+  \item An \textbf{open-source implementation} with cost controls, safety bounds, and operational tooling (live dashboard, webhook notifications, daemon mode) sufficient for unattended overnight optimization runs.
+\end{enumerate}
+
+Across five benchmark targets spanning prompt optimization, code optimization, and documentation generation, the full system achieves a \NUM{treat-vs-raw}\% mean improvement over sample-and-select baselines, with the iterative loop accounting for \NUM{greedy-vs-raw}\% and the enhancement suite contributing an additional \NUM{treat-vs-greedy}\%.
+Treatment improvements are statistically significant on \NUM{sig-count} of 5 targets after Holm--Bonferroni correction, with medium-to-large effect sizes (Cohen's $d > 0.5$) on all targets.
+
+Anneal is available under the Apache-2.0 license at \url{https://github.com/Mathews-Tom/anneal} and as the \texttt{anneal-cli} package on PyPI.

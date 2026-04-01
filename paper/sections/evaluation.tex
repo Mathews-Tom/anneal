@@ -1,130 +1,104 @@
-% evaluation.tex
-%
-% Subsections:
-%   5.1  Benchmark Suite
-%   5.2  Experimental Configurations
-%   5.3  Statistical Methodology
-%   5.4  Metrics
-
-\section{Evaluation}
+% !TEX root = ../main.tex
+\section{Experimental Evaluation}
 \label{sec:evaluation}
 
-We evaluate \textsc{anneal} on a benchmark suite designed to assess performance
-across the artifact types the system targets.
-The suite consists of five benchmark targets across three domains,
-evaluated under four configurations with ten independent runs each.
+We evaluate Anneal across three domains---prompt optimization, code optimization, and documentation generation---using a suite of five benchmark targets that exercise both evaluation modes (deterministic and stochastic) and a range of optimization objectives.
 
-% --- 5.1 Benchmark Suite ---
 \subsection{Benchmark Suite}
-\label{sec:eval-benchmarks}
+\label{sec:benchmark-suite}
 
-\Cref{tab:benchmarks} describes the five benchmark targets.
-Targets B1 and B2 assess prompt optimization; B3 and B4 assess code optimization;
-B5 assesses documentation quality.
+\cref{tab:benchmark-targets} summarizes the five benchmark targets.
+Each target defines an artifact, an evaluation function, and a set of editable files;
+the evaluation function and its criteria are immutable and outside the agent's mutation scope.
 
-\begin{table}[h]
+\begin{table}[t]
   \centering
-  \caption{Benchmark suite. Each target is evaluated for 50 experiments per run,
-    10 runs per configuration.}
-  \label{tab:benchmarks}
-  \begin{tabular}{lllcc}
+  \caption{Benchmark targets. \emph{Eval mode}: D = deterministic (single scalar), S = stochastic ($N$ samples $\times$ $K$ binary criteria). \emph{Domain}: the optimization domain exercised by each target.}
+  \label{tab:benchmark-targets}
+  \small
+  \begin{tabular}{@{}llllrl@{}}
     \toprule
-    \textbf{ID} & \textbf{Domain} & \textbf{Artifact} & \textbf{Eval Mode} & \textbf{Criteria} \\
+    ID & Target & Domain & Eval & $K$ & Objective \\
     \midrule
-    B1 & Prompt   & Classification system prompt  & Stochastic & 5 binary \\
-    B2 & Prompt   & Few-shot summarization template & Stochastic & 4 binary \\
-    B3 & Code     & Python utility (performance)  & Deterministic & 1 (exec time) \\
-    B4 & Code     & API endpoint (quality + correctness) & Deterministic & 1 composite \\
-    B5 & Docs     & Technical README              & Stochastic & 6 binary \\
+    B1 & Classification prompt & Prompt opt. & S & 5 & Maximize classification accuracy \\
+    B2 & Summarization prompt & Prompt opt. & S & 4 & Maximize summary quality \\
+    B3 & Performance optimization & Code opt. & D & --- & Minimize execution time \\
+    B4 & Code quality refactor & Code opt. & S & 6 & Maximize lint/style score \\
+    B5 & README generation & Documentation & S & 5 & Maximize documentation quality \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-\TODO{Write 2-3 paragraphs describing each benchmark target in detail:
-  (1) What artifact is being optimized?
-  (2) What constitutes a good artifact for that target?
-  (3) Why this target is representative of its domain?}
+The targets were selected to satisfy three coverage criteria.
+First, they span both evaluation modes: B3 uses deterministic evaluation (a single scalar latency measurement), while B1, B2, B4, and B5 use the $N \times K$ stochastic evaluation framework with binary criteria.
+Second, they cover three distinct optimization domains---prompt engineering, code transformation, and technical writing---ensuring that results are not domain-specific.
+Third, they exercise different optimization objectives: maximization (B1, B2, B4, B5) and minimization (B3), testing the engine's directional generality.
 
-% --- 5.2 Experimental Configurations ---
+Each target ships with a TOML configuration specifying artifact paths, scope constraints, evaluation commands, and scoring criteria.
+The evaluation functions are self-contained: B3 runs a subprocess and parses wall-clock time; B1, B2, B4, and B5 invoke an LLM judge with fixed rubric criteria and aggregate binary pass/fail scores across $N = 10$ samples.
+
 \subsection{Experimental Configurations}
-\label{sec:eval-configs}
+\label{sec:configurations}
 
-We use four configurations that form an ablation ladder:
+We compare four configurations of increasing capability, isolating the contribution of each enhancement layer:
 
-\begin{description}
-  \item[Baseline-Raw] Raw LLM generation with no optimization loop.
-    We generate $N = 50$ artifact variants directly and report the best.
-    This establishes a floor: what can LLMs do without search?
+\paragraph{Raw baseline.}
+Generate $n = 50$ independent artifacts using the LLM (same model, same prompt template), evaluate each, and report the best score.
+No optimization loop, no feedback, no knowledge accumulation.
+This baseline measures pure sample-and-select performance without iterative refinement.
 
-  \item[Baseline-Greedy] \textsc{anneal} with greedy hillclimbing only.
-    No enhancement tracks are active. This isolates the contribution of
-    the optimization loop itself from the enhancements.
+\paragraph{Greedy baseline.}
+Run the Anneal engine with greedy search only: accept a mutation if and only if it produces a statistically significant improvement (Wilcoxon signed-rank test, $\alpha = 0.05$).
+No knowledge injection, no strategy adaptation, no meta-optimization.
+This isolates the contribution of the iterative mutate--evaluate--decide loop itself.
 
-  \item[Control] \textsc{anneal} version 0.2.0, pre-enhancement.
-    All features available in the released codebase, with a monolithic
-    \texttt{program.md} context.
+\paragraph{Control.}
+Anneal with the core feature set: greedy search with Holm--Bonferroni correction, \texttt{program.md} mutation instructions, basic knowledge store (experiment history retrieval via TF-IDF similarity), and per-criterion structured feedback.
+This configuration represents the engine without the advanced enhancements described in \cref{sec:method}.
 
-  \item[Treatment] \textsc{anneal} with all \NUM{16} enhancements active
-    (\cref{sec:enhancements}): Strategy Manifest, dual-agent mutation,
-    two-phase mutation, lineage context, episodic memory, adaptive sampling,
-    and Holm-Bonferroni correction.
-\end{description}
+\paragraph{Treatment.}
+Anneal with all enhancements enabled: strategy manifest with component-level evolution, two-phase mutation (structured diagnosis before targeted edit), policy agent for continuous instruction rewriting, episodic memory with transferable lessons, simulated annealing search with adaptive reheat, multi-draft mutation with verifier pruning, and the research operator for external knowledge injection on plateaus.
+This is the full system as described in \cref{sec:method}.
 
-\TODO{Add a paragraph explaining the rationale for this ladder design:
-each configuration adds one category of mechanism, allowing attribution.}
+The progression from raw to treatment forms a nested ablation: each configuration adds a layer of capability, so pairwise comparisons isolate the marginal contribution of each layer.
 
-% --- 5.3 Statistical Methodology ---
-\subsection{Statistical Methodology}
-\label{sec:eval-stats}
+\subsection{Statistical Design}
+\label{sec:stat-design}
 
-\textbf{Runs.}
-We execute 10 independent runs per target-configuration pair, each using a
-distinct random seed.
-Independence is ensured by git worktree isolation: each run operates in a
-separate worktree with no shared mutable state.
-The total experiment count is
-$5 \text{ targets} \times 4 \text{ configs} \times 10 \text{ runs} \times 50 \text{ experiments} = 10{,}000$ experiments.
+Each configuration runs 10 independent trials per benchmark target, each with a distinct random seed controlling LLM sampling temperature jitter and stochastic evaluation order.
+Every trial executes 50 experiments (mutations), yielding a total experimental budget of:
+\[
+  5 \text{ targets} \times 4 \text{ configs} \times 10 \text{ runs} \times 50 \text{ experiments} = 10{,}000 \text{ experiments.}
+\]
 
-\textbf{Significance test.}
-To compare configurations on a given target, we apply the Wilcoxon signed-rank
-test~\cite{wilcoxon1945} over the 10 paired final scores
-(Control run $i$ vs. Treatment run $i$ for $i = 1, \ldots, 10$).
-We use the signed-rank test rather than a $t$-test because the normality
-assumption is unlikely to hold for bounded quality scores.
+\paragraph{Pairwise comparison.}
+For each pair of configurations on each target, we apply the Wilcoxon signed-rank test across the 10 paired final scores (paired by random seed).
+This nonparametric test is appropriate because score distributions are not assumed normal, and pairing by seed controls for LLM sampling variability.
 
-\textbf{Multiple comparison correction.}
-We perform one comparison per target (Control vs. Treatment), yielding five
-$p$-values.
-We apply Holm-Bonferroni correction~\cite{holm1979} to control the
-family-wise error rate at $\alpha = 0.05$.
+\paragraph{Multiple comparison correction.}
+We apply Holm--Bonferroni correction across the five targets for each configuration pair, controlling the family-wise error rate at $\alpha = 0.05$.
+This mirrors the correction used within the engine itself for consolidation-window decisions (\cref{sec:statistical-rigor}).
 
-\textbf{Effect size.}
-We report Cohen's $d$ with 95\% bootstrap confidence intervals (2000 bootstrap
-samples) to quantify the practical significance of observed improvements.
+\paragraph{Effect size.}
+We report Cohen's $d$ with 95\% bootstrap confidence intervals (10{,}000 resamples, bias-corrected and accelerated).
+Bootstrap resampling uses deterministic seeding with float-precision normalization for cross-platform reproducibility.
 
-\textbf{Cost normalization.}
-For cost efficiency analysis, we compare configurations at equal USD budget
-rather than equal experiment count, accounting for the fact that Treatment
-incurs higher per-experiment cost due to dual-agent mutation but may reach
-target quality faster.
+\paragraph{Cost-normalized comparison.}
+Because the treatment configuration incurs higher per-experiment cost (two-phase mutation, multi-draft generation), we additionally compare score-at-equivalent-budget: the best score each configuration achieves when constrained to the same total USD cost, rather than the same number of experiments.
 
-% --- 5.4 Metrics ---
 \subsection{Metrics}
-\label{sec:eval-metrics}
+\label{sec:metrics}
 
-We collect the following metrics per run:
+\paragraph{Primary metrics.}
+\begin{itemize}[nosep]
+  \item \textbf{Final score}: the best score achieved across all 50 experiments in a trial.
+  \item \textbf{Score at budget}: the best score achieved within a fixed cost budget (\$2.00 per trial), enabling cost-normalized comparison.
+  \item \textbf{Convergence speed}: the experiment number at which 90\% of the final improvement (over the initial score) is first achieved.
+  \item \textbf{Total cost}: cumulative USD cost per trial, computed from per-token pricing.
+\end{itemize}
 
-\begin{description}
-  \item[$\text{score}_{50}$] Final score at experiment 50 (primary metric).
-  \item[$\text{score}_{@\$X}$] Score at a fixed USD budget $X$, enabling
-    cost-normalized comparison.
-  \item[$\text{conv}_{90}$] Number of experiments to reach 90\% of the
-    run's best score (convergence speed).
-  \item[$\text{cost}_{\text{total}}$] Total API spend in USD for the 50-experiment run.
-  \item[$\text{accept\_rate}$] Fraction of proposed mutations accepted
-    (mutation acceptance rate).
-  \item[$\text{cache\_hit}$] Evaluation cache hit rate (efficiency metric).
-\end{description}
-
-\TODO{After running benchmarks, verify that all metrics are actually collected
-and stored in the JSONL result files.}
+\paragraph{Secondary metrics.}
+\begin{itemize}[nosep]
+  \item \textbf{Mutation acceptance rate}: fraction of experiments where the mutation was kept (higher is not necessarily better; an acceptance rate near 1.0 suggests the evaluation is not discriminating).
+  \item \textbf{Eval cache hit rate}: fraction of evaluations served from the content-hash cache, indicating redundant mutation generation.
+\end{itemize}

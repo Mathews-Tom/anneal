@@ -2,5 +2,6 @@ editable:
   - benchmarks/suite/artifacts/B3_utility_function.py
 
 immutable:
-  - benchmarks/suite/scopes/B3_scope.yaml
+  - scope.yaml
+  - metrics.yaml
   - benchmarks/suite/harness/parse_execution_time.py

@@ -2,6 +2,7 @@ editable:
   - benchmarks/suite/artifacts/B4_api_endpoint.py
 
 immutable:
-  - benchmarks/suite/scopes/B4_scope.yaml
+  - scope.yaml
+  - metrics.yaml
   - benchmarks/suite/harness/run_b4_composite.py
   - benchmarks/suite/harness/parse_composite_score.py

@@ -411,7 +411,7 @@ def _handle_register(args: argparse.Namespace) -> None:
 
     try:
         staged_paths = asyncio.run(Registry(repo_root).register_target(target))
-    except (ScopeError, GitError) as exc:
+    except (ScopeError, GitError, RegistryError) as exc:
         console.print(f"[red]Registration failed: {exc}[/red]")
         sys.exit(1)
 

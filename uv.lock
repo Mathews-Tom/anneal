@@ -111,12 +111,11 @@ wheels = [
 
 [[package]]
 name = "anneal-cli"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "filelock" },
     { name = "httpx" },
-    { name = "matplotlib" },
     { name = "numpy" },
     { name = "openai" },
     { name = "pydantic" },
@@ -130,6 +129,7 @@ dependencies = [
 [package.optional-dependencies]
 dashboard = [
     { name = "aiohttp" },
+    { name = "matplotlib" },
 ]
 dev = [
     { name = "scikit-learn" },
@@ -153,7 +153,7 @@ requires-dist = [
     { name = "aiohttp", marker = "extra == 'dashboard'", specifier = ">=3.13.3" },
     { name = "filelock", specifier = ">=3.25.2" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "matplotlib", specifier = ">=3.9" },
+    { name = "matplotlib", marker = "extra == 'dashboard'", specifier = ">=3.9" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.9" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "openai", specifier = ">=2.28.0" },

@@ -1,0 +1,161 @@
+% enhancements.tex
+%
+% Subsections:
+%   4.1  Track 1: Representation
+%   4.2  Track 2: Search
+%   4.3  Track 3: Knowledge
+%   4.4  Track 4: Evaluation
+%   4.5  Enhancement Summary Table
+
+\section{Enhancements}
+\label{sec:enhancements}
+
+\textsc{anneal} introduces \NUM{16} enhancements organized into four tracks.
+Each track targets a distinct weakness in baseline LLM-guided optimization.
+\Cref{tab:enhancements} summarizes all enhancements; the following subsections
+describe the design rationale and implementation of the most impactful ones.
+
+% --- 4.1 Representation Track ---
+\subsection{Track 1: Representation}
+\label{sec:enhancements-representation}
+
+% Enhancement 1.1: Strategy Manifest
+% Replaces monolithic program.md with a structured YAML/TOML manifest that
+% separates: objective, constraints, search strategy, evaluation criteria.
+% Design rationale: monolithic prompts cause LLMs to optimize for prompt length
+% rather than artifact quality.
+\subsubsection{Strategy Manifest (1.1)}
+\TODO{Write 2-3 paragraphs on Strategy Manifest. Include:
+  (1) Problem with monolithic program.md.
+  (2) Manifest structure (objective, constraints, strategy, eval criteria).
+  (3) How structured input reduces prompt-following variance.}
+
+% Enhancement 1.2: Component Evolution
+% Decomposes complex artifacts into components evolved independently before
+% recombination. Analogous to genetic algorithm crossover.
+\subsubsection{Component Evolution (1.2)}
+\TODO{Write 2-3 paragraphs on Component Evolution.}
+
+% Enhancement 1.3: Token-Efficient Context
+% Compresses lineage context to fit within context window without losing
+% signal. Key technique: score-sorted summarization.
+\subsubsection{Token-Efficient Context (1.3)}
+\TODO{Write 2-3 paragraphs on Token-Efficient Context.}
+
+% --- 4.2 Search Track ---
+\subsection{Track 2: Search}
+\label{sec:enhancements-search}
+
+% Enhancement 2.1: Dual-Agent Mutation
+% Separates critic (identifies weaknesses) from writer (implements improvements).
+% Design rationale: a single agent conflates diagnosis and repair.
+\subsubsection{Dual-Agent Mutation (2.1)}
+\TODO{Write 2-3 paragraphs on Dual-Agent Mutation. Include:
+  (1) Separation of concerns between critic and writer agents.
+  (2) How the critic's diagnosis is passed to the writer.
+  (3) Expected cost reduction from targeted mutations vs. full rewrites.}
+
+% Enhancement 2.2: Two-Phase Mutation
+% Phase A: coarse exploration (large mutations, high temperature).
+% Phase B: fine-tuning (small mutations, low temperature).
+% Triggered by convergence detector.
+\subsubsection{Two-Phase Mutation (2.2)}
+\TODO{Write 2-3 paragraphs on Two-Phase Mutation.}
+
+% Enhancement 2.3: Island Population
+% Maintains K independent sub-populations. Periodic migration of elite
+% artifacts between islands prevents premature convergence.
+\subsubsection{Island Population (2.3)}
+\TODO{Write 2-3 paragraphs on Island Population.}
+
+% Enhancement 2.4: Simplification Pre-Pass
+% Before mutation, prune unnecessary complexity from current artifact.
+% Prevents accumulation of prompt bloat across generations.
+\subsubsection{Simplification Pre-Pass (2.4)}
+\TODO{Write 2-3 paragraphs on Simplification Pre-Pass.}
+
+% --- 4.3 Knowledge Track ---
+\subsection{Track 3: Knowledge}
+\label{sec:enhancements-knowledge}
+
+% Enhancement 3.1: Episodic Memory
+% Stores successful mutation strategies with their context. Retrieved by
+% semantic similarity to current artifact + objective.
+\subsubsection{Episodic Memory (3.1)}
+\TODO{Write 2-3 paragraphs on Episodic Memory. Include:
+  (1) Storage format: (artifact_type, objective, mutation, delta_score).
+  (2) Retrieval: semantic similarity over artifact embedding.
+  (3) Cross-run knowledge transfer vs. within-run history.}
+
+% Enhancement 3.2: Lineage Context
+% Constructs a compressed lineage tree of the current optimization trajectory.
+% Injected into mutation prompt to prevent re-exploring failed directions.
+\subsubsection{Lineage Context (3.2)}
+\TODO{Write 2-3 paragraphs on Lineage Context.}
+
+% Enhancement 3.3: Research Operator
+% Periodically invokes a research-mode LLM to survey external knowledge
+% (e.g., best practices for the artifact domain) and inject it into the pool.
+\subsubsection{Research Operator (3.3)}
+\TODO{Write 2-3 paragraphs on Research Operator.}
+
+% --- 4.4 Evaluation Track ---
+\subsection{Track 4: Evaluation}
+\label{sec:enhancements-eval}
+
+% Enhancement 4.1: Adaptive Sampling
+% For stochastic evaluators, stop sampling when confidence interval on the
+% Bradley-Terry score is <= epsilon. Reduces eval cost by 30-50%.
+\subsubsection{Adaptive Sampling (4.1)}
+\TODO{Write 2-3 paragraphs on Adaptive Sampling.}
+
+% Enhancement 4.2: Pareto Front Visualization
+% For multi-objective targets, maintain and visualize the Pareto front
+% across the optimization run. Enables trade-off analysis.
+\subsubsection{Pareto Front Visualization (4.2)}
+\TODO{Write 2-3 paragraphs on Pareto Front Visualization.}
+
+% Enhancement 4.3: Evaluation Consistency
+% Detects and corrects evaluator drift (systematic change in LLM judge
+% scoring distribution across time within a run).
+\subsubsection{Evaluation Consistency (4.3)}
+\TODO{Write 2-3 paragraphs on Evaluation Consistency.}
+
+% Enhancement 0.3: Holm-Bonferroni Correction
+\subsubsection{Holm-Bonferroni Correction (0.3)}
+% Adjusts significance threshold when comparing across multiple targets
+% to control family-wise error rate.
+\TODO{Write 2 paragraphs on Holm-Bonferroni. Cite Holm (1979). Explain why
+FWER control is needed when evaluating across 5 benchmark targets.}
+
+% --- 4.5 Enhancement Summary Table ---
+\subsection{Enhancement Summary}
+\label{sec:enhancements-summary}
+
+\begin{table}[h]
+  \centering
+  \caption{Summary of \NUM{16} enhancements across four tracks.}
+  \label{tab:enhancements}
+  \begin{tabular}{llll}
+    \toprule
+    \textbf{ID} & \textbf{Track} & \textbf{Enhancement} & \textbf{Primary Benefit} \\
+    \midrule
+    0.1 & Evaluation   & EvalCache               & Eliminates redundant eval \\
+    0.2 & Search       & ParetoSearch            & Multi-objective support \\
+    0.3 & Evaluation   & Holm-Bonferroni         & Multiple comparison control \\
+    1.1 & Representation & Strategy Manifest     & Structured search guidance \\
+    1.2 & Representation & Component Evolution   & Targeted sub-artifact optimization \\
+    1.3 & Representation & Token-Efficient Context & Context window efficiency \\
+    2.1 & Search       & Dual-Agent Mutation     & Diagnosis/repair separation \\
+    2.2 & Search       & Two-Phase Mutation      & Exploration/exploitation balance \\
+    2.3 & Search       & Island Population       & Diversity maintenance \\
+    2.4 & Search       & Simplification Pre-Pass & Prevents prompt bloat \\
+    3.1 & Knowledge    & Episodic Memory         & Cross-run transfer \\
+    3.2 & Knowledge    & Lineage Context         & Direction pruning \\
+    3.3 & Knowledge    & Research Operator       & External knowledge injection \\
+    4.1 & Evaluation   & Adaptive Sampling       & Evaluation cost reduction \\
+    4.2 & Evaluation   & Pareto Front Viz        & Multi-objective analysis \\
+    4.3 & Evaluation   & Eval Consistency        & Evaluator drift correction \\
+    \bottomrule
+  \end{tabular}
+\end{table}

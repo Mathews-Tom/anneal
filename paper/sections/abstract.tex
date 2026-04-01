@@ -1,0 +1,31 @@
+% abstract.tex — ~200 words
+% Frame: problem, approach, results, conclusion
+%
+% Key claims to support with benchmark numbers (fill in after Task 5.3/5.4):
+%   - Treatment outperforms Control on >= 3/5 targets
+%   - Cost efficiency: treatment reaches comparable score at <=70% cost
+%   - Statistically significant (Wilcoxon p < 0.05 after Holm-Bonferroni)
+
+Large language models (LLMs) can propose improved versions of software artifacts ---
+prompts, code, and configuration --- but existing LLM-guided optimization systems
+lack the statistical rigor required for reliable evaluation and the structured
+search mechanisms needed for systematic exploration of the artifact space.
+Ad hoc mutation loops produce results that are difficult to reproduce,
+compare, and trust.
+
+We present \textsc{anneal}, a framework for statistically rigorous autonomous
+artifact optimization. \textsc{anneal} organizes \NUM{16} enhancements across four
+tracks: \emph{Representation} (structured manifests, component evolution),
+\emph{Search} (dual-agent mutation, two-phase refinement, island populations),
+\emph{Knowledge} (lineage context, episodic memory, research operators), and
+\emph{Evaluation} (Wilcoxon signed-rank testing, Holm-Bonferroni correction,
+adaptive sampling, Bradley-Terry scoring).
+
+We evaluate \textsc{anneal} on a benchmark suite of \NUM{5} targets across three
+domains (prompt optimization, code optimization, documentation quality) using
+four configurations and ten independent runs per configuration.
+\textsc{anneal} with all enhancements achieves statistically significant
+improvement over the baseline on \NUM{X}/5 targets
+($p < 0.05$ after Holm-Bonferroni correction, Cohen's $d = \NUM{X.X}$)
+while reducing cost by \NUM{X}\% relative to the greedy baseline.
+\TODO{Fill in benchmark numbers after Task 5.4 is complete.}

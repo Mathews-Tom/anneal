@@ -1,0 +1,113 @@
+% related_work.tex
+%
+% Subsections:
+%   2.1  LLM-Guided Code Optimization
+%   2.2  LLM-Guided Prompt Optimization
+%   2.3  Statistical Evaluation in ML Systems
+%   2.4  Evolutionary and Population-Based Search
+%   2.5  Positioning: How anneal differs
+
+\section{Related Work}
+\label{sec:related-work}
+
+\subsection{LLM-Guided Code Optimization}
+\label{sec:related-code}
+
+% AlphaEvolve (Novikov et al., 2025) — evolutionary code optimization via Gemini
+% Key points: evolutionary search over code, LLM as mutation operator, no stat testing
+\textbf{AlphaEvolve}~\cite{novikov2025alphaevolve} uses an LLM-guided evolutionary
+algorithm to optimize algorithmic code, achieving state-of-the-art results on
+mathematical programming tasks.
+\TODO{Expand: what does AlphaEvolve do well? Where does it lack statistical
+rigor or structured search? 3-4 sentences.}
+
+% Other code optimization systems
+\TODO{Add coverage of: FunSearch (Romera-Paredes et al., 2024), CodeEvolve if exists,
+LLaMEA if applicable. 2-3 paragraphs.}
+
+\subsection{LLM-Guided Prompt Optimization}
+\label{sec:related-prompt}
+
+% Promptbreeder (Fernando et al., 2023) — self-referential prompt evolution
+\textbf{Promptbreeder}~\cite{fernando2023promptbreeder} evolves both task prompts
+and mutation operators through self-referential improvement.
+\TODO{Expand: self-referential aspect, no statistical significance testing,
+single-objective. 3-4 sentences.}
+
+% DSPy (Khattab et al., 2023) — declarative prompt programming
+\textbf{DSPy}~\cite{khattab2023dspy} introduces a declarative programming model
+for LLM pipelines, separating program structure from prompting strategy.
+\TODO{Expand: DSPy teleprompters as optimization, structured but not evolutionary.
+How does anneal's approach differ? 3-4 sentences.}
+
+% EvoPrompt (Guo et al., 2023) — evolutionary prompt engineering
+\textbf{EvoPrompt}~\cite{guo2023evoprompt} applies genetic algorithms and
+differential evolution directly to discrete prompt optimization.
+\TODO{Expand: discrete evolution, no knowledge accumulation, no stat testing.}
+
+% OPRO (Yang et al., 2023) — optimization by prompting
+\textbf{OPRO}~\cite{yang2023opro} frames optimization as a prompting task,
+where the LLM itself acts as the optimizer given a natural language description
+of the objective.
+\TODO{Expand: natural language optimization trajectory, limitations in
+multi-criteria and stochastic settings. 3-4 sentences.}
+
+\TODO{Add: APE (Automatic Prompt Engineer), ProTeGi, TextGrad if relevant.}
+
+\subsection{Statistical Evaluation in ML Systems}
+\label{sec:related-stats}
+
+% Wilcoxon signed-rank test in NLP evaluation
+\TODO{Cite: Dror et al. (2018) "The Hitchhiker's Guide to Testing Statistical
+Significance in Natural Language Processing". Discuss why non-parametric tests
+are needed for bounded evaluation metrics.}
+
+% Holm-Bonferroni correction for multiple comparisons
+\TODO{Cite: Holm (1979). Discuss how multiple comparison problems arise when
+evaluating a system across multiple benchmarks.}
+
+% Bootstrap confidence intervals
+\TODO{Cite: Efron and Tibshirani (1994). Discuss use in ML system evaluation.}
+
+\subsection{Evolutionary and Population-Based Search}
+\label{sec:related-evolution}
+
+% General evolutionary algorithms background
+\TODO{Brief survey: CMA-ES, NSGA-II, island models. Emphasize how anneal adapts
+these ideas to discrete artifact spaces.}
+
+% Thompson sampling for bandit problems
+\TODO{Cite: Thompson (1933), Chapelle \& Li (2011). Discuss relation to
+anneal's strategy selector.}
+
+\subsection{Positioning}
+\label{sec:related-positioning}
+
+% Summary table comparing anneal to related systems across key dimensions
+\begin{table}[h]
+  \centering
+  \caption{Comparison of LLM-guided optimization systems across key dimensions.
+    \checkmark = fully supported, $\circ$ = partial, --- = not supported.}
+  \label{tab:comparison}
+  \TODO{Fill in table after verifying feature matrix against codebase (Task 5.1).}
+  \begin{tabular}{lccccc}
+    \toprule
+    & \rotatebox{60}{Statistical Tests}
+    & \rotatebox{60}{Structured Search}
+    & \rotatebox{60}{Knowledge Accum.}
+    & \rotatebox{60}{Multi-Criteria}
+    & \rotatebox{60}{Cost Control} \\
+    \midrule
+    AlphaEvolve~\cite{novikov2025alphaevolve}   & --- & \checkmark & --- & --- & --- \\
+    Promptbreeder~\cite{fernando2023promptbreeder} & --- & \checkmark & --- & --- & --- \\
+    DSPy~\cite{khattab2023dspy}                 & --- & $\circ$    & --- & $\circ$ & --- \\
+    EvoPrompt~\cite{guo2023evoprompt}           & --- & \checkmark & --- & --- & --- \\
+    OPRO~\cite{yang2023opro}                    & --- & ---        & $\circ$ & --- & --- \\
+    \textsc{anneal} (this work)                 & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\TODO{Write 2-3 paragraph narrative discussing what distinguishes anneal from
+each category of prior work. Emphasize: (1) statistical rigor as a first-class
+concern, (2) artifact-agnostic abstraction, (3) knowledge accumulation across runs.}

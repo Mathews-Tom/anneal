@@ -1,0 +1,118 @@
+%% main.tex — anneal: Statistically Rigorous Autonomous Artifact Optimization
+%% Target venues: ICSE 2027, ESEC/FSE 2027, NeurIPS Workshop 2026
+%% Document class: ACM sigconf (acmart)
+
+\documentclass[sigconf,review]{acmart}
+
+%%
+%% Packages
+%%
+\usepackage{booktabs}       % Professional quality tables
+\usepackage{microtype}      % Better justification
+\usepackage{cleveref}       % Smart cross-references (\cref)
+\usepackage{xcolor}         % Color support for \todo
+\usepackage{todonotes}      % \todo{} macro for placeholders
+\usepackage{multirow}       % Multi-row table cells
+\usepackage{subcaption}     % Subfigures
+\usepackage{listings}       % Code listings
+\usepackage{amsmath}        % Math environments
+\usepackage{algorithm}      % Algorithm float
+\usepackage{algpseudocode}  % Pseudocode
+
+%%
+%% Todo macro (compile-time placeholders)
+%%
+\newcommand{\TODO}[1]{\todo[inline,color=yellow!40]{TODO: #1}}
+\newcommand{\CITE}[1]{\todo[color=orange!30]{CITE: #1}}
+\newcommand{\NUM}[1]{\textcolor{red}{\textbf{[#1]}}}
+
+%%
+%% ACM Metadata
+%%
+\copyrightyear{2027}
+\acmYear{2027}
+\setcopyright{acmlicensed}
+\acmConference[ICSE '27]{49th International Conference on Software Engineering}{May 2027}{Ottawa, Canada}
+\acmBooktitle{Proceedings of the 49th International Conference on Software Engineering (ICSE '27)}
+\acmDOI{10.1145/XXXXXXX.XXXXXXX}
+\acmISBN{978-1-4503-XXXX-X/27/05}
+
+%%
+%% Authors
+%%
+\author{Mathews Tom}
+\affiliation{%
+  \institution{TODO: Institution}
+  \city{TODO: City}
+  \country{TODO: Country}
+}
+\email{TODO@TODO.edu}
+
+%%
+%% Title
+%%
+\title{anneal: Statistically Rigorous Autonomous Artifact Optimization with Structured Search}
+
+%%
+%% Abstract
+%%
+\begin{abstract}
+\input{sections/abstract}
+\end{abstract}
+
+%%
+%% CCS Concepts
+%%
+\begin{CCSXML}
+<ccs2012>
+  <concept>
+    <concept_id>10011007.10011006.10011008</concept_id>
+    <concept_desc>Software and its engineering~General programming languages</concept_desc>
+    <concept_significance>300</concept_significance>
+  </concept>
+  <concept>
+    <concept_id>10010147.10010178.10010187</concept_id>
+    <concept_desc>Computing methodologies~Search methodologies</concept_desc>
+    <concept_significance>500</concept_significance>
+  </concept>
+  <concept>
+    <concept_id>10010147.10010257</concept_id>
+    <concept_desc>Computing methodologies~Machine learning</concept_desc>
+    <concept_significance>300</concept_significance>
+  </concept>
+</ccs2012>
+\end{CCSXML}
+
+\ccsdesc[300]{Software and its engineering~General programming languages}
+\ccsdesc[500]{Computing methodologies~Search methodologies}
+\ccsdesc[300]{Computing methodologies~Machine learning}
+
+%%
+%% Keywords
+%%
+\keywords{LLM optimization, artifact optimization, statistical testing, evolutionary search,
+          prompt engineering, automated software engineering, structured search}
+
+%%
+%% Document Body
+%%
+\begin{document}
+
+\maketitle
+
+\input{sections/introduction}
+\input{sections/related_work}
+\input{sections/system_design}
+\input{sections/enhancements}
+\input{sections/evaluation}
+\input{sections/results}
+\input{sections/discussion}
+\input{sections/conclusion}
+
+%%
+%% Bibliography
+%%
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
+
+\end{document}

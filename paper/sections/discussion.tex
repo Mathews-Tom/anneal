@@ -1,0 +1,93 @@
+% discussion.tex
+%
+% Subsections:
+%   7.1  Limitations
+%   7.2  Threats to Validity
+%   7.3  Future Work
+
+\section{Discussion}
+\label{sec:discussion}
+
+% --- 7.1 Limitations ---
+\subsection{Limitations}
+\label{sec:discussion-limitations}
+
+% Key limitations to discuss:
+%   L1: Benchmark scope — 5 targets may not generalize to all artifact types
+%   L2: LLM dependency — results depend on the specific models used (cite model versions)
+%   L3: Cost — 10,000 experiments is expensive; barrier to broad replication
+%   L4: Stochastic evaluators — LLM judge quality is not independently validated
+%   L5: Single language — code benchmarks target Python only
+\TODO{Write this subsection. Be honest about limitations. Reviewers will penalize
+papers that omit obvious limitations more than papers that name them directly.}
+
+\textbf{Benchmark scope.}
+Our benchmark suite covers three domains with five targets.
+\TODO{Discuss: what artifact types are not covered? What domains might behave
+differently (e.g., configuration files, database schemas, API specs)?}
+
+\textbf{LLM dependency.}
+\TODO{Discuss: which models were used in benchmarks? How sensitive are results
+to model choice? Would a weaker model reduce the advantage of knowledge-based
+enhancements?}
+
+\textbf{Evaluation cost.}
+\TODO{Discuss: $\sim$\$200-500 benchmark cost is non-trivial. How can future
+work reduce cost while maintaining statistical rigor?}
+
+\textbf{Stochastic evaluator reliability.}
+\TODO{Discuss: Bradley-Terry scoring and position bias cancellation reduce
+variance, but do not eliminate it. What is the measured inter-run variance
+in evaluator scores?}
+
+% --- 7.2 Threats to Validity ---
+\subsection{Threats to Validity}
+\label{sec:discussion-threats}
+
+\textbf{Internal validity.}
+\TODO{Discuss threats to internal validity:
+  (1) Confounding between enhancement tracks (ablation study addresses this partially).
+  (2) Model version changes between runs (controlled by pinning model versions).
+  (3) Evaluator drift within a run (addressed by Eval Consistency enhancement).}
+
+\textbf{External validity.}
+\TODO{Discuss threats to external validity:
+  (1) Generalizability to artifacts outside the benchmark domains.
+  (2) Generalizability to organizations with different budget constraints.
+  (3) Generalizability to non-English artifacts.}
+
+\textbf{Construct validity.}
+\TODO{Discuss: do our metrics measure what we claim?
+  (1) Is score$_{50}$ a valid proxy for artifact quality?
+  (2) Does convergence speed matter in practice?
+  (3) Is cost in USD a fair comparison across configurations with different
+  per-mutation cost structures?}
+
+\textbf{Statistical validity.}
+\TODO{Discuss: 10 runs per configuration is on the lower end for non-parametric
+testing. Discuss power analysis: what effect size can we reliably detect with $n=10$?}
+
+% --- 7.3 Future Work ---
+\subsection{Future Work}
+\label{sec:discussion-future}
+
+\textbf{MAP-Elites integration.}
+Quality-Diversity optimization via MAP-Elites~\cite{mouret2015illuminating}
+would allow \textsc{anneal} to maintain a grid of high-quality artifacts
+across a feature space, useful when optimization objectives have inherent
+trade-offs that cannot be collapsed into a scalar.
+\TODO{Expand: how MAP-Elites would fit into the existing search abstraction.}
+
+\textbf{Multi-artifact optimization.}
+The current framework optimizes a single artifact in isolation.
+Many real-world tasks require co-optimizing interdependent artifacts
+(e.g., a system prompt and its few-shot examples together).
+\TODO{Expand: design sketch for multi-artifact optimization.}
+
+\textbf{Automated benchmark construction.}
+\TODO{Discuss: can \textsc{anneal} itself be used to generate benchmark
+targets (meta-optimization)?}
+
+\textbf{Online learning of evaluation criteria.}
+\TODO{Discuss: current evaluation criteria are fixed at run registration.
+Future work could learn criteria from user feedback during the run.}

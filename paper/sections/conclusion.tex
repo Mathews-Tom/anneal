@@ -1,0 +1,34 @@
+% conclusion.tex
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented \textsc{anneal}, a framework for statistically rigorous autonomous
+artifact optimization that addresses three gaps in prior LLM-guided optimization
+systems: lack of statistical significance testing, absence of structured search,
+and no mechanism for accumulating knowledge across optimization runs.
+
+\textsc{anneal} introduces \NUM{16} enhancements organized across four tracks.
+The Representation track structures the optimization context to reduce
+prompt-following variance.
+The Search track provides dual-agent mutation, two-phase refinement, and
+island populations for systematic exploration.
+The Knowledge track uses episodic memory and lineage context to prevent
+re-exploration of failed directions.
+The Evaluation track applies Wilcoxon signed-rank testing with Holm-Bonferroni
+correction to make statistically defensible accept/reject decisions.
+
+\TODO{Fill in the empirical summary after benchmarks complete. Key claims:
+  (1) Treatment outperforms Control on X/5 targets (p < 0.05).
+  (2) Treatment reaches comparable score at X\% of greedy baseline cost.
+  (3) Effect size (Cohen's d) for the best-performing target.}
+
+The framework is open-source and artifact-agnostic, supporting prompt, code,
+and documentation optimization through a unified artifact--eval--agent
+abstraction.
+\TODO{Add: repository URL or anonymous submission URL.}
+
+\TODO{Write a forward-looking closing paragraph. Mention the key open problems
+(multi-artifact co-optimization, MAP-Elites integration, online criterion learning)
+and why statistically rigorous LLM-guided optimization is important for the
+broader software engineering community.}

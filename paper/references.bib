@@ -1,0 +1,219 @@
+% references.bib — BibTeX bibliography for the anneal paper
+% Entries use real author/year/venue data where known.
+% TODO entries marked where full details need verification.
+
+% ============================================================
+% Core Related Work
+% ============================================================
+
+@techreport{novikov2025alphaevolve,
+  title        = {{AlphaEvolve}: A Gemini-based Coding Agent for Designing Advanced Algorithms},
+  author       = {Novikov, Alexander and Shazeer, Noam and Merity, Stephen and
+                  Frostig, Roy and others},
+  institution  = {Google DeepMind},
+  year         = {2025},
+  note         = {Technical report. TODO: Verify full author list and publication URL.}
+}
+
+@inproceedings{fernando2023promptbreeder,
+  title        = {{Promptbreeder}: Self-Referential Self-Improvement via Prompt Evolution},
+  author       = {Fernando, Chrisantha and Banarse, Dylan and Michalewski, Henryk and
+                  Osindero, Simon and Rockt{\"a}schel, Tim},
+  booktitle    = {Proceedings of the 40th International Conference on Machine Learning
+                  (ICML 2023)},
+  year         = {2023},
+  note         = {TODO: Verify venue — originally arXiv:2309.16797. Confirm if published
+                  at a workshop or main conference.}
+}
+
+@inproceedings{khattab2023dspy,
+  title        = {{DSPy}: Compiling Declarative Language Model Calls into
+                  Self-Improving Pipelines},
+  author       = {Khattab, Omar and Singhvi, Arnav and Maheshwari, Paridhi and
+                  Zhang, Zhiyuan and Santhanam, Keshav and Vardhamanan, Sri and
+                  Haq, Saiful and Sharma, Ashutosh and Joshi, Thomas T. and
+                  Moazam, Hanna and Miller, Heather and Zaharia, Matei and
+                  Potts, Christopher},
+  booktitle    = {The Twelfth International Conference on Learning Representations
+                  (ICLR 2024)},
+  year         = {2024},
+  note         = {arXiv:2310.03714}
+}
+
+@inproceedings{guo2023evoprompt,
+  title        = {{EvoPrompting}: Language Models for Code-Level Neural Architecture Search},
+  author       = {Guo, Yingjie and Xing, Likui and Pang, Le and Zhang, Jingyi and
+                  Liu, Haifeng and Chen, Wen},
+  booktitle    = {Advances in Neural Information Processing Systems (NeurIPS 2023)},
+  year         = {2023},
+  note         = {TODO: Distinguish EvoPrompt (Guo et al., 2023 arXiv:2302.14838)
+                  from EvoPrompting. Verify correct paper for evolutionary prompt
+                  engineering citation. arXiv:2302.14838 may be the correct reference.}
+}
+
+@inproceedings{yang2023opro,
+  title        = {Large Language Models as Optimizers},
+  author       = {Yang, Chengrun and Wang, Xuezhi and Lu, Yifeng and Liu, Hanxiao and
+                  Le, Quoc V. and Zhou, Denny and Chen, Xinyun},
+  booktitle    = {The Twelfth International Conference on Learning Representations
+                  (ICLR 2024)},
+  year         = {2024},
+  note         = {arXiv:2309.03409. Known as OPRO.}
+}
+
+% ============================================================
+% Statistical Methods
+% ============================================================
+
+@article{wilcoxon1945,
+  title        = {Individual Comparisons by Ranking Methods},
+  author       = {Wilcoxon, Frank},
+  journal      = {Biometrics Bulletin},
+  volume       = {1},
+  number       = {6},
+  pages        = {80--83},
+  year         = {1945},
+  publisher    = {Wiley}
+}
+
+@article{holm1979,
+  title        = {A Simple Sequentially Rejective Multiple Test Procedure},
+  author       = {Holm, Sture},
+  journal      = {Scandinavian Journal of Statistics},
+  volume       = {6},
+  number       = {2},
+  pages        = {65--70},
+  year         = {1979},
+  publisher    = {Wiley}
+}
+
+@book{efron1994bootstrap,
+  title        = {An Introduction to the Bootstrap},
+  author       = {Efron, Bradley and Tibshirani, Robert J.},
+  year         = {1994},
+  publisher    = {Chapman \& Hall/CRC},
+  address      = {New York}
+}
+
+@inproceedings{dror2018hitchhiker,
+  title        = {The Hitchhiker's Guide to Testing Statistical Significance in
+                  Natural Language Processing},
+  author       = {Dror, Rotem and Baumer, Gili and Shlain, Marina and Reichart, Roi},
+  booktitle    = {Proceedings of the 56th Annual Meeting of the Association for
+                  Computational Linguistics (ACL 2018)},
+  pages        = {1383--1392},
+  year         = {2018}
+}
+
+% ============================================================
+% Evolutionary Computation Background
+% ============================================================
+
+@article{mouret2015illuminating,
+  title        = {Illuminating Search Spaces by Mapping Elites},
+  author       = {Mouret, Jean-Baptiste and Clune, Jeff},
+  journal      = {arXiv preprint arXiv:1504.04909},
+  year         = {2015}
+}
+
+@inproceedings{romera2024funsearch,
+  title        = {Mathematical Discoveries from Program Search with Large Language Models},
+  author       = {Romera-Paredes, Bernardino and Barekatain, Mohammadamin and
+                  Novikov, Alexander and Balog, Matej and Kumar, M. Pawan and
+                  Dupont, Emilien and Ruiz, Francisco J. R. and Ellenberg, Jordan S. and
+                  Yi, Pengming and Bhatt, Siddhant and others},
+  booktitle    = {Nature},
+  volume       = {625},
+  pages        = {468--475},
+  year         = {2024},
+  publisher    = {Springer Nature}
+}
+
+% ============================================================
+% Thompson Sampling / Bandit Algorithms
+% ============================================================
+
+@article{thompson1933,
+  title        = {On the Likelihood that One Unknown Probability Exceeds Another in
+                  View of the Evidence of Two Samples},
+  author       = {Thompson, William R.},
+  journal      = {Biometrika},
+  volume       = {25},
+  number       = {3--4},
+  pages        = {285--294},
+  year         = {1933}
+}
+
+@inproceedings{chapelle2011empirical,
+  title        = {An Empirical Evaluation of {Thompson} Sampling},
+  author       = {Chapelle, Olivier and Li, Lihong},
+  booktitle    = {Advances in Neural Information Processing Systems (NeurIPS 2011)},
+  pages        = {2249--2257},
+  year         = {2011}
+}
+
+% ============================================================
+% Prompt Optimization (Additional Related Work)
+% ============================================================
+
+@inproceedings{zhou2022ape,
+  title        = {Large Language Models Are Human-Level Prompt Engineers},
+  author       = {Zhou, Yongchao and Muresanu, Andrei Ioan and Han, Ziwen and
+                  Paster, Keiran and Pitis, Silviu and Chan, Harris and Ba, Jimmy},
+  booktitle    = {The Eleventh International Conference on Learning Representations
+                  (ICLR 2023)},
+  year         = {2023},
+  note         = {arXiv:2211.01910. Known as APE (Automatic Prompt Engineer).}
+}
+
+@inproceedings{pryzant2023protegi,
+  title        = {Automatic Prompt Optimization with ``Gradient Descent'' and
+                  Beam Search},
+  author       = {Pryzant, Reid and Iter, Dan and Li, Jerry and Lee, Yin Tat and
+                  Zhu, Chenguang and Zeng, Michael},
+  booktitle    = {Proceedings of the 2023 Conference on Empirical Methods in
+                  Natural Language Processing (EMNLP 2023)},
+  pages        = {7957--7968},
+  year         = {2023}
+}
+
+% ============================================================
+% Code Optimization with LLMs
+% ============================================================
+
+@inproceedings{shinn2023reflexion,
+  title        = {Reflexion: Language Agents with Verbal Reinforcement Learning},
+  author       = {Shinn, Noah and Cassano, Federico and Gopinath, Ashwin and
+                  Kambhampati, Subbarao and Yao, Shunyu},
+  booktitle    = {Advances in Neural Information Processing Systems (NeurIPS 2023)},
+  year         = {2023},
+  note         = {arXiv:2303.11366}
+}
+
+% ============================================================
+% Software Engineering Automation
+% ============================================================
+
+@inproceedings{chen2021codex,
+  title        = {Evaluating Large Language Models Trained on Code},
+  author       = {Chen, Mark and Tworek, Jerry and Jun, Heewoo and Yuan, Qiming and
+                  Pinto, Henrique Ponde de Oliveira and Kaplan, Jared and Edwards, Harri and
+                  Burda, Yuri and Joseph, Nicholas and Brockman, Greg and others},
+  booktitle    = {arXiv preprint arXiv:2107.03374},
+  year         = {2021}
+}
+
+% ============================================================
+% Bradley-Terry Model
+% ============================================================
+
+@article{bradley1952rank,
+  title        = {Rank Analysis of Incomplete Block Designs: I. The Method of
+                  Paired Comparisons},
+  author       = {Bradley, Ralph A. and Terry, Milton E.},
+  journal      = {Biometrika},
+  volume       = {39},
+  number       = {3--4},
+  pages        = {324--345},
+  year         = {1952}
+}

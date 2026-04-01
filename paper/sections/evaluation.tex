@@ -1,0 +1,130 @@
+% evaluation.tex
+%
+% Subsections:
+%   5.1  Benchmark Suite
+%   5.2  Experimental Configurations
+%   5.3  Statistical Methodology
+%   5.4  Metrics
+
+\section{Evaluation}
+\label{sec:evaluation}
+
+We evaluate \textsc{anneal} on a benchmark suite designed to assess performance
+across the artifact types the system targets.
+The suite consists of five benchmark targets across three domains,
+evaluated under four configurations with ten independent runs each.
+
+% --- 5.1 Benchmark Suite ---
+\subsection{Benchmark Suite}
+\label{sec:eval-benchmarks}
+
+\Cref{tab:benchmarks} describes the five benchmark targets.
+Targets B1 and B2 assess prompt optimization; B3 and B4 assess code optimization;
+B5 assesses documentation quality.
+
+\begin{table}[h]
+  \centering
+  \caption{Benchmark suite. Each target is evaluated for 50 experiments per run,
+    10 runs per configuration.}
+  \label{tab:benchmarks}
+  \begin{tabular}{lllcc}
+    \toprule
+    \textbf{ID} & \textbf{Domain} & \textbf{Artifact} & \textbf{Eval Mode} & \textbf{Criteria} \\
+    \midrule
+    B1 & Prompt   & Classification system prompt  & Stochastic & 5 binary \\
+    B2 & Prompt   & Few-shot summarization template & Stochastic & 4 binary \\
+    B3 & Code     & Python utility (performance)  & Deterministic & 1 (exec time) \\
+    B4 & Code     & API endpoint (quality + correctness) & Deterministic & 1 composite \\
+    B5 & Docs     & Technical README              & Stochastic & 6 binary \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\TODO{Write 2-3 paragraphs describing each benchmark target in detail:
+  (1) What artifact is being optimized?
+  (2) What constitutes a good artifact for that target?
+  (3) Why this target is representative of its domain?}
+
+% --- 5.2 Experimental Configurations ---
+\subsection{Experimental Configurations}
+\label{sec:eval-configs}
+
+We use four configurations that form an ablation ladder:
+
+\begin{description}
+  \item[Baseline-Raw] Raw LLM generation with no optimization loop.
+    We generate $N = 50$ artifact variants directly and report the best.
+    This establishes a floor: what can LLMs do without search?
+
+  \item[Baseline-Greedy] \textsc{anneal} with greedy hillclimbing only.
+    No enhancement tracks are active. This isolates the contribution of
+    the optimization loop itself from the enhancements.
+
+  \item[Control] \textsc{anneal} version 0.2.0, pre-enhancement.
+    All features available in the released codebase, with a monolithic
+    \texttt{program.md} context.
+
+  \item[Treatment] \textsc{anneal} with all \NUM{16} enhancements active
+    (\cref{sec:enhancements}): Strategy Manifest, dual-agent mutation,
+    two-phase mutation, lineage context, episodic memory, adaptive sampling,
+    and Holm-Bonferroni correction.
+\end{description}
+
+\TODO{Add a paragraph explaining the rationale for this ladder design:
+each configuration adds one category of mechanism, allowing attribution.}
+
+% --- 5.3 Statistical Methodology ---
+\subsection{Statistical Methodology}
+\label{sec:eval-stats}
+
+\textbf{Runs.}
+We execute 10 independent runs per target-configuration pair, each using a
+distinct random seed.
+Independence is ensured by git worktree isolation: each run operates in a
+separate worktree with no shared mutable state.
+The total experiment count is
+$5 \text{ targets} \times 4 \text{ configs} \times 10 \text{ runs} \times 50 \text{ experiments} = 10{,}000$ experiments.
+
+\textbf{Significance test.}
+To compare configurations on a given target, we apply the Wilcoxon signed-rank
+test~\cite{wilcoxon1945} over the 10 paired final scores
+(Control run $i$ vs. Treatment run $i$ for $i = 1, \ldots, 10$).
+We use the signed-rank test rather than a $t$-test because the normality
+assumption is unlikely to hold for bounded quality scores.
+
+\textbf{Multiple comparison correction.}
+We perform one comparison per target (Control vs. Treatment), yielding five
+$p$-values.
+We apply Holm-Bonferroni correction~\cite{holm1979} to control the
+family-wise error rate at $\alpha = 0.05$.
+
+\textbf{Effect size.}
+We report Cohen's $d$ with 95\% bootstrap confidence intervals (2000 bootstrap
+samples) to quantify the practical significance of observed improvements.
+
+\textbf{Cost normalization.}
+For cost efficiency analysis, we compare configurations at equal USD budget
+rather than equal experiment count, accounting for the fact that Treatment
+incurs higher per-experiment cost due to dual-agent mutation but may reach
+target quality faster.
+
+% --- 5.4 Metrics ---
+\subsection{Metrics}
+\label{sec:eval-metrics}
+
+We collect the following metrics per run:
+
+\begin{description}
+  \item[$\text{score}_{50}$] Final score at experiment 50 (primary metric).
+  \item[$\text{score}_{@\$X}$] Score at a fixed USD budget $X$, enabling
+    cost-normalized comparison.
+  \item[$\text{conv}_{90}$] Number of experiments to reach 90\% of the
+    run's best score (convergence speed).
+  \item[$\text{cost}_{\text{total}}$] Total API spend in USD for the 50-experiment run.
+  \item[$\text{accept\_rate}$] Fraction of proposed mutations accepted
+    (mutation acceptance rate).
+  \item[$\text{cache\_hit}$] Evaluation cache hit rate (efficiency metric).
+\end{description}
+
+\TODO{After running benchmarks, verify that all metrics are actually collected
+and stored in the JSONL result files.}

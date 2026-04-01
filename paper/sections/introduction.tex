@@ -1,0 +1,70 @@
+% introduction.tex
+%
+% Flow:
+%   1. Hook: LLMs as optimization oracles — the opportunity
+%   2. Problem: current approaches lack rigor
+%   3. Gap analysis: what is missing
+%   4. Contributions: anneal framework
+%   5. Results preview
+%   6. Paper structure
+
+\section{Introduction}
+\label{sec:introduction}
+
+% --- 1. Hook ---
+% Describe the general opportunity: LLMs can propose improvements to software
+% artifacts (prompts, code, configs). Give 2-3 concrete motivating examples.
+\TODO{Write the hook paragraph: LLMs as optimization oracles. Cite 2-3 recent
+examples of LLM-guided optimization (AlphaEvolve, OPRO, DSPy).}
+
+% --- 2. Problem Statement ---
+% Describe how existing approaches treat optimization as ad hoc trial-and-error:
+%   - No statistical significance testing between iterations
+%   - Greedy hillclimbing without diversity maintenance
+%   - No cross-run knowledge accumulation
+%   - Expensive stochastic evaluation without adaptive stopping
+\TODO{Write the problem paragraph. Key point: existing systems produce results
+that cannot be reliably reproduced or compared across runs.}
+
+% --- 3. Gap Analysis ---
+% Enumerate the specific gaps:
+%   G1: Statistical rigor — no hypothesis testing over optimization runs
+%   G2: Structured search — no strategy selection or diversity mechanisms
+%   G3: Knowledge accumulation — no memory across optimization sessions
+%   G4: Evaluation efficiency — stochastic eval cost not controlled
+\TODO{Write the gap analysis paragraph.}
+
+% --- 4. Contributions ---
+% We present anneal, making the following contributions:
+\TODO{Introduce anneal. Frame as a framework, not a tool.}
+
+The contributions of this paper are:
+\begin{itemize}
+  \item \textbf{Framework}: \textsc{anneal}, an open-source framework for
+    artifact-agnostic LLM-guided optimization with a clean
+    artifact--eval--agent abstraction (\cref{sec:system-design}).
+  \item \textbf{Enhancements}: \NUM{16} enhancements across four tracks
+    (Representation, Search, Knowledge, Evaluation) with design rationale
+    (\cref{sec:enhancements}).
+  \item \textbf{Evaluation}: A benchmark suite of 5 targets across 3 domains,
+    with 10 independent runs per configuration and Wilcoxon signed-rank
+    testing with Holm-Bonferroni correction (\cref{sec:evaluation}).
+  \item \textbf{Empirical Results}: \TODO{Summarize top-line result here after
+    benchmarks are complete.} (\cref{sec:results}).
+\end{itemize}
+
+% --- 5. Results Preview ---
+% One paragraph summarizing the key experimental finding.
+% Fill in after Task 5.4.
+\TODO{Write results preview paragraph. Reference specific targets where
+treatment outperforms control.}
+
+% --- 6. Paper Structure ---
+The remainder of this paper is organized as follows.
+\Cref{sec:related-work} surveys related work.
+\Cref{sec:system-design} describes the \textsc{anneal} architecture.
+\Cref{sec:enhancements} details the four enhancement tracks.
+\Cref{sec:evaluation} describes the experimental setup.
+\Cref{sec:results} presents empirical results.
+\Cref{sec:discussion} discusses limitations and threats to validity.
+\Cref{sec:conclusion} concludes.

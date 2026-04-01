@@ -381,3 +381,134 @@ cites_sources = 0.8     # must pass on at least 80% of samples
 ```
 
 A mutation that improves the aggregate score but violates a constraint is BLOCKED.
+
+---
+
+## Composite Scoring
+
+Single-metric optimization reliably produces degenerate solutions. A coverage
+eval will generate trivially passing assertions. A latency eval will delete
+features. A readability eval will add docstrings to otherwise incomprehensible
+code. This is Goodhart's Law: when a measure becomes a target, it ceases to be
+a good measure.
+
+The fix is composite scoring — a primary metric the optimizer maximizes, plus
+guard-rail constraints that block solutions that game the primary metric at the
+expense of other quality dimensions.
+
+### How constraints differ from primary criteria
+
+The primary metric (stochastic score or deterministic run-cmd output) drives
+the optimization. Constraints are binary pass/fail gates applied after
+evaluation. A mutation is KEPT only if it improves the primary score AND passes
+all constraints.
+
+Key distinction: the optimizer never sees constraint values as part of the
+objective function. It cannot trade off a constraint violation against a score
+improvement. Constraints are hard walls, not soft costs.
+
+### Adding constraints to a deterministic target
+
+Register with `--constraint-cmd` flags alongside the primary eval:
+
+```bash
+anneal register \
+  --name my-handler \
+  --artifact src/handler.py \
+  --eval-mode deterministic \
+  --direction minimize \
+  --run-cmd "ab -n 1000 -c 50 http://localhost:8080/api/handler" \
+  --parse-cmd "grep 'Time per request' | head -1 | awk '{print \$4}'" \
+  --constraint-cmd "radon cc src/handler.py -a -nc | tail -1 | awk '{print \$NF}'" \
+  --constraint-parse "cat" \
+  --constraint-threshold 10 \
+  --constraint-direction lower_is_better \
+  --constraint-name "cyclomatic_complexity" \
+  --constraint-cmd "wc -l < src/handler.py" \
+  --constraint-parse "cat" \
+  --constraint-threshold 200 \
+  --constraint-direction lower_is_better \
+  --constraint-name "line_count"
+```
+
+The agent can reduce latency in any way that keeps cyclomatic complexity below
+10 and line count below 200. An obfuscated-but-fast solution that pushes
+complexity to 25 is BLOCKED.
+
+### Adding floor constraints to a stochastic target
+
+For stochastic evals, use `min_criterion_scores` to floor individual criteria
+while the aggregate score is still optimized:
+
+```toml
+[meta]
+sample_count = 10
+
+[min_criterion_scores]
+no_fabrication = 0.9    # must pass on 90%+ of samples regardless of aggregate
+cites_sources = 0.8     # must pass on 80%+ of samples regardless of aggregate
+```
+
+The optimizer maximizes the aggregate (all criteria averaged), but a mutation
+that scores well overall while letting `no_fabrication` drop to 0.7 is BLOCKED.
+
+### Composite setups by domain
+
+**Code optimization (latency/size target)**
+
+Primary metric: latency or byte count (minimize)
+Guard rails:
+- Cyclomatic complexity (radon cc) — prevents obfuscated solutions
+- Test pass count (pytest) — prevents feature deletion
+- Line count (wc -l) — prevents single-line hacks
+
+```bash
+# radon must be installed: uv add radon
+--constraint-cmd "radon cc src/ -a -nc | tail -1 | awk '{print \$NF}'" \
+--constraint-parse "cat" --constraint-threshold 10 --constraint-direction lower_is_better \
+--constraint-name "cyclomatic_complexity"
+```
+
+**Prompt improvement (stochastic target)**
+
+Primary metric: aggregate criteria score (maximize)
+Guard rails via `min_criterion_scores`:
+- `no_fabrication = 0.9` — prevents confident but wrong answers
+- `on_topic = 0.85` — prevents score gaming via unrelated high-quality content
+
+The optimizer cannot sacrifice factual accuracy to improve scannability.
+
+**Test coverage (deterministic target)**
+
+Primary metric: coverage percentage (maximize)
+Guard rails:
+- Test pass count — prevents adding tests that pass trivially via skip/xfail
+- Assertion count (grep assert) — catches tests with no assertions
+
+```bash
+--constraint-cmd "pytest tests/ -q 2>&1 | tail -1 | awk '{print \$1}'" \
+--constraint-parse "cat" --constraint-threshold 1 --constraint-direction higher_is_better \
+--constraint-name "passing_tests"
+```
+
+### Best practices for criterion design
+
+**Measurable.** Every criterion must produce a numeric value (deterministic) or
+a YES/NO answer (stochastic). "Better code" is not measurable. "Cyclomatic
+complexity below 10" is measurable.
+
+**Independent.** Each criterion should catch a distinct failure mode. Overlapping
+constraints double-penalize a single issue and obscure what actually changed.
+If two constraints always pass or fail together, collapse them into one.
+
+**Covering different quality dimensions.** A good composite setup spans at
+least three orthogonal axes: primary performance metric, structural integrity
+(complexity, size, coupling), and behavioral correctness (tests pass, output
+matches spec). Solutions that improve one axis while degrading another are
+structurally different from genuine improvements.
+
+**Calibrated thresholds.** Set constraint thresholds at the current baseline
+plus a small margin, not at an aspirational target. A constraint set to 20%
+below baseline will block almost every mutation. A constraint at 110% of
+baseline gives the optimizer room to work while preventing catastrophic
+regressions.

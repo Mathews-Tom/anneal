@@ -1,0 +1,53 @@
+# Template: test-coverage
+# Domain: Python test suites
+# Eval mode: deterministic
+# Direction: maximize
+#
+# Use this template when optimizing test coverage with pytest-cov.
+# This is a DETERMINISTIC eval — pass run-cmd and parse-cmd directly
+# to anneal register (do NOT use this file as eval_criteria.toml):
+#
+#   anneal register \
+#     --name <target> \
+#     --artifact tests/ \
+#     --eval-mode deterministic \
+#     --direction maximize \
+#     --run-cmd "pytest --cov=src --cov-report=term-missing -q 2>&1 | tail -20" \
+#     --parse-cmd "grep '^TOTAL' | awk '{print \$NF}' | tr -d '%'"
+#
+# This file documents the configuration for reference and version control.
+#
+# Customization points:
+#   - Replace "src" in --cov=src with your source package name.
+#   - Replace "tests/" in the artifact with the editable test directory.
+#   - Add --cov-fail-under=80 to the run-cmd if you want pytest itself
+#     to enforce a floor (anneal will then see 0 on failure).
+#   - For faster iteration, add -x to pytest flags to stop on first failure.
+#
+# Recommended constraint to prevent test gaming (adding trivial assertions):
+#
+#   anneal register ... \
+#     --constraint-cmd "pytest tests/ -q 2>&1 | tail -1" \
+#     --constraint-parse "awk '{print \$1}'" \
+#     --constraint-threshold 0 \
+#     --constraint-direction higher_is_better \
+#     --constraint-name "test_pass_count"
+#
+# See docs/eval-guide.md §Composite Scoring for the full pattern.
+
+[template_meta]
+eval_mode = "deterministic"
+direction = "maximize"
+metric_name = "coverage_percent"
+
+[run]
+# Produces output containing a "TOTAL  <stmts>  <miss>  <cover>%" line.
+cmd = "pytest --cov=src --cov-report=term-missing -q 2>&1 | tail -20"
+parse_cmd = "grep '^TOTAL' | awk '{print $NF}' | tr -d '%'"
+timeout_seconds = 120
+
+[scope]
+# Files the agent is allowed to edit.
+editable = ["tests/"]
+# Files the agent must not touch.
+immutable = ["src/", "pyproject.toml", "scope.yaml", "eval.sh"]

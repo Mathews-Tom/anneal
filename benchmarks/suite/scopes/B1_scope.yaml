@@ -1,0 +1,6 @@
+editable:
+  - benchmarks/suite/artifacts/B1_classification_system_prompt.md
+
+immutable:
+  - benchmarks/suite/scopes/B1_scope.yaml
+  - benchmarks/suite/configs/B1_classification_prompt.toml

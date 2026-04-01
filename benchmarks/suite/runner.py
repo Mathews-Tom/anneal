@@ -134,7 +134,6 @@ def build_run_command(run: BenchmarkRun) -> list[str]:
         "uv", "run", "anneal", "run",
         "--target", run.target_name,
         "--experiments", str(run.target.experiment_budget),
-        "--seed", str(run.seed),
         "--yes",  # non-interactive: skip cost confirmation prompt
     ]
 

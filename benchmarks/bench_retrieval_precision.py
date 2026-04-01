@@ -149,7 +149,7 @@ def main() -> None:
     ratio = precision_tfidf / max(precision_jaccard, 1e-10)
 
     print("=" * 60)
-    print("Phase 5 Gate: TF-IDF vs Jaccard Retrieval Precision")
+    print("Gate: TF-IDF vs Jaccard Retrieval Precision")
     print("=" * 60)
     print(f"Corpus: {sum(len(g) for g in HYPOTHESIS_GROUPS)} hypotheses in {len(HYPOTHESIS_GROUPS)} groups")
     print(f"Metric: precision@{k}")

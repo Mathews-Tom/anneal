@@ -75,7 +75,7 @@ def main() -> None:
     reduction = (avg_without - avg_with) / max(avg_without, 1e-10) * 100
 
     print("=" * 60)
-    print("Phase 2 Gate: False Positive Rate Validation")
+    print("Gate: False Positive Rate Validation")
     print("=" * 60)
     print(f"Runs: {n_runs} x 50-experiment windows")
     print(f"Null distribution: N(0.5, 0.1), n=10 paired samples")

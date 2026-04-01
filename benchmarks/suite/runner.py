@@ -97,7 +97,6 @@ def build_register_command(run: BenchmarkRun) -> list[str]:
     Returns a list of string tokens suitable for subprocess.run.
     """
     target = run.target
-    config = run.config
     target_name = run.target_name
 
     cmd: list[str] = [
@@ -117,10 +116,6 @@ def build_register_command(run: BenchmarkRun) -> list[str]:
             cmd += ["--run-cmd", target.run_cmd]
         if target.parse_cmd:
             cmd += ["--parse-cmd", target.parse_cmd]
-
-    # Search strategy — skip for raw (no anneal optimization)
-    if config.search_strategy != "none":
-        cmd += ["--search", config.search_strategy]
 
     return cmd
 
@@ -142,6 +137,10 @@ def build_run_command(run: BenchmarkRun) -> list[str]:
         "--seed", str(run.seed),
         "--yes",  # non-interactive: skip cost confirmation prompt
     ]
+
+    # Search strategy is a run-time flag, not a registration flag
+    if run.config.search_strategy not in ("none", "hybrid"):
+        cmd += ["--search", run.config.search_strategy]
 
     return cmd
 

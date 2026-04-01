@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.4.0] - 2026-04-01
+
+### Features
+
+- **`anneal validate` command**: Run a single eval pass on the current artifact to verify eval setup before committing to a full run. Reports baseline score, bootstrap CI, per-criterion breakdown, and health assessment
+- **`anneal suggest` positional form**: Accepts a natural-language description as a positional argument alongside the existing `--problem` flag
+- **Interactive cost confirmation**: Prompts when estimated cost exceeds a configurable threshold ($5.00 default). Skip with `--yes` / `-y` for CI/automation. Threshold configurable via `.anneal/config.toml`
+- **Per-experiment cost display**: Each experiment prints a running cost line: `[exp N/M] score: X -> Y (+delta) | cost: $A / $B budget`
+- **`--template` flag on `anneal register`**: Load eval criteria and defaults from named templates. Explicit CLI args override template values. List available templates with `anneal templates`
+- **HybridSearch default**: New default search strategy — greedy for the first 10 experiments, then simulated annealing. Override with `--search greedy` or any explicit strategy flag
+- **Typed evaluator protocol**: `Evaluator` protocol and `EvalResult` dataclass in `anneal/eval_protocol.py` for plugin-based evaluation via Python callables. `load_evaluator("module.py:callable")` supports both file paths and dotted module specs
+- **Eval criteria templates**: Five TOML templates shipped in `anneal/templates/` — prompt-quality, code-readability, test-coverage, api-latency, documentation
+
+### Build
+
+- Move matplotlib from core to `[dashboard]` optional dependency group (zero imports in anneal package)
+- Add Python 3.12/3.13 classifiers, license, and OS classifiers to package metadata
+- Document tiktoken dependency trade-off inline
+
+### Documentation
+
+- **README restructured** for adopters: badges, pitch, quick start, provider table, eval modes (collapsible), use-case tables with cost estimates, results section with case study
+- **Provider support table**: Surfaces existing multi-provider support (Anthropic, OpenAI, Google, Ollama, LM Studio, any OpenAI-compatible)
+- **Results section**: Code-golf case study (93.7% reduction, 3592 to 228 bytes) with score trajectory SVG
+- **CONTRIBUTING.md**: Dev setup, module map, code style, testing, PR process
+- **SECURITY.md**: Threat model and isolation boundaries verified against code
+- **Dockerfile + .dockerignore**: python:3.12-slim, non-root user, uv install
+- **4 ADRs**: Git worktrees for isolation, Wilcoxon over t-test, artifact-eval-agent triplet, scope enforcement design
+- **Complexity tiers guide**: Three-tier search strategy documentation (simple/intermediate/advanced)
+- **Composite scoring docs**: Guard-rail constraints for preventing Goodhart's Law failures in eval-guide.md
+
+### Fixes
+
+- Correct license from MIT to Apache-2.0 in README
+- Regenerate infographic PNG at 2x retina resolution
+
 ## [0.3.0] - 2026-04-01
 
 ### Features

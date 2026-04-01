@@ -43,14 +43,14 @@ git log --oneline
 
 ## Supported Providers
 
-| Provider | Models | Notes |
-|----------|--------|-------|
-| Anthropic | claude-* | Default. Claude Code or API |
-| OpenAI | gpt-* | Via OpenAI SDK |
-| Google | gemini-* | Via OpenAI-compatible endpoint |
-| Ollama | ollama/* | Local. $0 cost tracking |
-| LM Studio | lmstudio/* | Local. $0 cost tracking |
-| Any OpenAI-compatible | Custom | Via base URL override |
+| Provider              | Models      | Notes                          |
+| --------------------- | ----------- | ------------------------------ |
+| Anthropic             | claude-\*   | Default. Claude Code or API    |
+| OpenAI                | gpt-\*      | Via OpenAI SDK                 |
+| Google                | gemini-\*   | Via OpenAI-compatible endpoint |
+| Ollama                | ollama/\*   | Local. $0 cost tracking        |
+| LM Studio             | lmstudio/\* | Local. $0 cost tracking        |
+| Any OpenAI-compatible | Custom      | Via base URL override          |
 
 ## Two Evaluation Modes
 
@@ -83,26 +83,26 @@ Each criterion is a YES/NO question. Scores aggregate across samples and criteri
 
 ## Where Anneal Works
 
-| Use Case | Eval Mode | ~Cost / 50 exp |
-|----------|-----------|----------------|
-| Prompt optimization | stochastic | $8–$13 |
-| API response time | deterministic | $2–$5 |
-| Test coverage improvement | deterministic | $2–$5 |
-| Training config (hyperparams) | deterministic | $2–$8 |
-| RAG retrieval prompt | deterministic | $2–$5 |
-| System prompt | stochastic | $8–$15 |
-| Config tuning (build/infra) | deterministic | $1–$3 |
+| Use Case                      | Eval Mode     | ~Cost / 50 exp |
+| ----------------------------- | ------------- | -------------- |
+| Prompt optimization           | stochastic    | $8–$13         |
+| API response time             | deterministic | $2–$5          |
+| Test coverage improvement     | deterministic | $2–$5          |
+| Training config (hyperparams) | deterministic | $2–$8          |
+| RAG retrieval prompt          | deterministic | $2–$5          |
+| System prompt                 | stochastic    | $8–$15         |
+| Config tuning (build/infra)   | deterministic | $1–$3          |
 
 ## Where Anneal Does Not Work
 
-| Target | Reason |
-|--------|--------|
-| Binary files, databases | Artifact must be a text file in git |
-| Embedding model selection | Requires full re-index — not a file edit |
-| Inter-agent protocol changes | Coordinated multi-file edits required |
-| Live system tuning | No git isolation, unsafe to mutate in place |
-| Cross-service optimization | Single-artifact scope only |
-| Database schema migrations | Irreversible side effects |
+| Target                       | Reason                                      |
+| ---------------------------- | ------------------------------------------- |
+| Binary files, databases      | Artifact must be a text file in git         |
+| Embedding model selection    | Requires full re-index — not a file edit    |
+| Inter-agent protocol changes | Coordinated multi-file edits required       |
+| Live system tuning           | No git isolation, unsafe to mutate in place |
+| Cross-service optimization   | Single-artifact scope only                  |
+| Database schema migrations   | Irreversible side effects                   |
 
 ## Results
 
@@ -110,15 +110,15 @@ Each criterion is a YES/NO question. Scores aggregate across samples and criteri
 
 Shrink a verbose Python file while preserving byte-identical output.
 
-| Metric | Value |
-|--------|-------|
-| Target | `examples/code-golf/app.py` |
-| Eval mode | Deterministic (file size in bytes) |
-| Direction | Minimize |
-| Experiments | 7 |
-| Start score | 3,592 bytes |
-| End score | 228 bytes |
-| Reduction | 93.7% |
+| Metric      | Value                              |
+| ----------- | ---------------------------------- |
+| Target      | `examples/code-golf/app.py`        |
+| Eval mode   | Deterministic (file size in bytes) |
+| Direction   | Minimize                           |
+| Experiments | 7                                  |
+| Start score | 3,592 bytes                        |
+| End score   | 228 bytes                          |
+| Reduction   | 93.7%                              |
 
 <picture>
   <img alt="Score trajectory: 3,592 bytes to 228 bytes over 7 experiments" src="assets/score-trajectory.svg" width="100%">
@@ -195,16 +195,16 @@ anneal register \
 
 ## Documentation
 
-| Doc | What's in it |
-|-----|--------------|
-| [Overview](docs/overview.md) | Motivation, lineage, and the core idea |
-| [Eval Guide](docs/eval-guide.md) | Writing good binary evaluation criteria |
-| [Recipes](docs/recipes.md) | Copy-paste registration commands for common targets |
-| [Use Cases](docs/use-cases.md) | Where anneal works, where it doesn't, and why |
-| [Features](docs/features.md) | Search strategies, statistical methods, knowledge system |
-| [Architecture](docs/architecture.md) | Module map and design principles |
-| [System Design](docs/system-design.md) | Full technical design document |
-| [CI Integration](docs/ci-integration.md) | GitHub Actions workflow and status JSON output |
+| Doc                                      | What's in it                                             |
+| ---------------------------------------- | -------------------------------------------------------- |
+| [Overview](docs/overview.md)             | Motivation, lineage, and the core idea                   |
+| [Eval Guide](docs/eval-guide.md)         | Writing good binary evaluation criteria                  |
+| [Recipes](docs/recipes.md)               | Copy-paste registration commands for common targets      |
+| [Use Cases](docs/use-cases.md)           | Where anneal works, where it doesn't, and why            |
+| [Features](docs/features.md)             | Search strategies, statistical methods, knowledge system |
+| [Architecture](docs/architecture.md)     | Module map and design principles                         |
+| [System Design](docs/system-design.md)   | Full technical design document                           |
+| [CI Integration](docs/ci-integration.md) | GitHub Actions workflow and status JSON output           |
 
 ## Testing
 

@@ -292,8 +292,16 @@ def _execute_run(run: BenchmarkRun, dry_run: bool = False) -> dict[str, object]:
             console.print(f"  {format_command(run_cmd)}")
         return {"run_id": run.run_id, "dry_run": True}
 
-    # Step 1: Register target (idempotent — re-registration is safe)
+    # Step 1: Deregister if already registered, then register fresh.
+    # Multiple seeds share the same target name, so the caller should
+    # track which targets have been registered to avoid redundant cycles.
     console.print(f"  [cyan]register[/cyan] {run.target_name}")
+    subprocess.run(
+        ["uv", "run", "anneal", "deregister", "--target", run.target_name],
+        cwd=str(_REPO_ROOT),
+        capture_output=True,
+        text=True,
+    )  # ignore errors — target may not exist yet
     reg_result = subprocess.run(
         reg_cmd,
         cwd=str(_REPO_ROOT),

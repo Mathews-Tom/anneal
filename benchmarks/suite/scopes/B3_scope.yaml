@@ -4,4 +4,4 @@ editable:
 immutable:
   - scope.yaml
   - metrics.yaml
-  - benchmarks/suite/harness/parse_execution_time.py
+  - benchmarks/suite/harness/eval_b3.py

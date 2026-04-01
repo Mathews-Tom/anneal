@@ -72,8 +72,8 @@ B3 = BenchmarkTarget(
     artifact_path="benchmarks/suite/artifacts/B3_utility_function.py",
     scope_path="benchmarks/suite/scopes/B3_scope.yaml",
     criteria_path=None,
-    run_cmd="uv run python benchmarks/suite/artifacts/B3_utility_function.py",
-    parse_cmd="uv run python benchmarks/suite/harness/parse_execution_time.py",
+    run_cmd="uv run python benchmarks/suite/harness/eval_b3.py",
+    parse_cmd="cat",
     direction="minimize",
 )
 

@@ -1,0 +1,65 @@
+# B4: API endpoint — composite code quality + correctness score.
+# Deterministic eval — maximize composite score (0.0–1.0).
+# Composite = 0.5 * correctness + 0.3 * lint_score + 0.2 * type_coverage
+
+[meta]
+target_id = "B4"
+domain = "code"
+eval_mode = "deterministic"
+direction = "maximize"
+experiment_budget = 50
+
+[eval]
+run_cmd = "uv run python benchmarks/suite/harness/run_b4_composite.py"
+parse_cmd = "uv run python benchmarks/suite/harness/parse_composite_score.py"
+# Metric: composite score in [0.0, 1.0] (higher is better)
+metric_name = "composite_score"
+time_budget_seconds = 120
+
+# ------------------------------------------------------------------
+# Per-configuration overrides
+# ------------------------------------------------------------------
+
+[configs.raw]
+description = "Raw LLM generation, no anneal optimization"
+search_strategy = "none"
+
+[configs.raw.enhancements]
+strategy_manifest = false
+dual_agent = false
+two_phase = false
+lineage_context = false
+episodic_memory = false
+
+[configs.greedy]
+description = "Anneal with greedy search, no knowledge injection"
+search_strategy = "greedy"
+
+[configs.greedy.enhancements]
+strategy_manifest = false
+dual_agent = false
+two_phase = false
+lineage_context = false
+episodic_memory = false
+
+[configs.control]
+description = "Anneal with default hybrid search and monolithic program.md"
+search_strategy = "hybrid"
+
+[configs.control.enhancements]
+strategy_manifest = false
+dual_agent = false
+two_phase = false
+lineage_context = false
+episodic_memory = false
+
+[configs.treatment]
+description = "Anneal with all enhancements: manifest, dual-agent, two-phase, lineage, episodic memory"
+search_strategy = "hybrid"
+
+[configs.treatment.enhancements]
+strategy_manifest = true
+dual_agent = true
+two_phase = true
+lineage_context = true
+episodic_memory = true

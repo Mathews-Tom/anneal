@@ -117,6 +117,10 @@ def build_register_command(run: BenchmarkRun) -> list[str]:
         if target.parse_cmd:
             cmd += ["--parse-cmd", target.parse_cmd]
 
+    # Use full model name — short aliases like "sonnet" aren't resolved
+    # by the engine's provider-prefix routing in client.py.
+    cmd += ["--agent-model", "claude-sonnet-4-6"]
+
     return cmd
 
 

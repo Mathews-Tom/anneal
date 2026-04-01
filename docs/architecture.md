@@ -6,16 +6,18 @@
 anneal/engine/
   runner.py            # Experiment state machine (mutate → eval → decide → log)
   eval.py              # Deterministic + stochastic eval, Bradley-Terry, position debiasing
-  eval_cache.py        # Content-hash LRU cache for eval results
-  search.py            # Greedy, simulated annealing (adaptive), population (crossover), Pareto
+  eval_cache.py        # Content-hash LRU cache for eval results with consistency monitoring
+  search.py            # Greedy, SA, population, island population, Pareto search strategies
   bayesian.py          # GP surrogate model for mutation ranking (optional scikit-learn)
   strategy_selector.py # Thompson Sampling meta-strategy over search algorithms
+  strategy.py          # Strategy manifest: structured YAML components with evolution
   archive.py           # MAP-Elites quality-diversity archive
   agent.py             # LLM mutation (Claude Code subprocess or API mode)
+  research.py          # Research operator: external knowledge injection on plateau
   scope.py             # Editable/immutable enforcement with path traversal protection
-  knowledge.py         # JSONL experiment store, TF-IDF/embedding retrieval, sliding window drift
+  knowledge.py         # JSONL experiment store, TF-IDF/embedding retrieval, episodic memory
   learning_pool.py     # Cross-condition/target/project knowledge transfer with domain filtering
-  context.py           # Token budget assembly with per-criterion feedback formatting
+  context.py           # Token budget assembly with compression modes and research hints
   environment.py       # Git worktree management with fsck integrity checks
   safety.py            # Budget caps, failure limits, disk checks, process time-boxing
   client.py            # Multi-provider LLM client with configurable pricing (TOML overlay)
@@ -25,18 +27,25 @@ anneal/engine/
   policy_agent.py      # Policy agent: continuous instruction rewriting, reward tracking
   registry.py          # Target configuration (config.toml persistence)
   dashboard.py         # File-based SSE live dashboard
+  notifications.py     # Webhook notification hooks with retry
+  compare.py           # Statistical comparison utilities
+  rate_limiter.py      # API rate limiting
+  daemon.py            # Daemon management
 ```
 
 ## The Experiment Loop
 
 ```text
-Load context (artifact + history + learnings)
-  → Generate hypothesis + mutation
-  → Checkpoint (git commit)
-  → Execute (time-boxed)
-  → Evaluate (score output)
-  → Keep or discard (statistical test)
-  → Log learnings
+Assemble context (artifact + history + learnings + research hints)
+  → Select search node (greedy / SA / population island / UCB tree)
+  → Generate hypothesis + mutation (optional: two-phase diagnosis, multi-draft)
+  → Scope enforcement + verification gates
+  → Evaluate (deterministic command or stochastic LLM judge)
+  → Statistical decision (Wilcoxon / effect-size / Pareto dominance)
+  → Keep winner or revert (git commit / rollback)
+  → Extract lesson + update knowledge
+  → Adapt strategy (policy rewrite / component evolution / research on plateau)
+  → Island migration (if due)
   → Consolidate (periodic)
   → Repeat
 ```

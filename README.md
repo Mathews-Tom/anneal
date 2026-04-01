@@ -135,4 +135,4 @@ uv run pytest tests/ --cov=anneal    # With coverage
 
 ## License
 
-MIT
+Apache-2.0

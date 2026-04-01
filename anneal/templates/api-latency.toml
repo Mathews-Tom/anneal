@@ -1,0 +1,74 @@
+# Template: api-latency
+# Domain: HTTP API endpoints
+# Eval mode: deterministic
+# Direction: minimize
+#
+# Use this template when optimizing API response latency using wrk or ab.
+# This is a DETERMINISTIC eval — pass run-cmd and parse-cmd directly
+# to anneal register (do NOT use this file as eval_criteria.toml):
+#
+# With wrk (recommended):
+#
+#   anneal register \
+#     --name <target> \
+#     --artifact src/ \
+#     --eval-mode deterministic \
+#     --direction minimize \
+#     --run-cmd "wrk -t4 -c100 -d10s http://localhost:8080/api/endpoint" \
+#     --parse-cmd "grep 'Latency' | awk '{print \$2}' | tr -d 'ms'"
+#
+# With ab (Apache Bench):
+#
+#   anneal register \
+#     --name <target> \
+#     --artifact src/ \
+#     --eval-mode deterministic \
+#     --direction minimize \
+#     --run-cmd "ab -n 1000 -c 50 http://localhost:8080/api/endpoint" \
+#     --parse-cmd "grep 'Time per request' | head -1 | awk '{print \$4}'"
+#
+# This file documents the configuration for reference and version control.
+#
+# Customization points:
+#   - Replace the endpoint URL with your actual endpoint.
+#   - Adjust -t (threads), -c (connections), -d (duration) for your load profile.
+#   - wrk parses p50 latency by default; use --latency flag for p99.
+#   - Ensure the server is running and warmed up before anneal starts.
+#   - Add a correctness verifier to catch regressions:
+#
+#   anneal register ... \
+#     --verifier-cmd "curl -sf http://localhost:8080/api/endpoint | jq -e '.status == \"ok\"'"
+#
+# Recommended constraint to prevent latency gaming (disabling features):
+#
+#   anneal register ... \
+#     --constraint-cmd "curl -sf http://localhost:8080/api/endpoint | jq '.result | length'" \
+#     --constraint-parse "cat" \
+#     --constraint-threshold 1 \
+#     --constraint-direction higher_is_better \
+#     --constraint-name "response_non_empty"
+#
+# See docs/eval-guide.md §Composite Scoring for the full pattern.
+
+[template_meta]
+eval_mode = "deterministic"
+direction = "minimize"
+metric_name = "p50_latency_ms"
+
+[run]
+# wrk variant — outputs plain latency in milliseconds.
+cmd = "wrk -t4 -c100 -d10s http://localhost:8080/api/endpoint"
+parse_cmd = "grep 'Latency' | awk '{print $2}' | tr -d 'ms'"
+timeout_seconds = 60
+
+[run_ab]
+# ab variant — alternative if wrk is not available.
+cmd = "ab -n 1000 -c 50 http://localhost:8080/api/endpoint"
+parse_cmd = "grep 'Time per request' | head -1 | awk '{print $4}'"
+timeout_seconds = 60
+
+[scope]
+# Files the agent is allowed to edit.
+editable = ["src/api/", "src/handlers/"]
+# Files the agent must not touch.
+immutable = ["tests/", "pyproject.toml", "scope.yaml"]

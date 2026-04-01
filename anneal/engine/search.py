@@ -583,3 +583,46 @@ class IslandPopulationSearch:
             }
             for i, island in enumerate(self._islands)
         ]
+
+
+class HybridSearch:
+    """Simple-mode default: greedy for the first N experiments, then simulated annealing.
+
+    Provides a sensible default for new users who do not want to think about
+    search strategy selection.  The greedy phase quickly establishes a good
+    baseline; the annealing phase then explores the neighbourhood.
+    """
+
+    def __init__(
+        self,
+        greedy_phase_length: int = 10,
+    ) -> None:
+        self._greedy_phase_length = greedy_phase_length
+        self._call_count = 0
+        self._greedy = GreedySearch()
+        self._annealing = SimulatedAnnealingSearch()
+
+    def should_keep(
+        self,
+        challenger_result: EvalResult,
+        baseline_score: float,
+        baseline_raw_scores: list[float] | None,
+        direction: Direction,
+        min_improvement_threshold: float = 0.0,
+        confidence: float = 0.95,
+        experiment_index: int = 0,
+        holm_bonferroni: bool = False,
+    ) -> bool:
+        """Delegate to greedy for the first N calls, then to simulated annealing."""
+        self._call_count += 1
+        active = self._greedy if self._call_count <= self._greedy_phase_length else self._annealing
+        return active.should_keep(
+            challenger_result,
+            baseline_score,
+            baseline_raw_scores,
+            direction,
+            min_improvement_threshold,
+            confidence,
+            experiment_index,
+            holm_bonferroni,
+        )

@@ -83,6 +83,53 @@ def _handle_register(args: argparse.Namespace) -> None:
     """Handle ``anneal register``."""
     repo_root = _find_repo_root()
 
+    # 4.1 — Apply template defaults before resolving other args
+    template_name = getattr(args, "template", None)
+    if template_name is not None:
+        from anneal.suggest.templates.registry import get_template as _get_template
+
+        tmpl = _get_template(template_name)
+        if tmpl is None:
+            console.print(
+                f"[red]Template '{template_name}' not found. "
+                f"Run 'anneal templates' to list available templates.[/red]"
+            )
+            sys.exit(1)
+
+        # Apply template defaults — explicit CLI args take precedence
+        if not getattr(args, "eval_mode", None):
+            args.eval_mode = tmpl.eval_mode
+        if not getattr(args, "direction", None):
+            args.direction = tmpl.direction
+
+        # For stochastic templates, generate a temporary criteria TOML if --criteria not given
+        if tmpl.eval_mode == "stochastic" and tmpl.criteria and not getattr(args, "criteria", None):
+            import tempfile
+            import tomli_w as _tomli_w
+
+            tmpl_data: dict[str, object] = {
+                "criteria": tmpl.criteria,
+            }
+            if tmpl.test_prompts:
+                tmpl_data["test_prompts"] = [{"prompt": p} for p in tmpl.test_prompts]
+            if tmpl.program_md_guidance:
+                tmpl_data["meta"] = {"guidance": tmpl.program_md_guidance}
+
+            with tempfile.NamedTemporaryFile(
+                mode="wb", suffix=".toml", delete=False, prefix="anneal_tmpl_"
+            ) as tmp:
+                tmp.write(_tomli_w.dumps(tmpl_data).encode("utf-8"))
+                args.criteria = tmp.name
+
+        # For deterministic templates, populate run-cmd/parse-cmd if not given
+        if tmpl.eval_mode == "deterministic":
+            if not getattr(args, "run_cmd", None) and tmpl.run_command_template:
+                args.run_cmd = tmpl.run_command_template
+            if not getattr(args, "parse_cmd", None) and tmpl.parse_command_template:
+                args.parse_cmd = tmpl.parse_command_template
+
+        console.print(f"  [dim]Loaded template: {template_name} ({tmpl.description})[/dim]")
+
     # Validate eval-mode specific arguments
     eval_mode = EvalMode(args.eval_mode)
 
@@ -417,6 +464,39 @@ def _handle_register(args: argparse.Namespace) -> None:
     )
 
 
+_DEFAULT_COST_CONFIRMATION_THRESHOLD = 5.00
+
+
+def _load_cost_threshold(repo_root: Path) -> float:
+    """Load cost confirmation threshold from .anneal/config.toml if present."""
+    import tomllib as _tomllib
+
+    config_path = repo_root / ".anneal" / "config.toml"
+    if not config_path.exists():
+        return _DEFAULT_COST_CONFIRMATION_THRESHOLD
+    try:
+        data = _tomllib.loads(config_path.read_text(encoding="utf-8"))
+        return float(data.get("anneal", {}).get("cost_confirmation_threshold", _DEFAULT_COST_CONFIRMATION_THRESHOLD))
+    except Exception:
+        return _DEFAULT_COST_CONFIRMATION_THRESHOLD
+
+
+def _confirm_cost(estimated_cost: float, threshold: float, yes: bool) -> bool:
+    """Return True if the run should proceed.
+
+    Prompts interactively when estimated_cost > threshold and yes is False.
+    Always returns True when yes is True or cost is under threshold.
+    """
+    if yes or estimated_cost <= threshold:
+        return True
+    from rich.prompt import Confirm
+    return Confirm.ask(
+        f"Estimated cost: ${estimated_cost:.2f}. Proceed?",
+        default=False,
+        console=console,
+    )
+
+
 def _print_dry_run(targets: list[OptimizationTarget], max_experiments: int | None) -> None:
     """Print cost estimate for each target without running experiments."""
     from anneal.engine.context import estimate_tokens
@@ -524,6 +604,31 @@ def _handle_run(args: argparse.Namespace) -> None:
         _print_dry_run(targets, args.experiments)
         return
 
+    # 2.2 — Interactive confirmation for expensive runs
+    _cost_threshold = _load_cost_threshold(repo_root)
+    _yes_flag = getattr(args, "yes", False)
+    if not _yes_flag:
+        from anneal.engine.context import estimate_tokens
+        from anneal.engine.safety import estimate_experiment_cost
+
+        n_est = args.experiments or 50
+        total_estimated = 0.0
+        for _t in targets:
+            try:
+                _artifact_tokens = sum(
+                    estimate_tokens(Path(_t.worktree_path, p).read_text())
+                    for p in _t.artifact_paths
+                    if Path(_t.worktree_path, p).exists()
+                )
+                _est = estimate_experiment_cost(_t, context_tokens=_artifact_tokens)
+                total_estimated += _est.total_usd * n_est
+            except Exception:
+                pass  # estimation failure is non-fatal; confirmation still uses 0.0 if all fail
+
+        if not _confirm_cost(total_estimated, _cost_threshold, yes=False):
+            console.print("[yellow]Aborted.[/yellow]")
+            sys.exit(0)
+
     # F5: Global learning pool
     learning_pool = None
     if getattr(args, "global_learnings", True):
@@ -536,8 +641,12 @@ def _handle_run(args: argparse.Namespace) -> None:
         notifier = NotificationManager(target.notifications)
 
         # Select search strategy
+        # 10.1 — Simple mode default: HybridSearch (greedy x10 then annealing)
+        # when no explicit --search flag is given.
         search_choice = getattr(args, "search", None)
-        if search_choice == "annealing":
+        if search_choice == "greedy":
+            search_strategy = GreedySearch()
+        elif search_choice == "annealing":
             from anneal.engine.search import SimulatedAnnealingSearch  # noqa: F811
             search_strategy = SimulatedAnnealingSearch()
         elif search_choice == "population":
@@ -555,7 +664,9 @@ def _handle_run(args: argparse.Namespace) -> None:
                 if records:
                     search_strategy.bootstrap_from_history(records)
         else:
-            search_strategy = GreedySearch()
+            # Default: greedy phase (10 experiments) then simulated annealing
+            from anneal.engine.search import HybridSearch  # noqa: F811
+            search_strategy = HybridSearch()
 
         # F6: Set approval callback for deployment-tier targets
         if target.domain_tier is DomainTier.DEPLOYMENT and target.approval_callback is None:
@@ -588,6 +699,13 @@ def _handle_run(args: argparse.Namespace) -> None:
         total_cost = 0.0
         best_score = target.baseline_score
         kept_count = 0
+        exp_count = 0
+        # 2.3 — Running cost: budget cap for display
+        _budget_display = (
+            f" / ${target.budget_cap.max_usd_per_day:.2f} budget"
+            if target.budget_cap
+            else ""
+        )
 
         # Progress bar with inline status
         progress = Progress(
@@ -606,8 +724,9 @@ def _handle_run(args: argparse.Namespace) -> None:
         )
 
         def on_experiment(record: ExperimentRecord) -> None:
-            nonlocal total_cost, best_score, kept_count
+            nonlocal total_cost, best_score, kept_count, exp_count
             total_cost += record.cost_usd
+            exp_count += 1
             if record.outcome.value == "KEPT":
                 best_score = record.score
                 kept_count += 1
@@ -625,6 +744,17 @@ def _handle_run(args: argparse.Namespace) -> None:
             failure = ""
             if record.failure_mode:
                 failure = f"  {record.failure_mode[:60]}"
+
+            # 2.3 — Per-experiment cost line printed above the progress bar
+            _exp_label = f"[exp {exp_count}/{max_exp}]" if max_exp > 0 else f"[exp {exp_count}]"
+            _prev_score = record.baseline_score
+            _delta = record.score - _prev_score
+            _delta_str = f"+{_delta:.4f}" if _delta >= 0 else f"{_delta:.4f}"
+            console.print(
+                f"  {_exp_label} score: {_prev_score:.4f} -> {record.score:.4f} "
+                f"({_delta_str}) | cost: ${total_cost:.2f}{_budget_display}",
+                highlight=False,
+            )
 
             progress.update(
                 task_id,
@@ -1188,6 +1318,16 @@ def _handle_suggest(args: argparse.Namespace) -> None:
     from anneal.suggest.renderer import render_criteria, render_plan, write_suggestion_files
     from anneal.suggest.scope import generate_scope
 
+    # Resolve problem description: --problem flag overrides positional arg
+    problem_text = getattr(args, "problem", None) or getattr(args, "description", None)
+    if not problem_text:
+        console.print(
+            "[red]Provide a problem description either as a positional argument "
+            "or via --problem.[/red]"
+        )
+        sys.exit(1)
+    args.problem = problem_text
+
     repo_root = _find_repo_root()
 
     # Pre-flight: verify artifact files exist
@@ -1250,6 +1390,117 @@ def _handle_suggest(args: argparse.Namespace) -> None:
         console.print(f"[dim]Target directory: {target_dir}[/dim]")
 
 
+def _handle_validate(args: argparse.Namespace) -> None:
+    """Handle ``anneal validate``.
+
+    Runs a single evaluation pass on the current artifact to verify the eval
+    setup before committing to a full optimization run.  For stochastic evals,
+    reports per-criterion breakdown and a bootstrap confidence interval.
+    """
+    from anneal.engine.eval import EvalEngine, EvalError
+
+    repo_root = _find_repo_root()
+    registry = Registry(repo_root)
+
+    try:
+        target = registry.get_target(args.target)
+    except RegistryError as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    worktree = Path(target.worktree_path)
+    artifact_content = "\n\n".join(
+        (worktree / p).read_text(encoding="utf-8")
+        for p in target.artifact_paths
+        if (worktree / p).exists()
+    )
+
+    console.print()
+    console.print(f"  Running eval on current artifact (baseline)...")
+
+    try:
+        result = asyncio.run(
+            EvalEngine().evaluate(worktree, target.eval_config, artifact_content)
+        )
+    except EvalError as exc:
+        console.print(f"[red]Eval failed: {exc}[/red]")
+        sys.exit(1)
+
+    # --- Format output ---
+    if result.ci_lower is not None and result.ci_upper is not None:
+        score_line = (
+            f"Baseline score: {result.score:.4f} "
+            f"(CI: {result.ci_lower:.2f}\u2013{result.ci_upper:.2f})"
+        )
+    else:
+        score_line = f"Baseline score: {result.score:.4f}"
+
+    console.print(f"  {score_line}")
+
+    # Per-criterion breakdown (stochastic only)
+    if (
+        result.criterion_names
+        and result.per_criterion_scores
+        and target.eval_config.stochastic is not None
+    ):
+        n_samples = target.eval_config.stochastic.sample_count
+        console.print()
+        console.print("  Criteria breakdown:")
+
+        min_score: float | None = None
+        for crit_name in result.criterion_names:
+            raw_score = result.per_criterion_scores.get(crit_name, 0.0)
+            # per_criterion_scores contains the average across samples (0.0–1.0)
+            passed_count = round(raw_score * n_samples)
+            passed = raw_score >= 0.5
+            marker = "[green]v[/green]" if passed else "[red]x[/red]"
+            weakest_tag = ""
+            if min_score is None or raw_score < min_score:
+                min_score = raw_score
+                # tag the weakest criterion after we know all scores
+            console.print(
+                f"    {marker} {crit_name:20s} {passed_count}/{n_samples} samples passed"
+            )
+
+        # Identify the weakest criterion
+        if result.per_criterion_scores:
+            weakest_name = min(result.per_criterion_scores, key=lambda k: result.per_criterion_scores[k])  # type: ignore[arg-type]
+            weakest_val = result.per_criterion_scores[weakest_name]
+            if weakest_val < 0.5:
+                console.print(
+                    f"\n  Weakest criterion: [yellow]{weakest_name}[/yellow] "
+                    f"({weakest_val:.0%} pass rate)"
+                )
+
+    # Health assessment
+    console.print()
+    if result.score >= 0.7:
+        console.print("  [green]Eval looks healthy.[/green] Score is above 0.70.")
+    elif result.score >= 0.4:
+        console.print(
+            "  [yellow]Eval is functional but score is low.[/yellow] "
+            "Consider reviewing your criteria or artifact before running a full optimization."
+        )
+    else:
+        console.print(
+            "  [red]Score is very low (<0.40).[/red] "
+            "Verify your eval setup and artifact content before proceeding."
+        )
+
+    # Variance / CI width check
+    if result.ci_lower is not None and result.ci_upper is not None:
+        ci_width = result.ci_upper - result.ci_lower
+        if ci_width > 0.3:
+            console.print(
+                f"  [yellow]Wide confidence interval ({ci_width:.2f}).[/yellow] "
+                "Consider increasing --samples for more reliable scoring."
+            )
+        else:
+            console.print(f"  Variance is within expected range (CI width: {ci_width:.2f}).")
+
+    console.print()
+
+
 # ---------------------------------------------------------------------------
 # Argument parser construction
 # ---------------------------------------------------------------------------
@@ -1303,6 +1554,16 @@ def _build_parser() -> argparse.ArgumentParser:
                      help="Judgment model for stochastic eval (default: --evaluator-model)")
     reg.add_argument("--judgment-mode", choices=["claude_code", "api"], default=None,
                      help="Judgment agent mode for stochastic eval (default: api)")
+    reg.add_argument(
+        "--template",
+        metavar="TEMPLATE_NAME",
+        help=(
+            "Load eval criteria and defaults from a named template "
+            "(e.g. prompt-quality, doc-quality). "
+            "Explicit CLI args override template values. "
+            "Run 'anneal templates' to list available templates."
+        ),
+    )
 
     # -- run (stub) --
     run = subparsers.add_parser("run", help="Run optimization loop")
@@ -1315,9 +1576,17 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--samples", type=int, help="Override sample count (N) for this run")
     run.add_argument("--confidence", type=float, help="Override confidence level for this run")
     run.add_argument("--agent-budget", type=float, help="Override per-invocation agent budget for this run")
-    run.add_argument("--search", choices=["greedy", "annealing", "population", "ucb_tree"], help="Override search strategy for this run")
+    run.add_argument(
+        "--search",
+        choices=["greedy", "annealing", "population", "ucb_tree"],
+        help=(
+            "Search strategy (default: greedy for first 10 experiments, then simulated annealing). "
+            "Use --search greedy to disable the hybrid default."
+        ),
+    )
     run.add_argument("--population-size", type=int, help="Population size for population search (default: 4)")
     run.add_argument("--global-learnings", action=argparse.BooleanOptionalAction, default=True, help="Enable/disable cross-project learning pool")
+    run.add_argument("--yes", "-y", action="store_true", help="Skip cost confirmation prompt (for CI/automation)")
 
     # -- stop (stub) --
     stop = subparsers.add_parser("stop", help="Stop optimization loop")
@@ -1389,7 +1658,18 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # -- suggest --
     sug = subparsers.add_parser("suggest", help="Generate experiment configuration from a problem description")
-    sug.add_argument("--problem", required=True, help="Natural-language description of what to optimize")
+    sug.add_argument(
+        "description",
+        nargs="?",
+        default=None,
+        metavar="DESCRIPTION",
+        help="Natural-language description of what to optimize (positional form)",
+    )
+    sug.add_argument(
+        "--problem",
+        default=None,
+        help="Natural-language description of what to optimize (flag form; overrides positional)",
+    )
     sug.add_argument("--artifact", required=True, nargs="+", help="Artifact file paths to optimize")
     sug.add_argument("--eval-cmd", help="Deterministic eval run command (omit for stochastic mode)")
     sug.add_argument("--parse-cmd", help="Deterministic eval parse command (default: cat)")
@@ -1411,6 +1691,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # -- templates --
     subparsers.add_parser("templates", help="List available experiment templates")
+
+    # -- validate --
+    validate = subparsers.add_parser(
+        "validate",
+        help="Run a single eval pass on the current artifact to verify eval setup",
+    )
+    validate.add_argument("--target", required=True, help="Target identifier")
 
     return parser
 
@@ -1447,6 +1734,7 @@ def main(argv: list[str] | None = None) -> None:
         "compare": lambda: _handle_compare(args),
         "templates": lambda: _handle_templates(args),
         "local-check": lambda: _handle_local_check(args),
+        "validate": lambda: _handle_validate(args),
     }
 
     try:

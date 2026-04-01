@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="320" viewBox="0 0 600 320" font-family="system-ui, -apple-system, sans-serif">
+  <!-- Background -->
+  <rect width="600" height="320" fill="#ffffff" rx="8"/>
+
+  <!-- Chart area background -->
+  <rect x="70" y="20" width="500" height="240" fill="#F9FAFB" rx="4"/>
+
+  <!-- Grid lines (horizontal) -->
+  <line x1="70" y1="260" x2="570" y2="260" stroke="#E5E7EB" stroke-width="1"/>
+  <line x1="70" y1="200" x2="570" y2="200" stroke="#E5E7EB" stroke-width="1"/>
+  <line x1="70" y1="140" x2="570" y2="140" stroke="#E5E7EB" stroke-width="1"/>
+  <line x1="70" y1="80" x2="570" y2="80" stroke="#E5E7EB" stroke-width="1"/>
+  <line x1="70" y1="20" x2="570" y2="20" stroke="#E5E7EB" stroke-width="1"/>
+
+  <!-- Grid lines (vertical) -->
+  <line x1="70" y1="20" x2="70" y2="260" stroke="#E5E7EB" stroke-width="1"/>
+  <line x1="153" y1="20" x2="153" y2="260" stroke="#E5E7EB" stroke-width="0.5" stroke-dasharray="4,3"/>
+  <line x1="236" y1="20" x2="236" y2="260" stroke="#E5E7EB" stroke-width="0.5" stroke-dasharray="4,3"/>
+  <line x1="319" y1="20" x2="319" y2="260" stroke="#E5E7EB" stroke-width="0.5" stroke-dasharray="4,3"/>
+  <line x1="402" y1="20" x2="402" y2="260" stroke="#E5E7EB" stroke-width="0.5" stroke-dasharray="4,3"/>
+  <line x1="485" y1="20" x2="485" y2="260" stroke="#E5E7EB" stroke-width="0.5" stroke-dasharray="4,3"/>
+  <line x1="570" y1="20" x2="570" y2="260" stroke="#E5E7EB" stroke-width="1"/>
+
+  <!-- Y-axis labels (bytes) -->
+  <text x="60" y="264" text-anchor="end" font-size="11" fill="#6B7280">0</text>
+  <text x="60" y="204" text-anchor="end" font-size="11" fill="#6B7280">900</text>
+  <text x="60" y="144" text-anchor="end" font-size="11" fill="#6B7280">1800</text>
+  <text x="60" y="84" text-anchor="end" font-size="11" fill="#6B7280">2700</text>
+  <text x="60" y="24" text-anchor="end" font-size="11" fill="#6B7280">3600</text>
+
+  <!-- X-axis labels (experiments) -->
+  <text x="70" y="278" text-anchor="middle" font-size="11" fill="#6B7280">0</text>
+  <text x="153" y="278" text-anchor="middle" font-size="11" fill="#6B7280">1</text>
+  <text x="236" y="278" text-anchor="middle" font-size="11" fill="#6B7280">2</text>
+  <text x="319" y="278" text-anchor="middle" font-size="11" fill="#6B7280">3</text>
+  <text x="402" y="278" text-anchor="middle" font-size="11" fill="#6B7280">4</text>
+  <text x="485" y="278" text-anchor="middle" font-size="11" fill="#6B7280">5</text>
+  <text x="570" y="278" text-anchor="middle" font-size="11" fill="#6B7280">7</text>
+
+  <!-- Axis labels -->
+  <text x="320" y="300" text-anchor="middle" font-size="12" fill="#374151" font-weight="500">Experiment</text>
+  <text x="14" y="140" text-anchor="middle" font-size="12" fill="#374151" font-weight="500" transform="rotate(-90, 14, 140)">File Size (bytes)</text>
+
+  <!-- Data line: score trajectory -->
+  <!-- Points: exp0=3592, exp1=2800, exp2=1950, exp3=1100, exp4=620, exp5=380, exp7=228 -->
+  <!-- Y mapping: y = 260 - (val/3600)*240 -->
+  <!-- exp0=3592 → y=260-(3592/3600)*240=260-239.5=20.5≈21 → x=70 -->
+  <!-- exp1=2800 → y=260-(2800/3600)*240=260-186.7=73.3≈73 → x=153 -->
+  <!-- exp2=1950 → y=260-(1950/3600)*240=260-130=130 → x=236 -->
+  <!-- exp3=1100 → y=260-(1100/3600)*240=260-73.3=186.7≈187 → x=319 -->
+  <!-- exp4=620 → y=260-(620/3600)*240=260-41.3=218.7≈219 → x=402 -->
+  <!-- exp5=380 → y=260-(380/3600)*240=260-25.3=234.7≈235 → x=485 -->
+  <!-- exp7=228 → y=260-(228/3600)*240=260-15.2=244.8≈245 → x=570 -->
+  <polyline
+    points="70,21 153,73 236,130 319,187 402,219 485,235 570,245"
+    fill="none"
+    stroke="#2563EB"
+    stroke-width="2.5"
+    stroke-linejoin="round"
+    stroke-linecap="round"/>
+
+  <!-- Area fill under line -->
+  <polygon
+    points="70,21 153,73 236,130 319,187 402,219 485,235 570,245 570,260 70,260"
+    fill="#2563EB"
+    opacity="0.08"/>
+
+  <!-- Data points -->
+  <circle cx="70" cy="21" r="4" fill="#2563EB" stroke="#ffffff" stroke-width="2"/>
+  <circle cx="153" cy="73" r="4" fill="#2563EB" stroke="#ffffff" stroke-width="2"/>
+  <circle cx="236" cy="130" r="4" fill="#2563EB" stroke="#ffffff" stroke-width="2"/>
+  <circle cx="319" cy="187" r="4" fill="#2563EB" stroke="#ffffff" stroke-width="2"/>
+  <circle cx="402" cy="219" r="4" fill="#2563EB" stroke="#ffffff" stroke-width="2"/>
+  <circle cx="485" cy="235" r="4" fill="#2563EB" stroke="#ffffff" stroke-width="2"/>
+  <circle cx="570" cy="245" r="4" fill="#2563EB" stroke="#ffffff" stroke-width="2"/>
+
+  <!-- Start annotation -->
+  <text x="75" y="17" font-size="10" fill="#374151" font-weight="500">3,592 bytes</text>
+
+  <!-- End annotation -->
+  <text x="520" y="241" font-size="10" fill="#374151" font-weight="500">228 bytes</text>
+
+  <!-- Title -->
+  <text x="320" y="315" text-anchor="middle" font-size="11" fill="#9CA3AF">Code Golf — 7 experiments, 93.7% reduction</text>
+</svg>

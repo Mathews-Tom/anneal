@@ -33,7 +33,10 @@ def estimate_experiment_cost(
     eval_input_tokens = 0.0
     eval_cost_usd = 0.0
 
-    if target.eval_mode == EvalMode.STOCHASTIC and target.eval_config.stochastic is not None:
+    if (
+        target.eval_mode == EvalMode.STOCHASTIC
+        and target.eval_config.stochastic is not None
+    ):
         stochastic = target.eval_config.stochastic
         n = stochastic.sample_count
         k = len(stochastic.criteria)

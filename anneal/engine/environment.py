@@ -59,9 +59,7 @@ class GitEnvironment:
     # Worktree management
     # ------------------------------------------------------------------
 
-    async def create_worktree(
-        self, repo_root: Path, target_id: str
-    ) -> WorktreeInfo:
+    async def create_worktree(self, repo_root: Path, target_id: str) -> WorktreeInfo:
         """Create ``.anneal/worktrees/<target-id>`` with branch ``anneal/<target-id>``.
 
         If the branch already exists (e.g., from a previous registration),
@@ -162,9 +160,7 @@ class GitEnvironment:
         logger.info("Staged %d untracked file(s) in worktree: %s", len(staged), staged)
         return staged
 
-    async def remove_worktree(
-        self, repo_root: Path, target_id: str
-    ) -> None:
+    async def remove_worktree(self, repo_root: Path, target_id: str) -> None:
         """Remove worktree but preserve ``.anneal/targets/<target-id>/`` experiment data."""
         worktree_path = repo_root / ".anneal" / "worktrees" / target_id
 
@@ -192,9 +188,7 @@ class GitEnvironment:
     # Commit / reset operations
     # ------------------------------------------------------------------
 
-    async def commit(
-        self, worktree_path: Path, message: str, paths: list[str]
-    ) -> str:
+    async def commit(self, worktree_path: Path, message: str, paths: list[str]) -> str:
         """Stage specific paths, commit, return the new sha.
 
         Raises ``GitError`` on empty commit or staging failure.
@@ -222,14 +216,10 @@ class GitEnvironment:
         """
         await self.reset_hard(worktree, sha)
 
-    async def checkout_paths(
-        self, worktree_path: Path, paths: list[str]
-    ) -> None:
+    async def checkout_paths(self, worktree_path: Path, paths: list[str]) -> None:
         """``git checkout -- <paths>`` for selective reset."""
         absolute_paths = [str((worktree_path / p).resolve()) for p in paths]
-        await self._run_git(
-            ["checkout", "--", *absolute_paths], cwd=worktree_path
-        )
+        await self._run_git(["checkout", "--", *absolute_paths], cwd=worktree_path)
 
     async def clean_untracked(self, worktree_path: Path) -> None:
         """``git clean -fd`` in worktree."""
@@ -237,25 +227,19 @@ class GitEnvironment:
 
     async def rev_parse(self, worktree_path: Path, ref: str) -> str:
         """Return the sha for a ref (HEAD, branch name, etc.)."""
-        output = await self._run_git(
-            ["rev-parse", ref], cwd=worktree_path
-        )
+        output = await self._run_git(["rev-parse", ref], cwd=worktree_path)
         return output.strip()
 
     # ------------------------------------------------------------------
     # Status
     # ------------------------------------------------------------------
 
-    async def status_porcelain(
-        self, worktree_path: Path
-    ) -> list[tuple[str, str]]:
+    async def status_porcelain(self, worktree_path: Path) -> list[tuple[str, str]]:
         """Return list of ``(status_code, file_path)`` from ``git status --porcelain``.
 
         Parses all status codes: M, ??, D, R, A, etc.
         """
-        output = await self._run_git(
-            ["status", "--porcelain"], cwd=worktree_path
-        )
+        output = await self._run_git(["status", "--porcelain"], cwd=worktree_path)
 
         results: list[tuple[str, str]] = []
         for line in output.splitlines():
@@ -282,12 +266,8 @@ class GitEnvironment:
 
     async def configure_gc(self, repo_root: Path) -> None:
         """Disable auto-gc and set reflog expiry to ``never`` for unreachable commits."""
-        await self._run_git(
-            ["config", "gc.auto", "0"], cwd=repo_root
-        )
-        await self._run_git(
-            ["config", "gc.reflogExpire", "never"], cwd=repo_root
-        )
+        await self._run_git(["config", "gc.auto", "0"], cwd=repo_root)
+        await self._run_git(["config", "gc.reflogExpire", "never"], cwd=repo_root)
         await self._run_git(
             ["config", "gc.reflogExpireUnreachable", "never"], cwd=repo_root
         )
@@ -299,12 +279,31 @@ class GitEnvironment:
     async def fsck(self, worktree: Path) -> bool:
         """Run git fsck. Returns True if clean."""
         proc = await asyncio.create_subprocess_exec(
-            "git", "fsck", "--no-full", "--no-dangling",
+            "git",
+            "fsck",
+            "--no-full",
+            "--no-dangling",
             cwd=str(worktree),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await proc.communicate()
+        return proc.returncode == 0
+
+    async def gc_prune(self, worktree: Path) -> bool:
+        """Run git gc --prune=now to clean up corrupt/unreachable objects.
+
+        Returns True if gc succeeded.
+        """
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "gc",
+            "--prune=now",
+            cwd=str(worktree),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await proc.communicate()
         return proc.returncode == 0
 
     # ------------------------------------------------------------------
@@ -327,7 +326,9 @@ class GitEnvironment:
         if not diff_text.strip():
             return False
         proc = await asyncio.create_subprocess_exec(
-            "git", "apply", "--allow-empty",
+            "git",
+            "apply",
+            "--allow-empty",
             cwd=str(worktree.resolve()),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
@@ -359,7 +360,7 @@ class GitEnvironment:
             # Worktree: .git is a file containing "gitdir: <path>"
             content = git_path.read_text().strip()
             if content.startswith("gitdir: "):
-                git_dir = Path(content[len("gitdir: "):])
+                git_dir = Path(content[len("gitdir: ") :])
                 if not git_dir.is_absolute():
                     git_dir = (worktree_path / git_dir).resolve()
             else:
@@ -395,9 +396,7 @@ class FileBackupEnvironment:
         self._backup_dir = backup_dir
         self._backup_dir.mkdir(parents=True, exist_ok=True)
 
-    async def backup(
-        self, artifact_paths: list[str], base_dir: Path
-    ) -> str:
+    async def backup(self, artifact_paths: list[str], base_dir: Path) -> str:
         """Copy artifact files to a timestamped backup directory.
 
         Returns the backup_id (usable with restore/cleanup).
@@ -432,7 +431,9 @@ class FileBackupEnvironment:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
 
-        logger.info("Restored %d artifact(s) from backup %s", len(artifact_paths), backup_id)
+        logger.info(
+            "Restored %d artifact(s) from backup %s", len(artifact_paths), backup_id
+        )
 
     async def cleanup(self, backup_id: str) -> None:
         """Remove a backup directory after a successful keep."""

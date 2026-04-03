@@ -60,12 +60,17 @@ class GreedySearch:
             or challenger_raw is None
             or len(baseline_raw_scores) != len(challenger_raw)
         ):
-            logger.warning(
-                "Falling back to deterministic comparison: "
-                "baseline_raw=%s, challenger_raw=%s",
-                len(baseline_raw_scores) if baseline_raw_scores else None,
-                len(challenger_raw) if challenger_raw else None,
-            )
+            # Only warn on genuine mismatch (one side has scores, other doesn't).
+            # Both-None is the normal deterministic eval path — log at DEBUG.
+            if baseline_raw_scores is None and challenger_raw is None:
+                logger.debug("Deterministic comparison (no raw scores)")
+            else:
+                logger.warning(
+                    "Falling back to deterministic comparison: "
+                    "baseline_raw=%s, challenger_raw=%s",
+                    len(baseline_raw_scores) if baseline_raw_scores else None,
+                    len(challenger_raw) if challenger_raw else None,
+                )
             return self._deterministic_compare(
                 challenger_result.score,
                 baseline_score,
@@ -118,18 +123,19 @@ class GreedySearch:
             logger.warning(
                 "Only %d paired samples (need %d for Wilcoxon). "
                 "Using effect-size threshold instead.",
-                n, GreedySearch.MIN_PAIRED_SAMPLES,
+                n,
+                GreedySearch.MIN_PAIRED_SAMPLES,
             )
             mean_diff = sum(differences) / n
-            std_diff = (sum((d - mean_diff) ** 2 for d in differences) / max(n - 1, 1)) ** 0.5
+            std_diff = (
+                sum((d - mean_diff) ** 2 for d in differences) / max(n - 1, 1)
+            ) ** 0.5
             if std_diff == 0:
                 return mean_diff != 0  # All identical differences
             effect_size = abs(mean_diff) / std_diff
             return effect_size > 0.5  # Medium effect (Cohen's d)
 
-        alternative = (
-            "greater" if direction is Direction.HIGHER_IS_BETTER else "less"
-        )
+        alternative = "greater" if direction is Direction.HIGHER_IS_BETTER else "less"
 
         try:
             _, p_value = wilcoxon(differences, alternative=alternative)
@@ -198,10 +204,7 @@ class SimulatedAnnealingSearch:
         challenger_raw = challenger_result.raw_scores
         if challenger_raw is not None and len(challenger_raw) > 0:
             challenger_score = sum(challenger_raw) / len(challenger_raw)
-        if (
-            baseline_raw_scores is not None
-            and len(baseline_raw_scores) > 0
-        ):
+        if baseline_raw_scores is not None and len(baseline_raw_scores) > 0:
             baseline_score = sum(baseline_raw_scores) / len(baseline_raw_scores)
 
         # Compute delta so positive = improvement
@@ -228,14 +231,18 @@ class SimulatedAnnealingSearch:
         )
         # Adaptive: if acceptance ratio drops below target, reheat
         if len(self._accept_history) >= self._window_size:
-            recent = self._accept_history[-self._window_size:]
+            recent = self._accept_history[-self._window_size :]
             acceptance_ratio = sum(recent) / len(recent)
             if acceptance_ratio < self._acceptance_target * 0.5:
                 self._temperature = min(
                     self._temperature * self._reheat_factor,
                     self._initial_temperature,
                 )
-                logger.info("SA reheat: T=%.4f (acceptance=%.2f)", self._temperature, acceptance_ratio)
+                logger.info(
+                    "SA reheat: T=%.4f (acceptance=%.2f)",
+                    self._temperature,
+                    acceptance_ratio,
+                )
 
     @property
     def temperature(self) -> float:
@@ -379,7 +386,9 @@ class ParetoSearch:
         if not challenger_criteria:
             # No per-criterion data: fall back to scalar comparison
             if direction is Direction.HIGHER_IS_BETTER:
-                return challenger_result.score > baseline_score + min_improvement_threshold
+                return (
+                    challenger_result.score > baseline_score + min_improvement_threshold
+                )
             return challenger_result.score < baseline_score - min_improvement_threshold
 
         # Check Pareto dominance against current front
@@ -403,7 +412,8 @@ class ParetoSearch:
         # Non-dominated: add to front and remove dominated points
         if dominates_any:
             self._pareto_front = [
-                p for p in self._pareto_front
+                p
+                for p in self._pareto_front
                 if not self._dominates(challenger_criteria, p, direction)
             ]
         self._pareto_front.append(challenger_criteria)
@@ -510,8 +520,12 @@ class IslandPopulationSearch:
     ) -> bool:
         """Delegate to current island's should_keep."""
         return self._current_island_instance.should_keep(
-            challenger_result, baseline_score, baseline_raw_scores,
-            direction, min_improvement_threshold, confidence,
+            challenger_result,
+            baseline_score,
+            baseline_raw_scores,
+            direction,
+            min_improvement_threshold,
+            confidence,
         )
 
     def select_island(self) -> int:
@@ -553,7 +567,8 @@ class IslandPopulationSearch:
 
         logger.info(
             "Island migration: %d candidates transferred across %d islands",
-            migrations, len(self._islands),
+            migrations,
+            len(self._islands),
         )
         return migrations
 
@@ -615,7 +630,11 @@ class HybridSearch:
     ) -> bool:
         """Delegate to greedy for the first N calls, then to simulated annealing."""
         self._call_count += 1
-        active = self._greedy if self._call_count <= self._greedy_phase_length else self._annealing
+        active = (
+            self._greedy
+            if self._call_count <= self._greedy_phase_length
+            else self._annealing
+        )
         return active.should_keep(
             challenger_result,
             baseline_score,

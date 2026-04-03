@@ -4,6 +4,8 @@ Runs the B3 artifact, verifies correctness independently, and prints
 the execution time. Returns a penalty score (99999.0) if:
 - The script crashes or times out
 - The match count is wrong (correctness violation)
+- Spot-check pairs are missing or have wrong distances
+- The execution time is unphysical (< 1ms for this workload)
 - The output format is unparseable
 
 This script is immutable — the agent cannot modify it.
@@ -12,6 +14,7 @@ Usage: uv run python benchmarks/suite/harness/eval_b3.py
 """
 from __future__ import annotations
 
+import importlib.util
 import re
 import subprocess
 import sys
@@ -22,8 +25,50 @@ EXPECTED_MATCH_COUNT = 301
 TIMEOUT_SECONDS = 60
 TIME_PATTERN = re.compile(r"^execution_time_ms:\s*([0-9]+(?:\.[0-9]*)?)$")
 COUNT_PATTERN = re.compile(r"^match_count:\s*([0-9]+)$")
+# Minimum plausible execution time: 260×260 Levenshtein pairs cannot run in < 1ms
+MIN_EXEC_TIME_MS = 1.0
 
 ARTIFACT = Path(__file__).resolve().parent.parent / "artifacts" / "B3_utility_function.py"
+
+# Spot-check pairs: (name_a, name_b, expected_distance)
+# Verified against the reference Levenshtein implementation.
+# The artifact must produce these exact pairs to prove computation is real.
+_SPOT_CHECKS: list[tuple[str, str, int]] = [
+    ("alice", "alyce", 1),
+    ("bartholomew", "bartholemew", 1),
+    ("katherine", "catharine", 2),
+    ("galatea", "galatea", 0),
+    ("wren", "wren", 0),
+    ("ozymandias", "ozymandeas", 1),
+]
+
+
+def _verify_spot_checks(artifact_path: Path) -> bool:
+    """Import the artifact module and verify spot-check pairs exist in output."""
+    spec = importlib.util.spec_from_file_location("b3_artifact", artifact_path)
+    if spec is None or spec.loader is None:
+        return False
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    run_fn = getattr(mod, "run_benchmark", None)
+    if run_fn is None:
+        return False
+
+    # The function should also expose _find_close_pairs or produce full results.
+    # We call run_benchmark and check by re-importing the internal function.
+    find_fn = getattr(mod, "_find_close_pairs", None)
+    names_a = getattr(mod, "_NAMES_A", None)
+    names_b = getattr(mod, "_NAMES_B", None)
+    if find_fn is None or names_a is None or names_b is None:
+        return False
+
+    pairs = find_fn(names_a, names_b, 2)
+    pair_set = {(a, b, d) for a, b, d in pairs}
+    for a, b, expected_d in _SPOT_CHECKS:
+        if (a, b, expected_d) not in pair_set:
+            return False
+    return True
 
 
 def main() -> None:
@@ -39,13 +84,11 @@ def main() -> None:
         return
 
     if result.returncode != 0:
-        # Script crashed — penalty
         print(PENALTY)
         return
 
     stdout = result.stdout
 
-    # Parse match_count and execution_time_ms from output
     match_count: int | None = None
     exec_time: float | None = None
 
@@ -58,17 +101,20 @@ def main() -> None:
         if m:
             exec_time = float(m.group(1))
 
-    # Correctness gate: match count must be exactly right
     if match_count != EXPECTED_MATCH_COUNT:
         print(PENALTY)
         return
 
-    # Sanity: execution time must be positive
-    if exec_time is None or exec_time <= 0.0:
+    if exec_time is None or exec_time < MIN_EXEC_TIME_MS:
         print(PENALTY)
         return
 
-    print(f"{exec_time:.2f}")
+    # Spot-check: verify the artifact actually computes distances
+    if not _verify_spot_checks(ARTIFACT):
+        print(PENALTY)
+        return
+
+    print(f"{exec_time:.4f}")
 
 
 if __name__ == "__main__":

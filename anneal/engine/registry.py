@@ -122,7 +122,9 @@ class Registry:
 
         # Validate scope against invariants
         sibling_targets = list(self._targets.values())
-        errors = validate_scope(scope, target.eval_mode, sibling_targets, in_place=target.in_place)
+        errors = validate_scope(
+            scope, target.eval_mode, sibling_targets, in_place=target.in_place
+        )
         if errors:
             raise RegistryError(
                 f"Scope validation failed for {target.id}:\n"
@@ -131,7 +133,9 @@ class Registry:
 
         # Validate eval environment variables (fail fast, not mid-experiment)
         if target.eval_environment and target.eval_environment.env_vars:
-            missing = [v for v in target.eval_environment.env_vars if v not in os.environ]
+            missing = [
+                v for v in target.eval_environment.env_vars if v not in os.environ
+            ]
             if missing:
                 raise RegistryError(
                     f"Eval environment requires env vars not set: {', '.join(missing)}"
@@ -165,29 +169,42 @@ class Registry:
             if staged:
                 logger.info(
                     "Staged %d untracked artifact(s) on branch %s: %s",
-                    len(staged), target.git_branch, staged,
+                    len(staged),
+                    target.git_branch,
+                    staged,
                 )
 
             # Warn if artifacts are still missing after staging attempt
             still_missing = [
-                p for p in target.artifact_paths
-                if not (worktree_abs / p).exists()
+                p for p in target.artifact_paths if not (worktree_abs / p).exists()
             ]
             if still_missing:
                 logger.warning(
                     "Artifacts still missing from worktree for %s after staging: %s. "
                     "These files do not exist in the repo working directory either.",
-                    target.id, still_missing,
+                    target.id,
+                    still_missing,
                 )
 
         # Configure gc to preserve experiment history
         await self._git.configure_gc(self._repo_root)
 
+        # Clear stale loop state from prior runs so the new registration
+        # starts with a fresh experiment counter (preserves crash recovery
+        # semantics — only registration resets, not run restarts).
+        knowledge_dir = self._repo_root / target.knowledge_path
+        loop_state_file = knowledge_dir / ".loop-state.json"
+        if loop_state_file.exists():
+            loop_state_file.unlink()
+            logger.info("Cleared stale loop state for %s", target.id)
+
         # Store and persist
         self._targets[target.id] = target
         self.save()
 
-        logger.info("Registered target %s (worktree: %s)", target.id, target.worktree_path)
+        logger.info(
+            "Registered target %s (worktree: %s)", target.id, target.worktree_path
+        )
         return staged
 
     async def deregister_target(self, target_id: str) -> None:

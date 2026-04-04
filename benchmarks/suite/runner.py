@@ -4,14 +4,20 @@ Responsible for:
   1. Building the full matrix of BenchmarkRun objects from targets and configs.
   2. Generating anneal register and anneal run shell commands for each run.
   3. Executing commands via subprocess (or previewing them in dry-run mode).
-  4. Collecting result records from anneal output into JSONL files.
+  4. Collecting experiment records from anneal's internal state into JSONL files.
   5. Supporting parallel execution with configurable concurrency.
+
+Result files contain raw ExperimentRecord objects (one JSON line per experiment),
+matching the format produced by the anneal engine's runner. The analysis pipeline
+(benchmarks/analysis/loader.py) reads these records directly.
 
 Usage: uv run python benchmarks/suite/run_suite.py --dry-run
 """
+
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,6 +26,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
+from anneal.engine.display import LiveProgressMonitor, OutputMode, build_run_summary
 from benchmarks.suite.config import BenchmarkConfig, BenchmarkRun, BenchmarkTarget
 
 console = Console()
@@ -30,6 +37,7 @@ console = Console()
 
 _SUITE_DIR = Path(__file__).parent
 _REPO_ROOT = _SUITE_DIR.parent.parent
+_ANNEAL_DIR = _REPO_ROOT / ".anneal"
 
 # The four experimental configurations applied to every target.
 BENCHMARK_CONFIGS: list[BenchmarkConfig] = [
@@ -91,6 +99,16 @@ CONFIG_BY_NAME: dict[str, BenchmarkConfig] = {c.name: c for c in BENCHMARK_CONFI
 # ---------------------------------------------------------------------------
 
 
+def _resolve_repo_root_placeholder(value: str) -> str:
+    """Replace {repo_root} with the absolute repo root path.
+
+    This allows eval commands to reference the main repo's harness files
+    via absolute path, preventing the optimization agent from reading
+    harness source in the worktree.
+    """
+    return value.replace("{repo_root}", str(_REPO_ROOT))
+
+
 def build_register_command(run: BenchmarkRun) -> list[str]:
     """Build the anneal register command for a BenchmarkRun.
 
@@ -100,12 +118,20 @@ def build_register_command(run: BenchmarkRun) -> list[str]:
     target_name = run.target_name
 
     cmd: list[str] = [
-        "uv", "run", "anneal", "register",
-        "--name", target_name,
-        "--artifact", target.artifact_path,
-        "--scope", target.scope_path,
-        "--eval-mode", target.eval_mode,
-        "--direction", target.direction,
+        "uv",
+        "run",
+        "anneal",
+        "register",
+        "--name",
+        target_name,
+        "--artifact",
+        target.artifact_path,
+        "--scope",
+        target.scope_path,
+        "--eval-mode",
+        target.eval_mode,
+        "--direction",
+        target.direction,
     ]
 
     if target.eval_mode == "stochastic" and target.criteria_path:
@@ -113,13 +139,17 @@ def build_register_command(run: BenchmarkRun) -> list[str]:
 
     if target.eval_mode == "deterministic":
         if target.run_cmd:
-            cmd += ["--run-cmd", target.run_cmd]
+            cmd += ["--run-cmd", _resolve_repo_root_placeholder(target.run_cmd)]
         if target.parse_cmd:
-            cmd += ["--parse-cmd", target.parse_cmd]
+            cmd += ["--parse-cmd", _resolve_repo_root_placeholder(target.parse_cmd)]
 
     # Use full model name — short aliases like "sonnet" aren't resolved
     # by the engine's provider-prefix routing in client.py.
     cmd += ["--agent-model", "claude-sonnet-4-6"]
+
+    # Set budget high enough for the full experiment budget to complete
+    # without pausing. Default $5/day would stall after ~5 experiments.
+    cmd += ["--max-budget-usd", "50"]
 
     return cmd
 
@@ -135,9 +165,14 @@ def build_run_command(run: BenchmarkRun) -> list[str]:
         return []
 
     cmd: list[str] = [
-        "uv", "run", "anneal", "run",
-        "--target", run.target_name,
-        "--experiments", str(run.target.experiment_budget),
+        "uv",
+        "run",
+        "anneal",
+        "run",
+        "--target",
+        run.target_name,
+        "--experiments",
+        str(run.target.experiment_budget),
         "--yes",  # non-interactive: skip cost confirmation prompt
     ]
 
@@ -145,12 +180,17 @@ def build_run_command(run: BenchmarkRun) -> list[str]:
     if run.config.search_strategy not in ("none", "hybrid"):
         cmd += ["--search", run.config.search_strategy]
 
+    # Early-stop on perfect score to avoid wasting experiments.
+    if run.target.direction == "maximize":
+        cmd += ["--until", "1.0"]
+
     return cmd
 
 
 def format_command(tokens: list[str]) -> str:
     """Format a command token list as a shell-quoted string for display."""
     import shlex
+
     return " ".join(shlex.quote(t) for t in tokens)
 
 
@@ -223,56 +263,65 @@ def print_dry_run(runs: list[BenchmarkRun]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _collect_result(run: BenchmarkRun, stdout: str, elapsed_seconds: float) -> dict[str, object]:
-    """Parse anneal run stdout into a result record.
+def _read_experiment_records(target_name: str) -> list[dict[str, object]]:
+    """Read experiment records from anneal's internal state.
 
-    Stores raw stdout alongside parsed metrics so that post-processing
-    can re-derive any field without re-running the experiment.
+    Returns the parsed ExperimentRecord dicts from
+    ``.anneal/targets/<target_name>/experiments.jsonl``.
     """
-    record: dict[str, object] = {
-        "run_id": run.run_id,
-        "target_id": run.target.id,
-        "config_name": run.config.name,
-        "seed": run.seed,
-        "elapsed_seconds": elapsed_seconds,
-        "raw_stdout": stdout,
-        "final_score": None,
-        "total_cost_usd": None,
-        "mutation_acceptance_rate": None,
-        "convergence_speed": None,
-        "experiment_records": [],
-    }
+    experiments_path = _ANNEAL_DIR / "targets" / target_name / "experiments.jsonl"
+    if not experiments_path.exists():
+        return []
 
-    # Parse final score from anneal run output.
-    # anneal run prints "best_score=<float>" on the final summary line.
-    for line in stdout.splitlines():
-        if "best_score=" in line:
-            try:
-                record["final_score"] = float(line.split("best_score=")[1].split()[0])
-            except (IndexError, ValueError):
-                pass
-        if "total_cost=" in line or "cost_usd=" in line:
-            key = "total_cost=" if "total_cost=" in line else "cost_usd="
-            try:
-                record["total_cost_usd"] = float(line.split(key)[1].split()[0].rstrip("$"))
-            except (IndexError, ValueError):
-                pass
-        if "acceptance_rate=" in line:
-            try:
-                record["mutation_acceptance_rate"] = float(
-                    line.split("acceptance_rate=")[1].split()[0].rstrip("%")
-                ) / 100.0
-            except (IndexError, ValueError):
-                pass
-
-    return record
+    records: list[dict[str, object]] = []
+    for line in experiments_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        records.append(json.loads(line))
+    return records
 
 
-def write_result(run: BenchmarkRun, record: dict[str, object]) -> None:
-    """Append a result record as a JSONL line to the run's result file."""
+def _read_baseline_score(target_name: str) -> float | None:
+    """Read the baseline score from anneal's target config.
+
+    Parses ``.anneal/config.toml`` for the target's ``baseline_score`` field.
+    """
+    config_path = _ANNEAL_DIR / "config.toml"
+    if not config_path.exists():
+        return None
+
+    # Simple TOML value extraction — avoids adding tomllib dependency
+    # for a single field read. Targets are under [targets.<name>].
+    in_target_section = False
+    for line in config_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped == f"[targets.{target_name}]":
+            in_target_section = True
+            continue
+        if in_target_section:
+            if stripped.startswith("["):
+                break
+            if stripped.startswith("baseline_score"):
+                parts = stripped.split("=", 1)
+                if len(parts) == 2:
+                    try:
+                        return float(parts[1].strip())
+                    except ValueError:
+                        return None
+    return None
+
+
+def write_result(run: BenchmarkRun, records: list[dict[str, object]]) -> None:
+    """Write experiment records as JSONL to the run's result file.
+
+    Each record is one ExperimentRecord dict, written as a separate JSON line.
+    The analysis loader expects this format.
+    """
     run.result_path.parent.mkdir(parents=True, exist_ok=True)
-    with run.result_path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(record) + "\n")
+    with run.result_path.open("w", encoding="utf-8") as fh:
+        for record in records:
+            fh.write(json.dumps(record) + "\n")
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +333,9 @@ def _execute_run(run: BenchmarkRun, dry_run: bool = False) -> dict[str, object]:
     """Register and execute a single BenchmarkRun.
 
     For dry_run=True, prints commands and returns a placeholder record.
-    Returns the result record dict.
+
+    Returns a summary dict with run_id and status. Experiment-level data is
+    written to the result JSONL via write_result.
     """
     reg_cmd = build_register_command(run)
     run_cmd = build_run_command(run)
@@ -296,9 +347,7 @@ def _execute_run(run: BenchmarkRun, dry_run: bool = False) -> dict[str, object]:
             console.print(f"  {format_command(run_cmd)}")
         return {"run_id": run.run_id, "dry_run": True}
 
-    # Step 1: Deregister if already registered, then register fresh.
-    # Multiple seeds share the same target name, so the caller should
-    # track which targets have been registered to avoid redundant cycles.
+    # Step 1: Clean slate — deregister, delete branch, clear state, register fresh.
     console.print(f"  [cyan]register[/cyan] {run.target_name}")
     subprocess.run(
         ["uv", "run", "anneal", "deregister", "--target", run.target_name],
@@ -306,14 +355,20 @@ def _execute_run(run: BenchmarkRun, dry_run: bool = False) -> dict[str, object]:
         capture_output=True,
         text=True,
     )  # ignore errors — target may not exist yet
-    # Delete the anneal branch so the worktree starts fresh from HEAD.
-    # Without this, a stale branch retains optimized artifacts from prior runs.
     subprocess.run(
         ["git", "branch", "-D", f"anneal/{run.target_name}"],
         cwd=str(_REPO_ROOT),
         capture_output=True,
         text=True,
     )  # ignore errors — branch may not exist
+    # Clear stale experiment/hypothesis records from prior runs.
+    # Deregister removes config but leaves knowledge files behind.
+    target_state_dir = _ANNEAL_DIR / "targets" / run.target_name
+    for stale_file in ("experiments.jsonl", "hypotheses.jsonl", ".loop-state.json"):
+        stale_path = target_state_dir / stale_file
+        if stale_path.exists():
+            stale_path.unlink()
+
     reg_result = subprocess.run(
         reg_cmd,
         cwd=str(_REPO_ROOT),
@@ -321,22 +376,57 @@ def _execute_run(run: BenchmarkRun, dry_run: bool = False) -> dict[str, object]:
         text=True,
     )
     if reg_result.returncode != 0:
-        console.print(f"  [red]register failed for {run.run_id}:[/red]\n{reg_result.stderr}")
+        console.print(
+            f"  [red]register failed for {run.run_id}:[/red]\n{reg_result.stderr}"
+        )
         return {
             "run_id": run.run_id,
             "error": f"register failed (rc={reg_result.returncode})",
             "stderr": reg_result.stderr,
         }
 
-    # Step 2: Raw baseline — no anneal run, just collect the baseline score
-    if not run_cmd:
-        console.print(f"  [yellow]raw baseline[/yellow] {run.run_id} — skipping anneal run")
-        record = _collect_result(run, reg_result.stdout, elapsed_seconds=0.0)
-        write_result(run, record)
-        return record
+    # Step 1b: Scrub eval harness files from the worktree so the optimization
+    # agent cannot read the hidden test suite.  The eval commands reference
+    # the main repo's harness via absolute path (see {repo_root} placeholder).
+    worktree_dir = _ANNEAL_DIR / "worktrees" / run.target_name
+    if worktree_dir.is_dir():
+        harness_dir = worktree_dir / "benchmarks" / "suite" / "harness"
+        if harness_dir.is_dir():
+            shutil.rmtree(harness_dir)
+            console.print("    [dim]scrubbed harness from worktree[/dim]")
 
-    # Step 3: Run anneal
+    # Step 2: Raw baseline — no optimization, just record the baseline score.
+    if not run_cmd:
+        console.print(f"  [yellow]raw baseline[/yellow] {run.run_id}")
+        baseline = _read_baseline_score(run.target_name)
+        if baseline is not None:
+            # Synthesize a single experiment record representing the unoptimized baseline.
+            baseline_record: dict[str, object] = {
+                "id": f"{run.run_id}-baseline",
+                "target_id": run.target_name,
+                "score": baseline,
+                "baseline_score": baseline,
+                "outcome": "BASELINE",
+                "cost_usd": 0.0,
+                "duration_seconds": 0.0,
+            }
+            write_result(run, [baseline_record])
+            console.print(f"    baseline_score={baseline}")
+            return {"run_id": run.run_id, "baseline_score": baseline}
+
+        console.print(f"  [red]no baseline score found for {run.target_name}[/red]")
+        return {"run_id": run.run_id, "error": "no baseline score after registration"}
+
+    # Step 3: Run anneal optimization with live progress monitoring.
     console.print(f"  [green]run[/green] {run.run_id}")
+    experiments_path = _ANNEAL_DIR / "targets" / run.target_name / "experiments.jsonl"
+    monitor = LiveProgressMonitor(
+        experiments_path,
+        run_label=run.run_id,
+        console=console,
+        max_experiments=run.target.experiment_budget,
+    )
+    monitor.start()
     start = time.monotonic()
     anneal_result = subprocess.run(
         run_cmd,
@@ -345,20 +435,50 @@ def _execute_run(run: BenchmarkRun, dry_run: bool = False) -> dict[str, object]:
         text=True,
     )
     elapsed = time.monotonic() - start
+    records = monitor.stop()
 
     if anneal_result.returncode != 0:
-        console.print(f"  [red]run failed for {run.run_id}:[/red]\n{anneal_result.stderr}")
-        record = {
+        console.print(
+            f"  [red]run failed for {run.run_id}:[/red]\n{anneal_result.stderr}"
+        )
+        # Still save any records collected before failure.
+        if records:
+            write_result(run, records)
+        return {
             "run_id": run.run_id,
             "error": f"anneal run failed (rc={anneal_result.returncode})",
             "stderr": anneal_result.stderr,
             "elapsed_seconds": elapsed,
         }
-    else:
-        record = _collect_result(run, anneal_result.stdout, elapsed_seconds=elapsed)
 
-    write_result(run, record)
-    return record
+    # Step 4: Write collected experiment records.
+    if not records:
+        # Fallback: monitor may have missed records if JSONL was written after
+        # the subprocess exited but before stop() drained. Read directly.
+        records = _read_experiment_records(run.target_name)
+
+    if not records:
+        console.print(
+            f"  [yellow]no experiment records found for {run.run_id}[/yellow]"
+        )
+        return {
+            "run_id": run.run_id,
+            "error": "no experiment records",
+            "elapsed_seconds": elapsed,
+        }
+
+    write_result(run, records)
+    summary = build_run_summary(records, mode=OutputMode.JSON)
+    assert isinstance(summary, dict)
+    console.print(
+        f"    {summary['experiment_count']} experiments, {summary['kept_count']} kept, "
+        f"best={summary['best_score']:.4f}, elapsed={elapsed:.0f}s"
+    )
+    return {
+        "run_id": run.run_id,
+        **summary,
+        "elapsed_seconds": elapsed,
+    }
 
 
 def execute_runs(

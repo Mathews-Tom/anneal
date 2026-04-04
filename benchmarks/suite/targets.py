@@ -11,6 +11,7 @@ run and parse commands.
 
 Usage: uv run python benchmarks/suite/run_suite.py --dry-run
 """
+
 from __future__ import annotations
 
 from benchmarks.suite.config import BenchmarkTarget
@@ -87,8 +88,11 @@ B4 = BenchmarkTarget(
     artifact_path="benchmarks/suite/artifacts/B4_api_endpoint.py",
     scope_path="benchmarks/suite/scopes/B4_scope.yaml",
     criteria_path=None,
-    run_cmd="uv run python benchmarks/suite/harness/run_b4_composite.py",
-    parse_cmd="uv run python benchmarks/suite/harness/parse_composite_score.py",
+    # {repo_root} is resolved by the suite runner to an absolute path so the
+    # eval command references the *main repo's* harness, not the worktree copy.
+    # This prevents the optimization agent from reading the hidden test suite.
+    run_cmd="uv run python {repo_root}/benchmarks/suite/harness/run_b4_composite.py",
+    parse_cmd="uv run python {repo_root}/benchmarks/suite/harness/parse_composite_score.py",
     direction="maximize",
 )
 

@@ -15,9 +15,21 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 
+from anneal.engine.display import (
+    OutputMode,
+    build_run_summary,
+    format_experiment_line,
+    format_progress_status,
+    format_score,
+)
 from anneal.engine.environment import GitEnvironment, GitError
 from anneal.engine.registry import Registry, RegistryError, init_project
-from anneal.engine.scope import ScopeError, compute_scope_hash, load_scope, validate_scope
+from anneal.engine.scope import (
+    ScopeError,
+    compute_scope_hash,
+    load_scope,
+    validate_scope,
+)
 from anneal.engine.types import (
     AgentConfig,
     BinaryCriterion,
@@ -30,7 +42,6 @@ from anneal.engine.types import (
     ExperimentRecord,
     MetricConstraint,
     OptimizationTarget,
-    PopulationConfig,
     StochasticEval,
     VerifierCommand,
 )
@@ -103,7 +114,11 @@ def _handle_register(args: argparse.Namespace) -> None:
             args.direction = tmpl.direction
 
         # For stochastic templates, generate a temporary criteria TOML if --criteria not given
-        if tmpl.eval_mode == "stochastic" and tmpl.criteria and not getattr(args, "criteria", None):
+        if (
+            tmpl.eval_mode == "stochastic"
+            and tmpl.criteria
+            and not getattr(args, "criteria", None)
+        ):
             import tempfile
             import tomli_w as _tomli_w
 
@@ -128,7 +143,9 @@ def _handle_register(args: argparse.Namespace) -> None:
             if not getattr(args, "parse_cmd", None) and tmpl.parse_command_template:
                 args.parse_cmd = tmpl.parse_command_template
 
-        console.print(f"  [dim]Loaded template: {template_name} ({tmpl.description})[/dim]")
+        console.print(
+            f"  [dim]Loaded template: {template_name} ({tmpl.description})[/dim]"
+        )
 
     # Validate eval-mode specific arguments
     eval_mode = EvalMode(args.eval_mode)
@@ -141,9 +158,7 @@ def _handle_register(args: argparse.Namespace) -> None:
             sys.exit(1)
     if eval_mode is EvalMode.STOCHASTIC:
         if not args.criteria:
-            console.print(
-                "[red]--criteria is required for stochastic eval mode.[/red]"
-            )
+            console.print("[red]--criteria is required for stochastic eval mode.[/red]")
             sys.exit(1)
 
     # Resolve scope path
@@ -187,6 +202,7 @@ def _handle_register(args: argparse.Namespace) -> None:
 
     if eval_mode is EvalMode.STOCHASTIC:
         import tomllib
+
         criteria_path = Path(args.criteria)
         if not criteria_path.is_absolute():
             criteria_path = repo_root / criteria_path
@@ -199,16 +215,13 @@ def _handle_register(args: argparse.Namespace) -> None:
             BinaryCriterion(name=c["name"], question=c["question"])
             for c in criteria_data.get("criteria", [])
         ]
-        test_prompts = [
-            tp["prompt"] for tp in criteria_data.get("test_prompts", [])
-        ]
+        test_prompts = [tp["prompt"] for tp in criteria_data.get("test_prompts", [])]
         gen = criteria_data.get("generation", {})
         meta = criteria_data.get("meta", {})
 
         # Generation agent
-        gen_mode = (
-            getattr(args, "generation_mode", None)
-            or gen.get("agent", {}).get("mode", "api")
+        gen_mode = getattr(args, "generation_mode", None) or gen.get("agent", {}).get(
+            "mode", "api"
         )
         # Claude Code subprocess needs higher budget than API due to session overhead
         gen_budget = 0.50 if gen_mode == "claude_code" else 0.02
@@ -223,8 +236,12 @@ def _handle_register(args: argparse.Namespace) -> None:
         # Judgment agent (optional — falls back to gen_agent.evaluator_model in eval engine)
         judgment_agent_config = None
         judge_section = criteria_data.get("judgment", {})
-        judge_mode = getattr(args, "judgment_mode", None) or judge_section.get("agent", {}).get("mode", None)
-        judge_model = getattr(args, "judgment_model", None) or judge_section.get("agent", {}).get("model", None)
+        judge_mode = getattr(args, "judgment_mode", None) or judge_section.get(
+            "agent", {}
+        ).get("mode", None)
+        judge_model = getattr(args, "judgment_model", None) or judge_section.get(
+            "agent", {}
+        ).get("model", None)
         if judge_mode or judge_model:
             effective_judge_mode = judge_mode or "api"
             judge_budget = 0.50 if effective_judge_mode == "claude_code" else 0.02
@@ -256,44 +273,59 @@ def _handle_register(args: argparse.Namespace) -> None:
             console.print(f"[red]Held-out prompts file not found: {ho_path}[/red]")
             sys.exit(1)
         stochastic_eval.held_out_prompts = [
-            line.strip() for line in ho_path.read_text(encoding="utf-8").splitlines()
+            line.strip()
+            for line in ho_path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
 
     # F2: Parse constraints
     constraints: list[MetricConstraint] = []
-    for constraint_str in (args.constraint or []):
+    for constraint_str in args.constraint or []:
         if ">=" in constraint_str:
             parts = constraint_str.split(">=", 1)
-            constraints.append(MetricConstraint(
-                metric_name=parts[0].strip(),
-                threshold=float(parts[1].strip()),
-                direction=Direction.HIGHER_IS_BETTER,
-            ))
+            constraints.append(
+                MetricConstraint(
+                    metric_name=parts[0].strip(),
+                    threshold=float(parts[1].strip()),
+                    direction=Direction.HIGHER_IS_BETTER,
+                )
+            )
         elif "<=" in constraint_str:
             parts = constraint_str.split("<=", 1)
-            constraints.append(MetricConstraint(
-                metric_name=parts[0].strip(),
-                threshold=float(parts[1].strip()),
-                direction=Direction.LOWER_IS_BETTER,
-            ))
+            constraints.append(
+                MetricConstraint(
+                    metric_name=parts[0].strip(),
+                    threshold=float(parts[1].strip()),
+                    direction=Direction.LOWER_IS_BETTER,
+                )
+            )
         else:
-            console.print(f"[red]Invalid constraint format: {constraint_str}. Use 'metric>=value' or 'metric<=value'.[/red]")
+            console.print(
+                f"[red]Invalid constraint format: {constraint_str}. Use 'metric>=value' or 'metric<=value'.[/red]"
+            )
             sys.exit(1)
 
-    held_out_interval = args.held_out_interval if args.held_out_interval is not None else 10
+    held_out_interval = (
+        args.held_out_interval if args.held_out_interval is not None else 10
+    )
 
     # Parse verifier gates
     verifiers: list[VerifierCommand] = []
-    for verifier_str in (args.verifier or []):
+    for verifier_str in args.verifier or []:
         if ":" not in verifier_str:
-            console.print(f"[red]Invalid verifier format: {verifier_str}. Use 'name:command'.[/red]")
+            console.print(
+                f"[red]Invalid verifier format: {verifier_str}. Use 'name:command'.[/red]"
+            )
             sys.exit(1)
         v_name, v_command = verifier_str.split(":", 1)
-        verifiers.append(VerifierCommand(name=v_name.strip(), run_command=v_command.strip()))
+        verifiers.append(
+            VerifierCommand(name=v_name.strip(), run_command=v_command.strip())
+        )
 
     eval_config = EvalConfig(
-        metric_name="binary_criteria_score" if eval_mode is EvalMode.STOCHASTIC else "deterministic_score",
+        metric_name="binary_criteria_score"
+        if eval_mode is EvalMode.STOCHASTIC
+        else "deterministic_score",
         direction=direction,
         deterministic=deterministic_eval,
         stochastic=stochastic_eval,
@@ -325,12 +357,18 @@ def _handle_register(args: argparse.Namespace) -> None:
     git_branch = f"anneal/{target_id}"
 
     # F6: Domain tier
-    domain_tier = DomainTier(args.domain_tier) if args.domain_tier else DomainTier.SANDBOX
+    domain_tier = (
+        DomainTier(args.domain_tier) if args.domain_tier else DomainTier.SANDBOX
+    )
 
     # F6: Approval callback for deployment tier (runtime only, not serialized)
     approval_callback = None
     if domain_tier is DomainTier.DEPLOYMENT:
-        approval_callback = lambda diff: input("Apply changes? [y/N] ").lower() == "y"
+
+        def _approve(diff: str) -> bool:  # noqa: ARG001
+            return input("Apply changes? [y/N] ").lower() == "y"
+
+        approval_callback = _approve
 
     # F8: Meta depth
     meta_depth = args.meta_depth if args.meta_depth is not None else 0
@@ -339,6 +377,7 @@ def _handle_register(args: argparse.Namespace) -> None:
     policy_config = None
     if args.policy_model:
         from anneal.engine.types import PolicyConfig
+
         policy_config = PolicyConfig(
             enabled=True,
             model=args.policy_model,
@@ -401,7 +440,8 @@ def _handle_register(args: argparse.Namespace) -> None:
                     f"\n  Criteria:     {len(stochastic_eval.criteria)} binary, "
                     f"{len(stochastic_eval.test_prompts)} test prompts, "
                     f"N={stochastic_eval.sample_count}"
-                    if stochastic_eval else ""
+                    if stochastic_eval
+                    else ""
                 ),
                 title="anneal register --dry-run",
                 style="yellow",
@@ -426,6 +466,7 @@ def _handle_register(args: argparse.Namespace) -> None:
     # Copy custom failure categories to knowledge directory
     if args.failure_categories:
         import shutil
+
         fc_path = Path(args.failure_categories)
         if not fc_path.is_absolute():
             fc_path = repo_root / fc_path
@@ -435,11 +476,14 @@ def _handle_register(args: argparse.Namespace) -> None:
             shutil.copy2(fc_path, dest)
             console.print(f"  Custom failure categories: {dest}")
         else:
-            console.print(f"[yellow]Warning: failure categories file not found: {fc_path}[/yellow]")
+            console.print(
+                f"[yellow]Warning: failure categories file not found: {fc_path}[/yellow]"
+            )
 
     # Run baseline eval for deterministic targets
     if eval_mode is EvalMode.DETERMINISTIC and deterministic_eval is not None:
         from anneal.engine.eval import DeterministicEvaluator
+
         worktree_full = repo_root / target.worktree_path
         try:
             baseline_result = asyncio.run(
@@ -449,7 +493,9 @@ def _handle_register(args: argparse.Namespace) -> None:
             Registry(repo_root).update_target(target)
             console.print(f"  Baseline eval: {baseline_result.score}")
         except Exception as exc:
-            console.print(f"  [yellow]Baseline eval failed: {exc}. Set manually via anneal configure --target {target.id} --baseline <score>[/yellow]")
+            console.print(
+                f"  [yellow]Baseline eval failed: {exc}. Set manually via anneal configure --target {target.id} --baseline <score>[/yellow]"
+            )
 
     console.print(
         Panel(
@@ -476,7 +522,11 @@ def _load_cost_threshold(repo_root: Path) -> float:
         return _DEFAULT_COST_CONFIRMATION_THRESHOLD
     try:
         data = _tomllib.loads(config_path.read_text(encoding="utf-8"))
-        return float(data.get("anneal", {}).get("cost_confirmation_threshold", _DEFAULT_COST_CONFIRMATION_THRESHOLD))
+        return float(
+            data.get("anneal", {}).get(
+                "cost_confirmation_threshold", _DEFAULT_COST_CONFIRMATION_THRESHOLD
+            )
+        )
     except Exception:
         return _DEFAULT_COST_CONFIRMATION_THRESHOLD
 
@@ -490,6 +540,7 @@ def _confirm_cost(estimated_cost: float, threshold: float, yes: bool) -> bool:
     if yes or estimated_cost <= threshold:
         return True
     from rich.prompt import Confirm
+
     return Confirm.ask(
         f"Estimated cost: ${estimated_cost:.2f}. Proceed?",
         default=False,
@@ -497,7 +548,9 @@ def _confirm_cost(estimated_cost: float, threshold: float, yes: bool) -> bool:
     )
 
 
-def _print_dry_run(targets: list[OptimizationTarget], max_experiments: int | None) -> None:
+def _print_dry_run(
+    targets: list[OptimizationTarget], max_experiments: int | None
+) -> None:
     """Print cost estimate for each target without running experiments."""
     from anneal.engine.context import estimate_tokens
     from anneal.engine.safety import estimate_experiment_cost
@@ -517,7 +570,9 @@ def _print_dry_run(targets: list[OptimizationTarget], max_experiments: int | Non
         budget_info = ""
         if target.budget_cap:
             cap = target.budget_cap.max_usd_per_day
-            max_before_pause = int(cap / estimate.total_usd) if estimate.total_usd > 0 else n
+            max_before_pause = (
+                int(cap / estimate.total_usd) if estimate.total_usd > 0 else n
+            )
             budget_info = f"\n  Daily budget cap:         ${cap:.2f} (pauses after ~{max_before_pause} experiments)"
 
         eval_detail = ""
@@ -580,7 +635,9 @@ def _handle_run(args: argparse.Namespace) -> None:
     else:
         targets = registry.all_targets()
         if not targets:
-            console.print("[yellow]No targets registered. Use 'anneal register' first.[/yellow]")
+            console.print(
+                "[yellow]No targets registered. Use 'anneal register' first.[/yellow]"
+            )
             sys.exit(1)
         console.print(f"  Running all {len(targets)} registered targets sequentially")
 
@@ -633,6 +690,7 @@ def _handle_run(args: argparse.Namespace) -> None:
     learning_pool = None
     if getattr(args, "global_learnings", True):
         from anneal.engine.learning_pool import GlobalLearningPool  # noqa: F811
+
         learning_pool = GlobalLearningPool()
 
     for target in targets:
@@ -648,13 +706,16 @@ def _handle_run(args: argparse.Namespace) -> None:
             search_strategy = GreedySearch()
         elif search_choice == "annealing":
             from anneal.engine.search import SimulatedAnnealingSearch  # noqa: F811
+
             search_strategy = SimulatedAnnealingSearch()
         elif search_choice == "population":
             from anneal.engine.search import PopulationSearch  # noqa: F811
+
             pop_size = getattr(args, "population_size", None) or 4
             search_strategy = PopulationSearch(population_size=pop_size)
         elif search_choice == "ucb_tree":
             from anneal.engine.tree_search import UCBTreeSearch
+
             tree_path = repo_root / target.knowledge_path / "search_tree.json"
             if tree_path.exists():
                 search_strategy = UCBTreeSearch.load(tree_path)
@@ -666,18 +727,26 @@ def _handle_run(args: argparse.Namespace) -> None:
         else:
             # Default: greedy phase (10 experiments) then simulated annealing
             from anneal.engine.search import HybridSearch  # noqa: F811
+
             search_strategy = HybridSearch()
 
         # F6: Set approval callback for deployment-tier targets
-        if target.domain_tier is DomainTier.DEPLOYMENT and target.approval_callback is None:
-            target.approval_callback = lambda diff: input("Apply changes? [y/N] ").lower() == "y"
+        if (
+            target.domain_tier is DomainTier.DEPLOYMENT
+            and target.approval_callback is None
+        ):
+            target.approval_callback = (
+                lambda diff: input("Apply changes? [y/N] ").lower() == "y"
+            )
 
         # Initialize failure taxonomy (with custom categories if registered)
         from anneal.engine.taxonomy import FailureTaxonomy
+
         custom_cats = None
         fc_file = repo_root / target.knowledge_path / "failure_categories.toml"
         if fc_file.exists():
             import tomllib
+
             fc_data = tomllib.loads(fc_file.read_text(encoding="utf-8"))
             custom_cats = fc_data.get("categories", [])
         taxonomy = FailureTaxonomy(custom_categories=custom_cats)
@@ -698,14 +767,8 @@ def _handle_run(args: argparse.Namespace) -> None:
         max_exp = args.experiments or 0
         total_cost = 0.0
         best_score = target.baseline_score
-        kept_count = 0
         exp_count = 0
-        # 2.3 — Running cost: budget cap for display
-        _budget_display = (
-            f" / ${target.budget_cap.max_usd_per_day:.2f} budget"
-            if target.budget_cap
-            else ""
-        )
+        _budget = target.budget_cap.max_usd_per_day if target.budget_cap else None
 
         # Progress bar with inline status
         progress = Progress(
@@ -720,47 +783,34 @@ def _handle_run(args: argparse.Namespace) -> None:
         task_id = progress.add_task(
             target.id,
             total=max_exp if max_exp > 0 else None,
-            status=f"baseline={target.baseline_score:.4f}",
+            status=f"baseline={format_score(target.baseline_score)}",
         )
 
         def on_experiment(record: ExperimentRecord) -> None:
-            nonlocal total_cost, best_score, kept_count, exp_count
+            nonlocal total_cost, best_score, exp_count
             total_cost += record.cost_usd
             exp_count += 1
             if record.outcome.value == "KEPT":
                 best_score = record.score
-                kept_count += 1
 
-            outcome = record.outcome.value
-            if outcome == "KEPT":
-                tag = "[green]KEPT[/]"
-            elif outcome == "BLOCKED":
-                tag = "[yellow]BLKD[/]"
-            elif outcome == "CRASHED":
-                tag = "[red]CRASH[/]"
-            else:
-                tag = "[red]DISC[/]"
-
-            failure = ""
-            if record.failure_mode:
-                failure = f"  {record.failure_mode[:60]}"
-
-            # 2.3 — Per-experiment cost line printed above the progress bar
-            _exp_label = f"[exp {exp_count}/{max_exp}]" if max_exp > 0 else f"[exp {exp_count}]"
-            _prev_score = record.baseline_score
-            _delta = record.score - _prev_score
-            _delta_str = f"+{_delta:.4f}" if _delta >= 0 else f"{_delta:.4f}"
-            console.print(
-                f"  {_exp_label} score: {_prev_score:.4f} -> {record.score:.4f} "
-                f"({_delta_str}) | cost: ${total_cost:.2f}{_budget_display}",
-                highlight=False,
+            # Per-experiment progress line
+            exp_line = format_experiment_line(
+                record,
+                index=exp_count,
+                max_experiments=max_exp,
+                cumulative_cost=total_cost,
+                budget=_budget,
+                mode=OutputMode.RICH,
             )
+            console.print(f"  {exp_line}", highlight=False)
 
-            progress.update(
-                task_id,
-                advance=1,
-                status=f"{tag} {record.score:.4f}  best={best_score:.4f}  ${total_cost:.4f}{failure}",
+            status = format_progress_status(
+                record,
+                best_score=best_score,
+                cumulative_cost=total_cost,
+                mode=OutputMode.RICH,
             )
+            progress.update(task_id, advance=1, status=status)
 
         console.print()
         console.print(
@@ -791,16 +841,16 @@ def _handle_run(args: argparse.Namespace) -> None:
             records = []
 
         console.print()
-        kept = sum(1 for r in records if r.outcome.value == "KEPT")
-        cond_time = sum(r.duration_seconds for r in records)
+        summary = build_run_summary(
+            records,
+            baseline_score=target.baseline_score,
+            mode=OutputMode.RICH,
+        )
+        assert isinstance(summary, str)
+        indented = summary.replace("\n", "\n  ")
         console.print(
             Panel(
-                f"Target [bold]{target.id}[/bold]\n"
-                f"  Experiments:  {len(records)}\n"
-                f"  Kept:         {kept}\n"
-                f"  Best score:   {best_score:.4f}\n"
-                f"  Total cost:   ${total_cost:.4f}\n"
-                f"  Total time:   {cond_time / 60:.1f} min",
+                f"Target [bold]{target.id}[/bold]\n  {indented}",
                 title="anneal run — complete",
                 style="green",
             )
@@ -851,7 +901,11 @@ def _handle_status(args: argparse.Namespace) -> None:
         if status_path.exists():
             status_data = json_mod.loads(status_path.read_text())
         else:
-            status_data = {"state": "UNKNOWN", "last_score": target.baseline_score, "experiment_count": 0}
+            status_data = {
+                "state": "UNKNOWN",
+                "last_score": target.baseline_score,
+                "experiment_count": 0,
+            }
 
         if getattr(args, "json", False):
             from anneal.engine.knowledge import KnowledgeStore
@@ -957,20 +1011,32 @@ def _handle_configure(args: argparse.Namespace) -> None:
         target.agent_config.evaluator_model = args.evaluator_model
         changes.append(f"  evaluator model = {args.evaluator_model}")
 
-    if getattr(args, "generation_model", None) is not None and target.eval_config.stochastic:
+    if (
+        getattr(args, "generation_model", None) is not None
+        and target.eval_config.stochastic
+    ):
         if target.eval_config.stochastic.generation_agent_config:
-            target.eval_config.stochastic.generation_agent_config.model = args.generation_model
+            target.eval_config.stochastic.generation_agent_config.model = (
+                args.generation_model
+            )
         changes.append(f"  generation model = {args.generation_model}")
 
-    if getattr(args, "generation_mode", None) is not None and target.eval_config.stochastic:
+    if (
+        getattr(args, "generation_mode", None) is not None
+        and target.eval_config.stochastic
+    ):
         if target.eval_config.stochastic.generation_agent_config:
-            target.eval_config.stochastic.generation_agent_config.mode = args.generation_mode
+            target.eval_config.stochastic.generation_agent_config.mode = (
+                args.generation_mode
+            )
         changes.append(f"  generation mode = {args.generation_mode}")
 
     # Update judgment agent config (model and/or mode)
     judge_model_arg = getattr(args, "judgment_model", None)
     judge_mode_arg = getattr(args, "judgment_mode", None)
-    if (judge_model_arg is not None or judge_mode_arg is not None) and target.eval_config.stochastic:
+    if (
+        judge_model_arg is not None or judge_mode_arg is not None
+    ) and target.eval_config.stochastic:
         stoch = target.eval_config.stochastic
         if stoch.judgment_agent_config is None:
             # Create from scratch — derive defaults from generation config
@@ -995,9 +1061,13 @@ def _handle_configure(args: argparse.Namespace) -> None:
 
     if getattr(args, "base_url", None) is not None:
         # Store base_url as a custom field — the agent invoker reads it
-        target.agent_config.temperature = target.agent_config.temperature  # no-op to keep config valid
+        target.agent_config.temperature = (
+            target.agent_config.temperature
+        )  # no-op to keep config valid
         changes.append(f"  base_url = {args.base_url}")
-        console.print(f"  [dim]Note: base_url support requires setting OPENAI_BASE_URL={args.base_url} env var[/dim]")
+        console.print(
+            f"  [dim]Note: base_url support requires setting OPENAI_BASE_URL={args.base_url} env var[/dim]"
+        )
 
     if getattr(args, "baseline", None) is not None:
         target.baseline_score = args.baseline
@@ -1094,6 +1164,7 @@ def _handle_dashboard(args: argparse.Namespace) -> None:
 
     if getattr(args, "open", False):
         import webbrowser
+
         webbrowser.open(f"http://{args.host}:{args.port}")
 
     console.print(
@@ -1152,7 +1223,9 @@ def _handle_resume(args: argparse.Namespace) -> None:
 
     if args.increase_budget and target.budget_cap:
         target.budget_cap.max_usd_per_day += args.increase_budget
-        console.print(f"  Budget increased to ${target.budget_cap.max_usd_per_day:.2f}/day")
+        console.print(
+            f"  Budget increased to ${target.budget_cap.max_usd_per_day:.2f}/day"
+        )
 
     # Always reset consecutive failure counter on resume — the target was
     # halted because of this counter, so resuming without clearing it would
@@ -1160,6 +1233,7 @@ def _handle_resume(args: argparse.Namespace) -> None:
     loop_state_path = repo_root / target.knowledge_path / ".loop-state.json"
     if loop_state_path.exists():
         from anneal.engine.runner import RunLoopState
+
         state = RunLoopState.load(loop_state_path)
         state.consecutive_failures = 0
         state.save(loop_state_path)
@@ -1221,7 +1295,9 @@ def _handle_history(args: argparse.Namespace) -> None:
     records = store.load_records(limit=args.limit)
 
     if args.outcome:
-        records = [r for r in records if r.outcome.value.lower() == args.outcome.lower()]
+        records = [
+            r for r in records if r.outcome.value.lower() == args.outcome.lower()
+        ]
 
     if not records:
         console.print("[yellow]No experiment records found.[/yellow]")
@@ -1229,11 +1305,18 @@ def _handle_history(args: argparse.Namespace) -> None:
 
     if getattr(args, "json", False):
         for r in records:
-            console.print(json_mod.dumps({
-                "id": r.id, "hypothesis": r.hypothesis, "score": r.score,
-                "outcome": r.outcome.value, "cost_usd": r.cost_usd,
-                "duration_seconds": r.duration_seconds,
-            }))
+            console.print(
+                json_mod.dumps(
+                    {
+                        "id": r.id,
+                        "hypothesis": r.hypothesis,
+                        "score": r.score,
+                        "outcome": r.outcome.value,
+                        "cost_usd": r.cost_usd,
+                        "duration_seconds": r.duration_seconds,
+                    }
+                )
+            )
     else:
         for r in records:
             style = "green" if r.outcome.value == "KEPT" else "dim"
@@ -1315,7 +1398,11 @@ def _handle_suggest(args: argparse.Namespace) -> None:
     """Handle ``anneal suggest``."""
     from anneal.suggest.analyzer import analyze_problem
     from anneal.suggest.generators import build_suggestion
-    from anneal.suggest.renderer import render_criteria, render_plan, write_suggestion_files
+    from anneal.suggest.renderer import (
+        render_criteria,
+        render_plan,
+        write_suggestion_files,
+    )
     from anneal.suggest.scope import generate_scope
 
     # Resolve problem description: --problem flag overrides positional arg
@@ -1338,15 +1425,17 @@ def _handle_suggest(args: argparse.Namespace) -> None:
 
     # Step 1: Analyze the problem
     console.print("[dim]Analyzing problem...[/dim]")
-    intent = asyncio.run(analyze_problem(
-        problem=args.problem,
-        artifact_paths=args.artifact,
-        eval_cmd=args.eval_cmd,
-        parse_cmd=args.parse_cmd,
-        metric=args.metric,
-        direction=args.direction,
-        model=args.model,
-    ))
+    intent = asyncio.run(
+        analyze_problem(
+            problem=args.problem,
+            artifact_paths=args.artifact,
+            eval_cmd=args.eval_cmd,
+            parse_cmd=args.parse_cmd,
+            metric=args.metric,
+            direction=args.direction,
+            model=args.model,
+        )
+    )
 
     # Step 2: Scan codebase and generate scope
     scope = generate_scope(repo_root, args.artifact, intent)
@@ -1377,7 +1466,11 @@ def _handle_suggest(args: argparse.Namespace) -> None:
                 + f"  anneal register --name {suggestion.name} "
                 + f"--artifact {' '.join(args.artifact)} "
                 + f"--eval-mode {suggestion.eval_mode} "
-                + (f"--run-cmd '{suggestion.run_command}' --parse-cmd '{suggestion.parse_command}' " if suggestion.eval_mode == "deterministic" else f"--criteria {target_dir / 'eval_criteria.toml'} ")
+                + (
+                    f"--run-cmd '{suggestion.run_command}' --parse-cmd '{suggestion.parse_command}' "
+                    if suggestion.eval_mode == "deterministic"
+                    else f"--criteria {target_dir / 'eval_criteria.toml'} "
+                )
                 + f"--direction {suggestion.direction} "
                 + f"--scope {target_dir / 'scope.yaml'}",
                 title="anneal suggest — Files Written",
@@ -1386,7 +1479,9 @@ def _handle_suggest(args: argparse.Namespace) -> None:
         )
     else:
         console.print()
-        console.print("[dim]Run with --accept to write files, or review the plan above and adjust.[/dim]")
+        console.print(
+            "[dim]Run with --accept to write files, or review the plan above and adjust.[/dim]"
+        )
         console.print(f"[dim]Target directory: {target_dir}[/dim]")
 
 
@@ -1416,7 +1511,7 @@ def _handle_validate(args: argparse.Namespace) -> None:
     )
 
     console.print()
-    console.print(f"  Running eval on current artifact (baseline)...")
+    console.print("  Running eval on current artifact (baseline)...")
 
     try:
         result = asyncio.run(
@@ -1454,7 +1549,6 @@ def _handle_validate(args: argparse.Namespace) -> None:
             passed_count = round(raw_score * n_samples)
             passed = raw_score >= 0.5
             marker = "[green]v[/green]" if passed else "[red]x[/red]"
-            weakest_tag = ""
             if min_score is None or raw_score < min_score:
                 min_score = raw_score
                 # tag the weakest criterion after we know all scores
@@ -1464,7 +1558,10 @@ def _handle_validate(args: argparse.Namespace) -> None:
 
         # Identify the weakest criterion
         if result.per_criterion_scores:
-            weakest_name = min(result.per_criterion_scores, key=lambda k: result.per_criterion_scores[k])  # type: ignore[arg-type]
+            weakest_name = min(
+                result.per_criterion_scores,
+                key=lambda k: result.per_criterion_scores[k],
+            )  # type: ignore[arg-type]
             weakest_val = result.per_criterion_scores[weakest_name]
             if weakest_val < 0.5:
                 console.print(
@@ -1496,7 +1593,9 @@ def _handle_validate(args: argparse.Namespace) -> None:
                 "Consider increasing --samples for more reliable scoring."
             )
         else:
-            console.print(f"  Variance is within expected range (CI width: {ci_width:.2f}).")
+            console.print(
+                f"  Variance is within expected range (CI width: {ci_width:.2f})."
+            )
 
     console.print()
 
@@ -1519,41 +1618,133 @@ def _build_parser() -> argparse.ArgumentParser:
     # -- register --
     reg = subparsers.add_parser("register", help="Register an optimization target")
     reg.add_argument("--name", required=True, help="Target identifier")
-    reg.add_argument("--artifact", required=True, nargs="+", help="Artifact paths relative to repo root")
-    reg.add_argument("--eval-mode", required=True, choices=["deterministic", "stochastic"], help="Evaluation strategy")
+    reg.add_argument(
+        "--artifact",
+        required=True,
+        nargs="+",
+        help="Artifact paths relative to repo root",
+    )
+    reg.add_argument(
+        "--eval-mode",
+        required=True,
+        choices=["deterministic", "stochastic"],
+        help="Evaluation strategy",
+    )
     reg.add_argument("--criteria", help="Path to eval_criteria.toml (stochastic only)")
     reg.add_argument("--run-cmd", help="Eval run command (deterministic only)")
     reg.add_argument("--parse-cmd", help="Eval parse command (deterministic only)")
-    reg.add_argument("--direction", choices=["maximize", "minimize"], default="maximize", help="Optimization direction")
-    reg.add_argument("--time-budget", type=int, default=300, help="Time budget in seconds")
-    reg.add_argument("--interval", type=int, default=None, help="Loop interval in seconds (default: same as --time-budget)")
-    reg.add_argument("--max-budget-usd", type=float, default=5.00, help="Max budget per day in USD")
+    reg.add_argument(
+        "--direction",
+        choices=["maximize", "minimize"],
+        default="maximize",
+        help="Optimization direction",
+    )
+    reg.add_argument(
+        "--time-budget", type=int, default=300, help="Time budget in seconds"
+    )
+    reg.add_argument(
+        "--interval",
+        type=int,
+        default=None,
+        help="Loop interval in seconds (default: same as --time-budget)",
+    )
+    reg.add_argument(
+        "--max-budget-usd", type=float, default=5.00, help="Max budget per day in USD"
+    )
     reg.add_argument("--agent-model", default="sonnet", help="Agent model identifier")
-    reg.add_argument("--agent-mode", choices=["claude_code", "api"], default="claude_code", help="Agent invocation mode")
-    reg.add_argument("--evaluator-model", default="gpt-4.1", help="Evaluator model identifier")
-    reg.add_argument("--base-url", help="Custom API base URL (for local LLMs, e.g., http://localhost:11434/v1)")
+    reg.add_argument(
+        "--agent-mode",
+        choices=["claude_code", "api"],
+        default="claude_code",
+        help="Agent invocation mode",
+    )
+    reg.add_argument(
+        "--evaluator-model", default="gpt-4.1", help="Evaluator model identifier"
+    )
+    reg.add_argument(
+        "--base-url",
+        help="Custom API base URL (for local LLMs, e.g., http://localhost:11434/v1)",
+    )
     reg.add_argument("--scope", required=True, help="Path to scope.yaml")
     reg.add_argument("--dry-run", action="store_true", help="Validate without writing")
-    reg.add_argument("--held-out-prompts", help="Path to held-out prompts file (one per line, stochastic only)")
-    reg.add_argument("--held-out-interval", type=int, help="Run held-out eval every N kept experiments (default: 10)")
-    reg.add_argument("--constraint", action="append", help="Metric constraint: 'metric>=value' or 'metric<=value' (repeatable)")
-    reg.add_argument("--domain-tier", choices=["sandbox", "deployment"], help="Domain tier (default: sandbox)")
-    reg.add_argument("--meta-depth", type=int, help="Meta-optimization depth (0=disabled, 1=enabled)")
-    reg.add_argument("--verifier", action="append", metavar="NAME:COMMAND", help="Binary pass/fail verifier gate (repeatable, format: name:command)")
-    reg.add_argument("--restart-probability", type=float, default=0.0, help="Probability of restart experiment per cycle (0.0-1.0, default: 0.0)")
-    reg.add_argument("--failure-categories", help="Path to TOML file with custom failure categories (optional)")
-    reg.add_argument("--n-drafts", type=int, default=1, help="Number of draft mutations per experiment cycle (1-10, default: 1)")
-    reg.add_argument("--policy-model", help="Model for policy agent instruction rewriting (enables continuous meta-optimization)")
-    reg.add_argument("--policy-interval", type=int, default=3, help="Rewrite mutation instructions every N experiments (default: 3)")
-    reg.add_argument("--in-place", action="store_true", default=False,
-                     help="Optimize artifact in-place without git worktree isolation. "
-                          "Uses file backup for rollback.")
-    reg.add_argument("--generation-mode", choices=["claude_code", "api"], default=None,
-                     help="Generation agent mode for stochastic eval (default: from criteria TOML or api)")
-    reg.add_argument("--judgment-model", default=None,
-                     help="Judgment model for stochastic eval (default: --evaluator-model)")
-    reg.add_argument("--judgment-mode", choices=["claude_code", "api"], default=None,
-                     help="Judgment agent mode for stochastic eval (default: api)")
+    reg.add_argument(
+        "--held-out-prompts",
+        help="Path to held-out prompts file (one per line, stochastic only)",
+    )
+    reg.add_argument(
+        "--held-out-interval",
+        type=int,
+        help="Run held-out eval every N kept experiments (default: 10)",
+    )
+    reg.add_argument(
+        "--constraint",
+        action="append",
+        help="Metric constraint: 'metric>=value' or 'metric<=value' (repeatable)",
+    )
+    reg.add_argument(
+        "--domain-tier",
+        choices=["sandbox", "deployment"],
+        help="Domain tier (default: sandbox)",
+    )
+    reg.add_argument(
+        "--meta-depth", type=int, help="Meta-optimization depth (0=disabled, 1=enabled)"
+    )
+    reg.add_argument(
+        "--verifier",
+        action="append",
+        metavar="NAME:COMMAND",
+        help="Binary pass/fail verifier gate (repeatable, format: name:command)",
+    )
+    reg.add_argument(
+        "--restart-probability",
+        type=float,
+        default=0.0,
+        help="Probability of restart experiment per cycle (0.0-1.0, default: 0.0)",
+    )
+    reg.add_argument(
+        "--failure-categories",
+        help="Path to TOML file with custom failure categories (optional)",
+    )
+    reg.add_argument(
+        "--n-drafts",
+        type=int,
+        default=1,
+        help="Number of draft mutations per experiment cycle (1-10, default: 1)",
+    )
+    reg.add_argument(
+        "--policy-model",
+        help="Model for policy agent instruction rewriting (enables continuous meta-optimization)",
+    )
+    reg.add_argument(
+        "--policy-interval",
+        type=int,
+        default=3,
+        help="Rewrite mutation instructions every N experiments (default: 3)",
+    )
+    reg.add_argument(
+        "--in-place",
+        action="store_true",
+        default=False,
+        help="Optimize artifact in-place without git worktree isolation. "
+        "Uses file backup for rollback.",
+    )
+    reg.add_argument(
+        "--generation-mode",
+        choices=["claude_code", "api"],
+        default=None,
+        help="Generation agent mode for stochastic eval (default: from criteria TOML or api)",
+    )
+    reg.add_argument(
+        "--judgment-model",
+        default=None,
+        help="Judgment model for stochastic eval (default: --evaluator-model)",
+    )
+    reg.add_argument(
+        "--judgment-mode",
+        choices=["claude_code", "api"],
+        default=None,
+        help="Judgment agent mode for stochastic eval (default: api)",
+    )
     reg.add_argument(
         "--template",
         metavar="TEMPLATE_NAME",
@@ -1567,15 +1758,29 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # -- run (stub) --
     run = subparsers.add_parser("run", help="Run optimization loop")
-    run.add_argument("--target", help="Target identifier (omit to run all registered targets)")
+    run.add_argument(
+        "--target", help="Target identifier (omit to run all registered targets)"
+    )
     run.add_argument("--experiments", type=int, help="Stop after N experiments")
     run.add_argument("--until", type=float, help="Stop when score reaches threshold")
     run.add_argument("--foreground", action="store_true", help="Block terminal")
-    run.add_argument("--dry-run", action="store_true", help="Preview cost estimate without running experiments")
+    run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview cost estimate without running experiments",
+    )
     # Runtime overrides (do not persist — apply to this run only)
-    run.add_argument("--samples", type=int, help="Override sample count (N) for this run")
-    run.add_argument("--confidence", type=float, help="Override confidence level for this run")
-    run.add_argument("--agent-budget", type=float, help="Override per-invocation agent budget for this run")
+    run.add_argument(
+        "--samples", type=int, help="Override sample count (N) for this run"
+    )
+    run.add_argument(
+        "--confidence", type=float, help="Override confidence level for this run"
+    )
+    run.add_argument(
+        "--agent-budget",
+        type=float,
+        help="Override per-invocation agent budget for this run",
+    )
     run.add_argument(
         "--search",
         choices=["greedy", "annealing", "population", "ucb_tree"],
@@ -1584,20 +1789,42 @@ def _build_parser() -> argparse.ArgumentParser:
             "Use --search greedy to disable the hybrid default."
         ),
     )
-    run.add_argument("--population-size", type=int, help="Population size for population search (default: 4)")
-    run.add_argument("--global-learnings", action=argparse.BooleanOptionalAction, default=True, help="Enable/disable cross-project learning pool")
-    run.add_argument("--yes", "-y", action="store_true", help="Skip cost confirmation prompt (for CI/automation)")
+    run.add_argument(
+        "--population-size",
+        type=int,
+        help="Population size for population search (default: 4)",
+    )
+    run.add_argument(
+        "--global-learnings",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable/disable cross-project learning pool",
+    )
+    run.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Skip cost confirmation prompt (for CI/automation)",
+    )
 
     # -- stop (stub) --
     stop = subparsers.add_parser("stop", help="Stop optimization loop")
     stop.add_argument("--target", help="Target identifier")
-    stop.add_argument("--now", action="store_true", help="Kill immediately instead of graceful stop")
+    stop.add_argument(
+        "--now", action="store_true", help="Kill immediately instead of graceful stop"
+    )
 
     # -- resume (stub) --
     resume = subparsers.add_parser("resume", help="Resume a paused or halted target")
     resume.add_argument("--target", required=True, help="Target identifier")
-    resume.add_argument("--increase-budget", type=float, help="Add dollars to daily cap")
-    resume.add_argument("--reset-failures", action="store_true", help="Clear consecutive failure counter")
+    resume.add_argument(
+        "--increase-budget", type=float, help="Add dollars to daily cap"
+    )
+    resume.add_argument(
+        "--reset-failures",
+        action="store_true",
+        help="Clear consecutive failure counter",
+    )
 
     # -- status (stub) --
     status = subparsers.add_parser("status", help="Show target status")
@@ -1608,13 +1835,21 @@ def _build_parser() -> argparse.ArgumentParser:
     # -- history (stub) --
     history = subparsers.add_parser("history", help="Show experiment history")
     history.add_argument("--target", required=True, help="Target identifier")
-    history.add_argument("--limit", type=int, default=20, help="Number of records to show")
-    history.add_argument("--outcome", help="Filter by outcome (kept, discarded, crashed, blocked)")
-    history.add_argument("--diff", metavar="EXP_ID", help="Show diff for a specific experiment")
+    history.add_argument(
+        "--limit", type=int, default=20, help="Number of records to show"
+    )
+    history.add_argument(
+        "--outcome", help="Filter by outcome (kept, discarded, crashed, blocked)"
+    )
+    history.add_argument(
+        "--diff", metavar="EXP_ID", help="Show diff for a specific experiment"
+    )
     history.add_argument("--json", action="store_true", help="Output as JSON")
 
     # -- re-register --
-    rereg = subparsers.add_parser("re-register", help="Re-hash scope after manual edits")
+    rereg = subparsers.add_parser(
+        "re-register", help="Re-hash scope after manual edits"
+    )
     rereg.add_argument("--target", required=True, help="Target identifier")
 
     # -- deregister --
@@ -1622,29 +1857,64 @@ def _build_parser() -> argparse.ArgumentParser:
     dereg.add_argument("--target", required=True, help="Target identifier")
 
     # -- configure --
-    conf = subparsers.add_parser("configure", help="Update target configuration permanently")
+    conf = subparsers.add_parser(
+        "configure", help="Update target configuration permanently"
+    )
     conf.add_argument("--target", required=True, help="Target identifier")
     conf.add_argument("--samples", type=int, help="Set sample count (N)")
     conf.add_argument("--confidence", type=float, help="Set confidence level (0.0-1.0)")
-    conf.add_argument("--agent-budget", type=float, help="Set per-invocation agent budget (USD)")
+    conf.add_argument(
+        "--agent-budget", type=float, help="Set per-invocation agent budget (USD)"
+    )
     conf.add_argument("--daily-budget", type=float, help="Set daily budget cap (USD)")
     conf.add_argument("--agent-model", help="Set agent model")
-    conf.add_argument("--agent-mode", choices=["claude_code", "api"], help="Set agent invocation mode")
+    conf.add_argument(
+        "--agent-mode", choices=["claude_code", "api"], help="Set agent invocation mode"
+    )
     conf.add_argument("--evaluator-model", help="Set evaluator model")
-    conf.add_argument("--generation-model", help="Set sample generation model (stochastic)")
-    conf.add_argument("--generation-mode", choices=["claude_code", "api"], help="Set generation agent mode (stochastic)")
+    conf.add_argument(
+        "--generation-model", help="Set sample generation model (stochastic)"
+    )
+    conf.add_argument(
+        "--generation-mode",
+        choices=["claude_code", "api"],
+        help="Set generation agent mode (stochastic)",
+    )
     conf.add_argument("--judgment-model", help="Set judgment model (stochastic)")
-    conf.add_argument("--judgment-mode", choices=["claude_code", "api"], help="Set judgment agent mode (stochastic)")
-    conf.add_argument("--base-url", help="Set custom API base URL (for local LLMs, e.g., http://localhost:11434/v1)")
+    conf.add_argument(
+        "--judgment-mode",
+        choices=["claude_code", "api"],
+        help="Set judgment agent mode (stochastic)",
+    )
+    conf.add_argument(
+        "--base-url",
+        help="Set custom API base URL (for local LLMs, e.g., http://localhost:11434/v1)",
+    )
     conf.add_argument("--baseline", type=float, help="Set baseline score manually")
-    conf.add_argument("--time-budget", type=int, help="Set time budget per experiment (seconds)")
-    conf.add_argument("--max-failures", type=int, help="Set max consecutive failures before HALT")
-    conf.add_argument("--meta-depth", type=int, help="Set meta-optimization depth (0=disabled, 1=enabled)")
-    conf.add_argument("--knowledge-context", action=argparse.BooleanOptionalAction, help="Enable/disable knowledge context injection into agent prompt")
+    conf.add_argument(
+        "--time-budget", type=int, help="Set time budget per experiment (seconds)"
+    )
+    conf.add_argument(
+        "--max-failures", type=int, help="Set max consecutive failures before HALT"
+    )
+    conf.add_argument(
+        "--meta-depth",
+        type=int,
+        help="Set meta-optimization depth (0=disabled, 1=enabled)",
+    )
+    conf.add_argument(
+        "--knowledge-context",
+        action=argparse.BooleanOptionalAction,
+        help="Enable/disable knowledge context injection into agent prompt",
+    )
 
     # -- dashboard --
-    dash = subparsers.add_parser("dashboard", help="Start live dashboard reading from .anneal/ directory")
-    dash.add_argument("--root", help="Path to .anneal directory (default: .anneal/ in repo root)")
+    dash = subparsers.add_parser(
+        "dashboard", help="Start live dashboard reading from .anneal/ directory"
+    )
+    dash.add_argument(
+        "--root", help="Path to .anneal directory (default: .anneal/ in repo root)"
+    )
     dash.add_argument("--port", type=int, default=8080, help="Server port")
     dash.add_argument("--host", default="127.0.0.1", help="Server host")
     dash.add_argument("--open", action="store_true", help="Open browser on start")
@@ -1657,7 +1927,9 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("list", help="List all registered targets")
 
     # -- suggest --
-    sug = subparsers.add_parser("suggest", help="Generate experiment configuration from a problem description")
+    sug = subparsers.add_parser(
+        "suggest", help="Generate experiment configuration from a problem description"
+    )
     sug.add_argument(
         "description",
         nargs="?",
@@ -1670,20 +1942,44 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Natural-language description of what to optimize (flag form; overrides positional)",
     )
-    sug.add_argument("--artifact", required=True, nargs="+", help="Artifact file paths to optimize")
-    sug.add_argument("--eval-cmd", help="Deterministic eval run command (omit for stochastic mode)")
-    sug.add_argument("--parse-cmd", help="Deterministic eval parse command (default: cat)")
-    sug.add_argument("--metric", help="Metric name (e.g., 'p95 latency in ms', 'character count')")
-    sug.add_argument("--direction", choices=["maximize", "minimize"], help="Optimization direction")
-    sug.add_argument("--accept", action="store_true", help="Write files and register target (skip review)")
-    sug.add_argument("--model", default="gpt-4.1", help="Model for problem analysis (default: gpt-4.1)")
+    sug.add_argument(
+        "--artifact", required=True, nargs="+", help="Artifact file paths to optimize"
+    )
+    sug.add_argument(
+        "--eval-cmd", help="Deterministic eval run command (omit for stochastic mode)"
+    )
+    sug.add_argument(
+        "--parse-cmd", help="Deterministic eval parse command (default: cat)"
+    )
+    sug.add_argument(
+        "--metric", help="Metric name (e.g., 'p95 latency in ms', 'character count')"
+    )
+    sug.add_argument(
+        "--direction", choices=["maximize", "minimize"], help="Optimization direction"
+    )
+    sug.add_argument(
+        "--accept",
+        action="store_true",
+        help="Write files and register target (skip review)",
+    )
+    sug.add_argument(
+        "--model",
+        default="gpt-4.1",
+        help="Model for problem analysis (default: gpt-4.1)",
+    )
 
     # -- local-check --
-    lc = subparsers.add_parser("local-check", help="Verify local LLM server health and model availability")
-    lc.add_argument("--model", required=True, help="Local model to check (e.g., ollama/llama3.1:8b)")
+    lc = subparsers.add_parser(
+        "local-check", help="Verify local LLM server health and model availability"
+    )
+    lc.add_argument(
+        "--model", required=True, help="Local model to check (e.g., ollama/llama3.1:8b)"
+    )
 
     # -- compare --
-    cmp = subparsers.add_parser("compare", help="Compare two experiment runs side-by-side")
+    cmp = subparsers.add_parser(
+        "compare", help="Compare two experiment runs side-by-side"
+    )
     cmp.add_argument("run_a", help="Path to first run directory or experiments.jsonl")
     cmp.add_argument("run_b", help="Path to second run directory or experiments.jsonl")
     cmp.add_argument("--label-a", default="Run A", help="Label for first run")

@@ -73,7 +73,9 @@ B3 = BenchmarkTarget(
     artifact_path="benchmarks/suite/artifacts/B3_utility_function.py",
     scope_path="benchmarks/suite/scopes/B3_scope.yaml",
     criteria_path=None,
-    run_cmd="uv run python benchmarks/suite/harness/eval_b3.py",
+    # {repo_root} resolved by suite runner — harness runs from main repo,
+    # reads artifact from worktree via CWD-relative path.
+    run_cmd="uv run python {repo_root}/benchmarks/suite/harness/eval_b3.py",
     parse_cmd="cat",
     direction="minimize",
 )

@@ -12,6 +12,7 @@ This script is immutable — the agent cannot modify it.
 
 Usage: uv run python benchmarks/suite/harness/eval_b3.py
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -28,7 +29,9 @@ COUNT_PATTERN = re.compile(r"^match_count:\s*([0-9]+)$")
 # Minimum plausible execution time: 260×260 Levenshtein pairs cannot run in < 1ms
 MIN_EXEC_TIME_MS = 1.0
 
-ARTIFACT = Path(__file__).resolve().parent.parent / "artifacts" / "B3_utility_function.py"
+# Resolve relative to CWD (the worktree), not __file__ (the main repo).
+# The eval engine sets cwd=worktree_path, so this reads the worktree's artifact.
+ARTIFACT = Path("benchmarks/suite/artifacts/B3_utility_function.py")
 
 # Spot-check pairs: (name_a, name_b, expected_distance)
 # Verified against the reference Levenshtein implementation.

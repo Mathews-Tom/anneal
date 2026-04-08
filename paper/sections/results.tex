@@ -67,7 +67,7 @@ Three patterns are visible across the targets.
 First, the treatment configuration reaches 90\% of its final improvement by experiment \NUM{treat-90pct}, compared to experiment \NUM{ctrl-90pct} for the control---a \NUM{convergence-speedup}$\times$ convergence speedup.
 This acceleration is attributable to two-phase mutation, which directs edits toward the weakest criteria identified during the diagnosis step, and to episodic memory, which prevents the agent from re-attempting previously unsuccessful mutation strategies.
 
-Second, the control configuration exhibits plateaus around experiments \NUM{ctrl-plateau-start}--\NUM{ctrl-plateau-end} on stochastic targets (B1, B2, B4, B5), where the agent exhausts obvious improvements but lacks the meta-optimization machinery to restructure its approach.
+Second, the control configuration exhibits plateaus around experiments \NUM{ctrl-plateau-start}--\NUM{ctrl-plateau-end} on stochastic targets (B1, B2, B5), where the agent exhausts obvious improvements but lacks the meta-optimization machinery to restructure its approach.
 The treatment configuration breaks through these plateaus via component-level strategy evolution and the research operator, which injects external knowledge when the score velocity drops below a configurable threshold.
 
 Third, the greedy baseline converges early but to a lower final score, consistent with its lack of knowledge accumulation: without access to experiment history, the agent generates mutations without awareness of what has already been tried.
@@ -99,7 +99,7 @@ We attribute gains by examining which enhancements activate during the optimizat
 
 \paragraph{Two-phase mutation.}
 The structured diagnosis step fires on every treatment experiment.
-On targets with multiple evaluation criteria (B1, B2, B4, B5), the diagnosis correctly identifies the weakest criterion in \NUM{diagnosis-accuracy}\% of cases (verified against the per-criterion score breakdown).
+On stochastic targets with multiple evaluation criteria (B1, B2, B5), the diagnosis correctly identifies the weakest criterion in \NUM{diagnosis-accuracy}\% of cases (verified against the per-criterion score breakdown).
 Experiments following an accurate diagnosis have a \NUM{diagnosis-accept-rate}\% acceptance rate compared to \NUM{baseline-accept-rate}\% without diagnosis, confirming that targeted mutation outperforms undirected generation.
 
 \paragraph{Episodic memory.}

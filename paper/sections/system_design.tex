@@ -96,8 +96,7 @@ Held-out divergence detection runs stochastic evaluation against a separate set 
 % ------------------------------------------------------------------
 \begin{figure}[t]
     \centering
-    % \includegraphics[width=\columnwidth]{figures/architecture.pdf}
-    \fbox{\parbox{0.9\columnwidth}{\centering\vspace{2cm}\textit{Architecture diagram placeholder: Artifact--Eval--Agent triplet with git worktree isolation, scope enforcement, and evaluation pipeline.}\vspace{2cm}}}
+    \includegraphics[width=\columnwidth]{figures/architecture.png}
     \caption{Anneal system architecture. The user registers a target as an Artifact--Eval--Agent triplet. The engine creates an isolated git worktree, invokes the mutation agent, enforces scope constraints, evaluates the mutated artifact, and applies a statistical acceptance test. Accepted mutations are committed; rejected mutations are reset.}
     \label{fig:architecture}
 \end{figure}

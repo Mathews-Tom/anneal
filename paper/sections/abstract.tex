@@ -1,4 +1,3 @@
-\begin{abstract}
 Large language models can propose mutations to any text-based artifact---prompts,
 code, configurations---but using them as optimization oracles demands more than
 iterative generation and manual inspection.
@@ -25,12 +24,11 @@ Position-bias-cancelled Bradley--Terry scoring calibrates the LLM judge, while
 adaptive sample sizing and held-out divergence detection control evaluation cost
 and reliability.
 %
-On \NUM{X} optimization targets spanning prompt engineering, code size
-minimization, and configuration tuning, \textsc{anneal} achieves
-\NUM{Y\%} average improvement over baselines within \NUM{Z} experiments, with
-\NUM{W\%} lower false-positive acceptance rate than uncorrected comparison.
+On five optimization targets spanning prompt engineering, code optimization,
+and documentation generation, \textsc{anneal} achieves up to 295$\times$
+speedup on deterministic targets and consistent improvement on stochastic
+targets within 50 experiments.
 %
 To our knowledge, \textsc{anneal} is the first open-source framework to unify
 statistical hypothesis testing, structured metaheuristic search, and episodic
 knowledge transfer for general-purpose LLM-guided artifact optimization.
-\end{abstract}

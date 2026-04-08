@@ -13,18 +13,18 @@ the evaluation function and its criteria are immutable and outside the agent's m
 
 \begin{table}[t]
   \centering
-  \caption{Benchmark targets. \emph{Eval mode}: D = deterministic (single scalar), S = stochastic ($N$ samples $\times$ $K$ binary criteria). \emph{Domain}: the optimization domain exercised by each target.}
+  \caption{Benchmark targets. \emph{Eval}: D = deterministic (single scalar), S = stochastic ($N$ samples $\times$ $K$ binary criteria). \emph{Dir}: optimization direction.}
   \label{tab:benchmark-targets}
   \small
-  \begin{tabular}{@{}llllrl@{}}
+  \begin{tabular}{@{}lllcrl@{}}
     \toprule
-    ID & Target & Domain & Eval & $K$ & Objective \\
+    ID & Target & Domain & Eval & $K$ & Dir \\
     \midrule
-    B1 & Classification prompt & Prompt opt. & S & 5 & Maximize classification accuracy \\
-    B2 & Summarization prompt & Prompt opt. & S & 4 & Maximize summary quality \\
-    B3 & Performance optimization & Code opt. & D & --- & Minimize execution time \\
-    B4 & Code quality refactor & Code opt. & D & --- & Maximize composite score \\
-    B5 & README generation & Documentation & S & 6 & Maximize documentation quality \\
+    B1 & Classification prompt & Prompt & S & 5 & max \\
+    B2 & Summarization prompt & Prompt & S & 4 & max \\
+    B3 & Performance opt. & Code & D & --- & min \\
+    B4 & Code quality refactor & Code & D & --- & max \\
+    B5 & README generation & Docs & S & 6 & max \\
     \bottomrule
   \end{tabular}
 \end{table}

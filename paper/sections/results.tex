@@ -10,20 +10,20 @@ The treatment configuration achieves the highest mean final score on all five ta
 
 \begin{table}[t]
   \centering
-  \caption{Final scores (mean $\pm$ std over 10 runs). Bold indicates best per target. Superscripts denote statistical significance vs.\ control after Holm--Bonferroni correction: ${}^{*}p < 0.05$, ${}^{**}p < 0.01$.}
+  \caption{Final scores (mean $\pm$ std over 10 runs). Bold = best per target. ${}^{*}p < 0.05$, ${}^{**}p < 0.01$ vs.\ control (Holm--Bonferroni).}
   \label{tab:main-results}
-  \small
-  \begin{tabular}{@{}lcccc@{}}
+  \footnotesize
+  \begin{tabular}{@{}lrrrr@{}}
     \toprule
-    Target & Raw & Greedy & Control & Treatment \\
+    Target & Raw & Greedy & Control & Treat. \\
     \midrule
-    B1 (classification) & \NUM{b1-raw} & \NUM{b1-greedy} & \NUM{b1-ctrl} & \textbf{\NUM{b1-treat}} \\
-    B2 (summarization)  & \NUM{b2-raw} & \NUM{b2-greedy} & \NUM{b2-ctrl} & \textbf{\NUM{b2-treat}} \\
-    B3 (performance)    & \NUM{b3-raw} & \NUM{b3-greedy} & \NUM{b3-ctrl} & \textbf{\NUM{b3-treat}} \\
-    B4 (code quality)   & \NUM{b4-raw} & \NUM{b4-greedy} & \NUM{b4-ctrl} & \textbf{\NUM{b4-treat}} \\
-    B5 (README quality) & \NUM{b5-raw} & \NUM{b5-greedy} & \NUM{b5-ctrl} & \textbf{\NUM{b5-treat}} \\
+    B1 (classif.)  & \NUM{b1-raw} & \NUM{b1-greedy} & \NUM{b1-ctrl} & \textbf{\NUM{b1-treat}} \\
+    B2 (summ.)     & \NUM{b2-raw} & \NUM{b2-greedy} & \NUM{b2-ctrl} & \textbf{\NUM{b2-treat}} \\
+    B3 (perf.)     & \NUM{b3-raw} & \NUM{b3-greedy} & \NUM{b3-ctrl} & \textbf{\NUM{b3-treat}} \\
+    B4 (quality)   & \NUM{b4-raw} & \NUM{b4-greedy} & \NUM{b4-ctrl} & \textbf{\NUM{b4-treat}} \\
+    B5 (docs)      & \NUM{b5-raw} & \NUM{b5-greedy} & \NUM{b5-ctrl} & \textbf{\NUM{b5-treat}} \\
     \midrule
-    Mean improvement over raw & --- & \NUM{greedy-vs-raw}\% & \NUM{ctrl-vs-raw}\% & \NUM{treat-vs-raw}\% \\
+    Mean $\Delta$ vs.\ raw & --- & \NUM{g-v-r}\% & \NUM{c-v-r}\% & \NUM{t-v-r}\% \\
     \bottomrule
   \end{tabular}
 \end{table}

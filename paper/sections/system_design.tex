@@ -17,7 +17,8 @@ Every optimization target in Anneal is registered as a triplet of declarative sp
     \item \textbf{Agent} (\texttt{AgentConfig} + \texttt{program.md}). An LLM that proposes mutations, restricted to file-edit tools operating within the editable scope. The agent receives the current artifact content, experiment history, and mutation instructions (\texttt{program.md}), but never sees the eval command, criteria definitions, or scoring logic. \texttt{AgentInvoker} dispatches to either a Claude Code subprocess (which writes files directly to disk) or a direct API call depending on \texttt{AgentConfig.mode}.
 \end{enumerate}
 
-The triplet is the schema of \texttt{OptimizationTarget} (\texttt{anneal/engine/types.py}), persisted to \texttt{.anneal/config.toml} via the \texttt{Registry} class. This design makes the engine domain-agnostic: adding a new optimization target requires only three plain files (\texttt{scope.yaml}, \texttt{metrics.yaml}, \texttt{program.md}), with no engine code changes.
+The triplet is the schema of \texttt{Optimization\allowbreak{}Target} (\texttt{anneal/\allowbreak{}engine/\allowbreak{}types.py}), persisted to \texttt{.anneal/\allowbreak{}config.toml} via the \texttt{Registry} class.
+This design makes the engine domain-agnostic: adding a new optimization target requires only three plain files (\texttt{scope.yaml}, \texttt{metrics.yaml}, \texttt{program.md}), with no engine code changes.
 
 % ------------------------------------------------------------------
 \subsection{Execution Environment: Git Worktree Isolation}\label{sec:worktree}
@@ -37,14 +38,14 @@ The experiment cycle within the worktree proceeds as follows:
 
 The system never uses \texttt{git stash}. The only snapshot and restore mechanism is commit and hard reset. Every accepted mutation is a real git commit, making the full optimization history inspectable with standard git tooling. Garbage collection is configured to retain unreachable commits (\texttt{gc.reflogExpire=never}), preserving the complete experiment lineage.
 
-For in-place targets where worktree isolation is not feasible, a \texttt{FileBackupEnvironment} copies artifact files to \texttt{.anneal/backups/<target-id>/} before each experiment, restoring them on discard.
+For in-place targets where worktree isolation is not feasible, a \texttt{File\allowbreak{}Backup\allowbreak{}Environment} copies artifact files to \texttt{.anneal/\allowbreak{}backups/\allowbreak{}<target-id>/} before each experiment, restoring them on discard.
 
 % ------------------------------------------------------------------
 \subsection{Scope Enforcement}\label{sec:scope}
 
 Scope enforcement prevents the agent from modifying files outside its declared editable set, gaming evaluation definitions, or contaminating sibling targets' configurations (ADR-004). The enforcement operates in two stages.
 
-\paragraph{Registration-time validation.} \texttt{validate\_scope} (\texttt{anneal/engine/scope.py}) checks that \texttt{scope.yaml} satisfies required invariants: \texttt{scope.yaml} and \texttt{metrics.yaml} appear in \texttt{immutable}; stochastic targets additionally require \texttt{eval\_criteria.toml} in \texttt{immutable}; no path appears in both \texttt{editable} and \texttt{immutable}; sibling targets' configuration paths are not declared as editable.
+\paragraph{Registration-time validation.} The \texttt{validate\allowbreak{}\_\allowbreak{}scope} function (\texttt{anneal/\allowbreak{}engine/\allowbreak{}scope.py}) checks that \texttt{scope.yaml} satisfies required invariants: \texttt{scope.yaml} and \texttt{metrics.yaml} appear in \texttt{immutable}; stochastic targets additionally require \texttt{eval\allowbreak{}\_criteria.toml} in \texttt{immutable}; no path appears in both \texttt{editable} and \texttt{immutable}; sibling targets' configuration paths are not declared as editable.
 
 \paragraph{Runtime post-write validation.} After each agent invocation, \texttt{enforce\_scope} inspects the output of \texttt{git status -{}-porcelain} and classifies every changed file:
 \begin{itemize}
@@ -68,7 +69,7 @@ The \texttt{EvalEngine} class (\texttt{anneal/engine/eval.py}) dispatches evalua
 Two comparison modes are available for aggregating votes:
 \begin{itemize}
     \item \emph{Majority vote}: binary 1/0 based on whether $> V/2$ votes are YES.
-    \item \emph{Bradley-Terry}: Bayesian strength estimation using a $\text{Beta}(1,1)$ prior (\texttt{BradleyTerryScorer}). The estimated strength $\hat{p} = (\text{yes} + 1) / (\text{total} + 2)$ provides calibrated uncertainty, enabling early stopping when the 95\% confidence interval is entirely above or below the decision threshold.
+    \item \emph{Bradley-Terry}: Bayesian strength estimation using a $\text{Beta}(1,1)$ prior (\texttt{Bradley\allowbreak{}Terry\allowbreak{}Scorer}). The estimated strength $\hat{p} = (\text{yes} + 1) / (\text{total} + 2)$ provides calibrated uncertainty, enabling early stopping when the 95\% CI is entirely above or below the decision threshold.
 \end{itemize}
 
 The aggregate score across all samples is accompanied by bootstrap confidence intervals (10{,}000 resamples with a deterministic seed derived from the score vector).
@@ -76,14 +77,14 @@ The aggregate score across all samples is accompanied by bootstrap confidence in
 % ------------------------------------------------------------------
 \subsection{Statistical Comparison}\label{sec:stat-comparison}
 
-Accept/reject decisions for stochastic evaluations use the Wilcoxon signed-rank test (ADR-002), implemented in \texttt{GreedySearch.\_stochastic\_compare} (\texttt{anneal/engine/search.py}). The test is non-parametric and valid for binary and small-sample paired data---the common case in prompt optimization where sample counts range from \NUM{6} to \NUM{20}.
+Accept/reject decisions for stochastic evaluations use the Wilcoxon signed-rank test (ADR-002), implemented in \texttt{Greedy\allowbreak{}Search.\allowbreak{}\_stochastic\allowbreak{}\_compare} (\texttt{anneal/\allowbreak{}engine/\allowbreak{}search.py}). The test is non-parametric and valid for binary and small-sample paired data---the common case in prompt optimization where sample counts range from \NUM{6} to \NUM{20}.
 
 The comparison procedure is:
 \begin{enumerate}
     \item Compute element-wise differences $d_i = \text{challenger}_i - \text{baseline}_i$.
     \item Early-reject if the mean difference is in the wrong direction.
     \item If $n < 6$ (below the minimum for Wilcoxon), apply a Cohen's $d$ effect-size threshold of $0.5$ (medium effect).
-    \item Otherwise, run a one-sided Wilcoxon test (\texttt{scipy.stats.wilcoxon}) with alternative \texttt{"greater"} or \texttt{"less"} depending on the optimization direction.
+    \item Otherwise, run a one-sided Wilcoxon test (\texttt{scipy.\allowbreak{}stats.\allowbreak{}wilcoxon}) with alternative \texttt{"greater"} or \texttt{"less"} depending on optimization direction.
     \item Accept if $p < \alpha$, where $\alpha = 1 - \text{confidence}$ (default $0.05$).
 \end{enumerate}
 

@@ -11,11 +11,11 @@ This section describes four tracks of enhancements that improve representation, 
 \subsubsection{Strategy Manifest}\label{sec:strategy-manifest}
 
 The baseline mutation instruction is a monolithic \texttt{program.md} file.
-The strategy manifest (\texttt{StrategyManifest} in \texttt{anneal/engine/strategy.py}) replaces this with a structured YAML document containing four named components: \texttt{hypothesis\_generation}, \texttt{context\_assembly}, \texttt{mutation\_style}, and \texttt{failure\_analysis}.
-Each component is a \texttt{StrategyComponent} with an \texttt{approach} field (natural-language instructions), an \texttt{evolved\_at} counter tracking the last experiment at which it was rewritten, and a \texttt{streak\_without\_improvement} counter.
+The strategy manifest (\texttt{Strategy\allowbreak{}Manifest} in \texttt{anneal/\allowbreak{}engine/\allowbreak{}strategy.py}) replaces this with a structured YAML document containing four named components: \texttt{hypothesis\allowbreak{}\_generation}, \texttt{context\allowbreak{}\_assembly}, \texttt{mutation\allowbreak{}\_style}, and \texttt{failure\allowbreak{}\_analysis}.
+Each component is a \texttt{Strategy\allowbreak{}Component} with an \texttt{approach} field (natural-language instructions), an \texttt{evolved\allowbreak{}\_at} counter tracking the last experiment at which it was rewritten, and a \texttt{streak\allowbreak{}\_without\allowbreak{}\_improvement} counter.
 
-Component-level evolution targets the weakest link: \texttt{StrategyManifest.weakest\_component()} returns the component with the longest streak without improvement.
-The \texttt{evolve\_weakest\_component} function constructs a focused rewriting prompt that includes the current approach text, recent experiment statistics (kept/discarded counts, score ranges), and per-criterion pass/fail summaries.
+Component-level evolution targets the weakest link: \texttt{Strategy\allowbreak{}Manifest.\allowbreak{}weakest\allowbreak{}\_component()} returns the component with the longest streak without improvement.
+The \texttt{evolve\allowbreak{}\_weakest\allowbreak{}\_component} function constructs a focused rewriting prompt that includes the current approach text, recent experiment statistics (kept/discarded counts, score ranges), and per-criterion pass/fail summaries.
 The agent rewrites only the targeted component, leaving the remaining three stable.
 This decomposition avoids catastrophic forgetting of working strategies when only one aspect of the mutation policy is underperforming.
 
@@ -37,8 +37,8 @@ Compression reduces input token cost and keeps the agent within its context wind
 
 \subsubsection{Dual-Agent Mutation via Thompson Sampling}\label{sec:dual-agent}
 
-The \texttt{AgentSelector} class (\texttt{anneal/engine/strategy\_selector.py}) maintains two Beta-Binomial arms---\texttt{primary} and \texttt{exploration}---and selects between them using Thompson Sampling.
-The primary agent uses the model and temperature specified in \texttt{AgentConfig}; the exploration agent uses a separate model (\texttt{exploration\_model}) at higher temperature, biased toward novel mutations.
+The \texttt{Agent\allowbreak{}Selector} class (\texttt{anneal/\allowbreak{}engine/\allowbreak{}strategy\allowbreak{}\_selector.py}) maintains two Beta-Binomial arms---\texttt{primary} and \texttt{exploration}---and selects between them using Thompson Sampling.
+The primary agent uses the model and temperature specified in \texttt{Agent\allowbreak{}Config}; the exploration agent uses a separate model (\texttt{exploration\allowbreak{}\_model}) at higher temperature, biased toward novel mutations.
 
 Selection is modulated by experiment progress: early in the run (\texttt{experiment\_ratio} $< 0.2$), exploration receives a $1.4\times$ boost; late in the run ($> 0.8$), exploration is dampened to $0.4\times$ its posterior sample.
 After each experiment, the selected arm's posterior is updated with a binary reward (whether the mutation was kept).

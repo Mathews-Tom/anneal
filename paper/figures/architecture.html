@@ -33,11 +33,10 @@
 
   .canvas {
     width: 990px;
-    height: 1320px;
     background: var(--c-bg);
     position: relative;
     overflow: hidden;
-    padding: 16px;
+    padding: 14px;
   }
 
   /* === LAYOUT === */
@@ -45,8 +44,7 @@
     display: grid;
     grid-template-columns: 160px 1fr 200px;
     grid-template-rows: auto 1fr auto;
-    gap: 10px;
-    height: 100%;
+    gap: 8px;
     font-size: 11px;
     color: var(--c-text);
     line-height: 1.35;
@@ -148,7 +146,6 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    flex: 1;
     position: relative;
   }
 
@@ -410,10 +407,8 @@
 
       <div class="conn-label">scope.yaml &bull; eval_criteria.toml<br/>program.md &bull; metrics.yaml</div>
 
-      <div style="flex: 1;"></div>
-
       <!-- Feedback arrow hint -->
-      <div style="border: 1px dashed #999; padding: 6px 8px; background: #fefce8; margin-top: auto;">
+      <div style="border: 1px dashed #999; padding: 6px 8px; background: #fefce8; margin-top: 6px;">
         <div class="box-title" style="font-size: 9px;">Feedback Loop</div>
         <div class="box-desc" style="font-size: 8px;">KEPT &rarr; advance baseline<br/>DISCARDED &rarr; extract lesson<br/>Both &rarr; update knowledge</div>
       </div>
@@ -555,7 +550,7 @@
         </div>
       </div>
 
-      <div class="conn-label" style="margin-top: auto;">&larr; feeds context &amp; decisions &rarr;</div>
+      <div class="conn-label" style="margin-top: 6px;">&larr; feeds context &amp; decisions &rarr;</div>
     </div>
 
     <!-- BOTTOM: Safety -->

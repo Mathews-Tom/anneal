@@ -28,10 +28,20 @@
 \newcommand{\NUM}[1]{\textcolor{red}{\textbf{[#1]}}}
 
 %%
-%% Allow \texttt to break at underscores and other non-alpha characters.
-%% Without this, long monospace identifiers overflow column boundaries.
+%% Allow line breaks in monospace text.
+%% 1. hyphenat[htt] enables standard hyphenation for \texttt
+%% 2. emergencystretch lets TeX stretch lines with long monospace words
+%% 3. Redefine \_ to include \allowbreak, enabling line breaks
+%%    after underscores in identifiers like foo\_bar\_baz
 %%
-\usepackage[htt]{hyphenat}  % Enable hyphenation in \texttt
+\usepackage[htt]{hyphenat}
+\emergencystretch=2em
+
+%% Make \_ insert an underscore followed by a breakpoint.
+%% This applies everywhere (text, \texttt, captions) and is safe
+%% because \_ is already a macro, not a raw character.
+\let\oldunderscore\_
+\renewcommand{\_}{\oldunderscore\hspace{0pt}}
 
 %%
 %% ACM Metadata — submission stage

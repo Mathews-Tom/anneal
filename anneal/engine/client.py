@@ -63,6 +63,26 @@ def _load_pricing() -> dict[str, tuple[float, float]]:
 _MODEL_COSTS = _load_pricing()
 _WARNED_MODELS: set[str] = set()
 
+# Cache AsyncOpenAI clients by routing key to avoid FD exhaustion.
+# Each AsyncOpenAI instance opens an httpx connection pool; creating a new
+# one per API call leaks FDs until the OS limit (often 256 on macOS).
+_CLIENT_CACHE: dict[str, openai.AsyncOpenAI] = {}
+
+
+def _client_cache_key(model: str) -> str:
+    """Derive a cache key from the model string.
+
+    Models with the same prefix share the same base_url + api_key,
+    so they can share a single client instance.
+    """
+    for prefix in ("ollama/", "lmstudio/", "local/"):
+        if model.startswith(prefix):
+            return prefix
+    for prefix in ("gemini-", "claude-", "gpt-"):
+        if model.startswith(prefix):
+            return prefix
+    return "default"
+
 
 def get_model_costs(model: str) -> tuple[float, float]:
     """Return (input_$/MTok, output_$/MTok) for a model."""
@@ -70,10 +90,22 @@ def get_model_costs(model: str) -> tuple[float, float]:
 
 
 def make_client(model: str) -> openai.AsyncOpenAI:
-    """Build an OpenAI-compatible async client routed by model prefix.
+    """Return a cached OpenAI-compatible async client routed by model prefix.
 
-    Raises ValueError for unknown model prefixes without cloud API keys.
+    Clients are cached by routing key so the httpx connection pool is reused
+    across calls, preventing file descriptor exhaustion on long runs.
     """
+    key = _client_cache_key(model)
+    if key in _CLIENT_CACHE:
+        return _CLIENT_CACHE[key]
+
+    client = _build_client(model)
+    _CLIENT_CACHE[key] = client
+    return client
+
+
+def _build_client(model: str) -> openai.AsyncOpenAI:
+    """Build a fresh AsyncOpenAI client routed by model prefix."""
     # Local model routing
     if model.startswith("ollama/"):
         return openai.AsyncOpenAI(

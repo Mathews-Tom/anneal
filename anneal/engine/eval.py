@@ -28,6 +28,17 @@ from anneal.engine.types import (
 logger = logging.getLogger(__name__)
 
 _API_SEMAPHORE = asyncio.Semaphore(10)
+
+
+def _sanitize_api_content(text: str) -> str:
+    """Strip characters that corrupt JSON payloads sent to LLM APIs.
+
+    Removes null bytes and ASCII control characters (except tab, newline,
+    carriage return) that cause openai.BadRequestError on serialization.
+    """
+    return text.translate(
+        str.maketrans("", "", "".join(chr(c) for c in range(32) if c not in (9, 10, 13)))
+    )
 _CLAUDE_CODE_SEMAPHORE = asyncio.Semaphore(3)  # Limit concurrent Claude Code subprocesses
 
 
@@ -561,9 +572,9 @@ class StochasticEvaluator:
                         {"role": "user", "content": prompt},
                     ],
                 )
-        except (openai.APITimeoutError, openai.APIConnectionError) as exc:
+        except (openai.APITimeoutError, openai.APIConnectionError, openai.BadRequestError) as exc:
             raise EvalError(f"Generation API call failed: {exc}") from exc
-        text = response.choices[0].message.content or ""
+        text = _sanitize_api_content(response.choices[0].message.content or "")
         cost = _extract_cost(response, model)
         return text, cost
 
@@ -582,10 +593,11 @@ class StochasticEvaluator:
             "You are an evaluator. Answer the following question about the "
             "provided output with exactly YES or NO. No explanation."
         )
+        sanitized_sample = _sanitize_api_content(sample)
         user_msg = (
             f"## Criterion: {criterion.name}\n\n"
             f"{criterion.question}\n\n"
-            f"## Output to evaluate\n\n{sample}"
+            f"## Output to evaluate\n\n{sanitized_sample}"
         )
 
         if config.mode == "claude_code":
@@ -610,7 +622,7 @@ class StochasticEvaluator:
                         {"role": "user", "content": user_msg},
                     ],
                 )
-        except (openai.APITimeoutError, openai.APIConnectionError) as exc:
+        except (openai.APITimeoutError, openai.APIConnectionError, openai.BadRequestError) as exc:
             raise EvalError(f"Scoring API call failed for {criterion.name}: {exc}") from exc
         raw_answer = response.choices[0].message.content or ""
         cost = _extract_cost(response, model)

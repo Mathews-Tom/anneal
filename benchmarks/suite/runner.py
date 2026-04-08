@@ -180,8 +180,12 @@ def build_run_command(run: BenchmarkRun) -> list[str]:
     if run.config.search_strategy not in ("none", "hybrid"):
         cmd += ["--search", run.config.search_strategy]
 
-    # Early-stop on perfect score to avoid wasting experiments.
-    if run.target.direction == "maximize":
+    # Early-stop on perfect score for deterministic targets with a known
+    # ceiling (e.g., B4 composite score 0.0–1.0).  Stochastic targets use
+    # raw criterion pass counts (e.g., 5 criteria × 10 samples = max 50),
+    # so --until 1.0 would trigger after the first improvement and must be
+    # skipped — the experiment budget is the only stopping condition.
+    if run.target.direction == "maximize" and run.target.eval_mode == "deterministic":
         cmd += ["--until", "1.0"]
 
     return cmd

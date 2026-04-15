@@ -39,6 +39,21 @@ _SUITE_DIR = Path(__file__).parent
 _REPO_ROOT = _SUITE_DIR.parent.parent
 _ANNEAL_DIR = _REPO_ROOT / ".anneal"
 
+# Three-model split used for all benchmark runs.
+#
+#   _MUTATION_MODEL:    primary mutation agent (AgentConfig.model)
+#   _DIAGNOSIS_MODEL:   two-phase diagnosis, dual-agent exploration arm,
+#                       research operator, and policy rewriter
+#   _JUDGE_MODEL:       stochastic-eval LLM judge (and deterministic
+#                       evaluator_model slot, since the CLI routes both
+#                       through --evaluator-model)
+#
+# Pricing for all three models must be defined in anneal/engine/client.py
+# (_load_pricing) or ~/.anneal/pricing.toml before cost tracking is accurate.
+_MUTATION_MODEL = "gpt-5.4"
+_DIAGNOSIS_MODEL = "gpt-5.4-mini"
+_JUDGE_MODEL = "gemini-3-flash-preview"
+
 # The four experimental configurations applied to every target.
 BENCHMARK_CONFIGS: list[BenchmarkConfig] = [
     BenchmarkConfig(
@@ -143,9 +158,18 @@ def build_register_command(run: BenchmarkRun) -> list[str]:
         if target.parse_cmd:
             cmd += ["--parse-cmd", _resolve_repo_root_placeholder(target.parse_cmd)]
 
-    # Use full model name — short aliases like "sonnet" aren't resolved
-    # by the engine's provider-prefix routing in client.py.
-    cmd += ["--agent-model", "claude-sonnet-4-6"]
+    # Three-model split (see module constants). The CLI only exposes three of
+    # the six model slots; the remaining three (exploration_model,
+    # diagnosis_model, research_config.model) are patched into config.toml
+    # after registration by _patch_model_config().
+    cmd += [
+        "--agent-model", _MUTATION_MODEL,
+        "--agent-mode", "api",
+        "--evaluator-model", _JUDGE_MODEL,
+        "--policy-model", _DIAGNOSIS_MODEL,
+    ]
+    if target.eval_mode == "stochastic":
+        cmd += ["--judgment-model", _JUDGE_MODEL]
 
     # Set budget high enough for the full experiment budget to complete
     # without pausing. Default $5/day would stall after ~5 experiments.
@@ -286,6 +310,66 @@ def _read_experiment_records(target_name: str) -> list[dict[str, object]]:
     return records
 
 
+def _patch_model_config(target_name: str) -> None:
+    """Fill in the three non-CLI model slots in ``.anneal/config.toml``.
+
+    After ``anneal register`` writes the target section, three ``agent_config``
+    fields are still empty strings because the CLI does not expose them:
+
+      - ``exploration_model``  (dual-agent exploration arm)
+      - ``diagnosis_model``    (two-phase diagnosis)
+
+    This function rewrites those two lines inside the
+    ``[targets.<name>.agent_config]`` section, scoping the replacement to
+    that section only so sibling targets are not touched. If the target's
+    research_config is present, its ``model`` field is also filled in.
+    """
+    config_path = _ANNEAL_DIR / "config.toml"
+    if not config_path.exists():
+        raise FileNotFoundError(f"anneal config not found at {config_path}")
+
+    lines = config_path.read_text(encoding="utf-8").splitlines()
+    agent_section_header = f"[targets.{target_name}.agent_config]"
+    research_section_header = f"[targets.{target_name}.research_config]"
+
+    current_section: str | None = None
+    patched_agent = {"exploration_model": False, "diagnosis_model": False}
+    patched_research = False
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current_section = stripped
+            continue
+
+        if current_section == agent_section_header:
+            if stripped.startswith("exploration_model"):
+                lines[i] = f'exploration_model = "{_DIAGNOSIS_MODEL}"'
+                patched_agent["exploration_model"] = True
+            elif stripped.startswith("diagnosis_model"):
+                lines[i] = f'diagnosis_model = "{_DIAGNOSIS_MODEL}"'
+                patched_agent["diagnosis_model"] = True
+        elif current_section == research_section_header:
+            if stripped.startswith("model"):
+                lines[i] = f'model = "{_DIAGNOSIS_MODEL}"'
+                patched_research = True
+
+    if not all(patched_agent.values()):
+        missing = [k for k, v in patched_agent.items() if not v]
+        raise RuntimeError(
+            f"Failed to patch agent_config fields {missing} for target "
+            f"{target_name}: section {agent_section_header} not found or "
+            f"fields missing"
+        )
+
+    config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    research_note = " + research_config.model" if patched_research else ""
+    console.print(
+        f"    [dim]patched agent_config.exploration_model, "
+        f"diagnosis_model{research_note} → {_DIAGNOSIS_MODEL}[/dim]"
+    )
+
+
 def _read_baseline_score(target_name: str) -> float | None:
     """Read the baseline score from anneal's target config.
 
@@ -388,6 +472,10 @@ def _execute_run(run: BenchmarkRun, dry_run: bool = False) -> dict[str, object]:
             "error": f"register failed (rc={reg_result.returncode})",
             "stderr": reg_result.stderr,
         }
+
+    # Step 1a: Patch the three model slots the CLI does not expose
+    # (exploration_model, diagnosis_model, research_config.model).
+    _patch_model_config(run.target_name)
 
     # Step 1b: Scrub eval harness files from the worktree so the optimization
     # agent cannot read the hidden test suite.  The eval commands reference

@@ -74,85 +74,98 @@ restricted to function-level code search with best-shot selection.
 
 We present \textsc{anneal}, an open-source framework for autonomous artifact
 optimization that addresses the four gaps above.
-Our contributions are:
+The framework makes three technical contributions---each validated as an
+independent mechanism in \cref{sec:results}---supported by two architectural
+contributions that realize the framework as a production-ready system.
+
+\paragraph{Technical contributions (validated in \cref{sec:results}).}
 
 \begin{enumerate}
-  \item \textbf{Statistically grounded comparison.}
+  \item \textbf{Statistical acceptance under stochastic evaluation}
+    (\cref{sec:gate-false-positives}).
     Stochastic evaluations are compared via the Wilcoxon signed-rank
     test~\cite{wilcoxon1945individual} with Holm--Bonferroni
     correction~\cite{holm1979simple} for sequential multiplicity.
-    %
     Position-bias-cancelled Bradley--Terry scoring~\cite{bradley1952rank}
-    calibrates the LLM judge by splitting votes between forward and reverse
-    criterion orderings.
-    %
-    Adaptive sample sizing extends or early-stops evaluation based on observed
-    effect size, reducing cost for clear outcomes.
+    calibrates the LLM judge, and adaptive sample sizing extends or
+    early-stops evaluation based on the observed effect size.
+    On a synthetic null distribution, Holm--Bonferroni correction reduces
+    false-positive acceptance by 86\% relative to uncorrected thresholding.
 
-  \item \textbf{Structured, strategy-diverse search.}
-    Beyond greedy hill-climbing, \textsc{anneal} implements simulated annealing
-    with adaptive cooling and reheat, population-based search with tournament
-    selection and LLM-guided crossover, island migration for diversity
-    maintenance, and Pareto search for multi-objective optimization.
-    %
+  \item \textbf{Adaptive metaheuristic search}
+    (\cref{sec:gate-sa}).
+    Beyond greedy hill-climbing, \textsc{anneal} implements simulated
+    annealing with adaptive cooling and reheat, population-based search with
+    tournament selection and LLM-guided crossover, island migration for
+    diversity maintenance, and Pareto search for multi-objective optimization.
     A Thompson Sampling meta-strategy~\cite{thompson1933likelihood,
     chapelle2011empirical} selects among these algorithms based on observed
     reward, treating strategy selection itself as a bandit problem.
+    On the 3D Rastrigin function, adaptive reheat yields a 19.1\% improvement
+    over fixed geometric cooling.
 
-  \item \textbf{Episodic knowledge and cross-domain transfer.}
-    Each experiment produces a structured \texttt{Lesson} capturing what changed,
-    which criteria improved or regressed, and transferable insights.
-    %
-    A cross-target learning pool shares knowledge across optimization tasks with
-    domain-aware relevance filtering.
-    %
-    A strategy manifest decomposes the mutation approach into named
-    components---hypothesis generation, context assembly, mutation style, failure
-    analysis---and evolves only the weakest component when progress stalls.
-    %
-    A research operator injects external knowledge during plateaus.
+  \item \textbf{Structured episodic knowledge retrieval}
+    (\cref{sec:gate-retrieval}).
+    Each experiment produces a structured \texttt{Lesson} capturing what
+    changed, which criteria improved or regressed, and transferable insights.
+    A cross-target learning pool shares knowledge across optimization tasks
+    with domain-aware relevance filtering, a strategy manifest evolves the
+    weakest component of the mutation approach when progress stalls, and a
+    research operator injects external knowledge during plateaus.
+    On a controlled similarity corpus, TF-IDF retrieval achieves
+    $1.55\times$ the precision of Jaccard similarity.
+\end{enumerate}
 
+\paragraph{Architectural contributions (argued from design).}
+
+\begin{enumerate}
+  \setcounter{enumi}{3}
   \item \textbf{Git-native isolation and safety.}
     Every experiment runs in a dedicated git worktree, making all mutations
     reversible via \texttt{git reset}.
-    %
     Scope enforcement restricts agent edits to declared file paths, rejecting
     path traversal and absolute paths.
-    %
-    Budget caps (per-experiment and daily), cost tracking per model, disk space
-    checks, and process-group time-boxing prevent runaway resource consumption.
+    Budget caps (per-experiment and daily), cost tracking per model, disk
+    space checks, and process-group time-boxing prevent runaway resource
+    consumption.
 
   \item \textbf{Domain-agnostic design.}
     The framework optimizes any text artifact evaluable by a shell command
     (deterministic mode) or an LLM judge against binary criteria (stochastic
     mode), with no domain-specific assumptions.
-    %
     Verification gates---binary pass/fail commands run before evaluation---let
     users enforce structural invariants (compilation, type-checking, format
     compliance) without spending evaluation budget on structurally invalid
     mutations.
 \end{enumerate}
 
-\subsection{Results Preview}
+\subsection{Validation Approach}
 
-On a benchmark suite of \NUM{X} optimization targets, \textsc{anneal} achieves
-\NUM{Y\%} average improvement within \NUM{Z} experiments per target, at an
-average cost of \NUM{\$C} per run.
-The Wilcoxon-based comparison reduces false-positive acceptance by
-\NUM{W\%} compared to mean-score comparison, and Holm--Bonferroni correction
-reduces it by a further \NUM{V\%} over uncorrected Wilcoxon testing.
-Thompson Sampling strategy selection matches or exceeds the best fixed strategy
-on \NUM{T/X} targets.
+We validate the three central mechanisms of \textsc{anneal}---statistical
+acceptance, adaptive metaheuristic search, and structured knowledge
+retrieval---on synthetic benchmarks with analytically known ground truth.
+These benchmarks isolate each mechanism from the variance of a full
+LLM-guided optimization run and allow direct quantitative comparison against
+well-defined baselines: uncorrected sequential testing under a null
+distribution, fixed-schedule simulated annealing on a nonconvex testbed, and
+Jaccard set similarity on a controlled retrieval corpus.
+\Cref{sec:results} reports the results and shows that each mechanism meets
+its pre-registered gate threshold.
+A full end-to-end evaluation of the complete framework against its baselines
+across the five-target benchmark suite is left to future work, for the
+reasons discussed in \cref{sec:empirical-scope,sec:threats}.
 
 \subsection{Paper Organization}
 
 \Cref{sec:related_work} surveys related work in LLM-guided optimization,
 prompt engineering, metaheuristic search, and statistical evaluation.
-\Cref{sec:system_design} describes the \textsc{anneal} architecture, including
+\Cref{sec:system-design} describes the \textsc{anneal} architecture, including
 the experiment loop, evaluation engine, search strategies, and knowledge system.
-\Cref{sec:methods} details the statistical methods---Wilcoxon testing,
-Holm--Bonferroni correction, Bradley--Terry scoring, and adaptive sampling.
-\Cref{sec:experiments} presents experimental results across prompt, code, and
-configuration optimization targets.
+\Cref{sec:enhancements} details the enhancement tracks---representation, search,
+knowledge, and evaluation---that build on the core loop.
+\Cref{sec:evaluation} describes the benchmark suite and experimental design for
+end-to-end configuration comparison.
+\Cref{sec:results} presents mechanism-level validation results on synthetic
+benchmarks.
 \Cref{sec:discussion} discusses limitations and future work.
 \Cref{sec:conclusion} concludes.

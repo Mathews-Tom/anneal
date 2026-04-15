@@ -3,32 +3,35 @@ code, configurations---but using them as optimization oracles demands more than
 iterative generation and manual inspection.
 %
 Existing approaches lack statistical rigor when comparing stochastic outputs,
-default to greedy search with no mechanism to escape local optima, accumulate no
-structured knowledge across experiments, and provide few safety guarantees around
-cost or scope.
+default to greedy search with no mechanism to escape local optima, accumulate
+no structured knowledge across experiments, and provide few safety guarantees
+around cost or scope.
 %
-We present \textsc{anneal}, a domain-agnostic framework that treats LLM-guided
-artifact optimization as a principled search problem.
+We present \textsc{anneal}, a domain-agnostic framework that brings statistical
+decision theory to the accept/reject boundary of iterative LLM-guided artifact
+optimization---a problem overlooked by frameworks that compare stochastic
+evaluations through point scores.
 %
-\textsc{anneal} isolates every experiment in a git worktree, compares candidates
-using the Wilcoxon signed-rank test with Holm--Bonferroni correction for
-multiplicity control, and selects among search strategies---greedy, simulated
-annealing, population-based, and Thompson Sampling---via a contextual bandit
-meta-strategy.
+The framework composes three subsystems: a statistical acceptance layer built
+on the Wilcoxon signed-rank test with Holm--Bonferroni correction for
+multiplicity control, a strategy-diverse search layer spanning greedy,
+simulated annealing with adaptive reheat, population-based, and Thompson
+Sampling meta-strategy selection, and an episodic knowledge layer with TF-IDF
+hypothesis retrieval and cross-target lesson transfer.
 %
-A structured two-phase mutation pipeline first diagnoses the weakest evaluation
-criteria, then generates targeted edits; episodic memory and a cross-target
-learning pool transfer knowledge across experiments and domains.
+Around this core, \textsc{anneal} isolates every experiment in a git worktree,
+calibrates the LLM judge via position-bias-cancelled Bradley--Terry scoring,
+and controls evaluation cost through adaptive sample sizing with held-out
+divergence detection.
 %
-Position-bias-cancelled Bradley--Terry scoring calibrates the LLM judge, while
-adaptive sample sizing and held-out divergence detection control evaluation cost
-and reliability.
+We validate the three core mechanisms in isolation on synthetic benchmarks
+with analytically known ground truth, showing that Holm--Bonferroni correction
+reduces false-positive acceptance by 86\% under a null distribution, adaptive
+reheat yields a 19.1\% improvement over fixed cooling on the Rastrigin
+function, and TF-IDF retrieval achieves $1.55\times$ the precision of Jaccard
+similarity on a controlled corpus.
 %
-On five optimization targets spanning prompt engineering, code optimization,
-and documentation generation, \textsc{anneal} achieves up to 295$\times$
-speedup on deterministic targets and consistent improvement on stochastic
-targets within 50 experiments.
-%
-To our knowledge, \textsc{anneal} is the first open-source framework to unify
-statistical hypothesis testing, structured metaheuristic search, and episodic
-knowledge transfer for general-purpose LLM-guided artifact optimization.
+\textsc{anneal} ships as open-source software under the Apache-2.0 license,
+together with a benchmark suite spanning prompt, code, and documentation
+optimization targets that the framework's harness and analysis pipeline can
+execute for full end-to-end configuration comparison as future work.

@@ -6,9 +6,16 @@
 \label{sec:limitations}
 
 \paragraph{Single-agent mutation.}
-Anneal generates mutations through a single LLM agent per experiment cycle.
-It does not coordinate multiple agents working on different aspects of an artifact simultaneously.
-Multi-agent collaboration---where one agent edits code structure while another refines documentation---could exploit parallelism and specialization, but introduces coordination complexity (conflict resolution, merge semantics) that the current architecture does not address.
+Each experiment cycle invokes exactly one mutation agent that edits the
+artifact in isolation, so mutations that require coordinated changes across
+interacting files cannot be generated atomically: an edit to a function
+signature and its call sites must either be proposed as a single multi-file
+patch by one agent or deferred across multiple experiment cycles.
+The current architecture does not support multi-agent coordination with
+conflict resolution or merge semantics, so optimization targets whose
+improvements fundamentally require parallel specialization---one agent
+refactoring structure while another refines documentation---fall outside the
+framework's reach.
 
 \paragraph{Text artifacts only.}
 The engine operates on file-based text artifacts versioned in git.
@@ -18,18 +25,17 @@ Optimization targets requiring deployment to external systems (email campaigns, 
 \paragraph{LLM-as-judge evaluation quality.}
 Stochastic evaluation relies on an LLM judge scoring against binary criteria.
 The quality of optimization is bounded by the quality of the judge: a judge that rewards superficial keyword matching will drive the optimizer toward keyword-stuffed artifacts.
-Position debiasing (\cref{sec:eval-intelligence}) and held-out validation mitigate systematic judge bias, but they do not eliminate it.
+Position debiasing (\cref{sec:eval-pipeline}) and held-out validation mitigate systematic judge bias, but they do not eliminate it.
 Practitioners must invest in evaluation design---clear, unambiguous criteria with concrete acceptance thresholds---to obtain meaningful optimization trajectories.
 
 \paragraph{Cost.}
-A full optimization run of 50 experiments costs between \$\NUM{cost-low} and \$\NUM{cost-high}, depending on the evaluation mode, number of stochastic samples, and model selection.
-Two-phase mutation and multi-draft generation increase per-experiment cost by approximately \NUM{cost-overhead}$\times$ relative to single-phase greedy mutation.
-For cost-sensitive applications, the engine supports cheaper diagnosis models (e.g., Haiku for diagnosis, Sonnet for mutation) and adaptive sample sizing that reduces evaluation cost for clear winners and losers.
+A full optimization run of 50 experiments incurs substantial LLM API cost, with the exact figure depending on the evaluation mode, the number of stochastic samples per experiment, and the selected models for the mutation, diagnosis, and judgment roles.
+Two-phase mutation and multi-draft generation increase per-experiment cost relative to single-phase greedy mutation because of the additional LLM calls for diagnosis and draft generation.
+For cost-sensitive applications, the engine supports cheaper diagnosis models (e.g., a smaller model for diagnosis and a larger one for mutation) and adaptive sample sizing that reduces evaluation cost for clear winners and losers.
 
 \paragraph{Cold start.}
 The knowledge system provides no benefit during the first several experiments, when the experiment history is empty.
-The TF-IDF retrieval index requires a minimum corpus size before similarity queries become discriminative.
-We observe that knowledge accumulation begins to measurably improve acceptance rates after approximately \NUM{knowledge-activation} experiments, consistent with the activation threshold configured in the engine.
+The TF-IDF retrieval index requires a minimum corpus size before similarity queries become discriminative, and the engine's cold-start protocol injects only raw experiment records until a configurable activation threshold is reached.
 
 \subsection{Threats to Validity}
 \label{sec:threats}
@@ -39,16 +45,23 @@ LLM outputs are nondeterministic: the same prompt produces different mutations a
 We control for this by pairing runs by random seed across configurations and using nonparametric statistical tests that do not assume distributional form.
 API pricing variability (model version updates, rate limit throttling) introduces noise into cost measurements; we mitigate this by recording per-token usage and applying fixed pricing tables rather than relying on billing-reported costs.
 
+\paragraph{Empirical scope.}
+The three gate benchmarks in \cref{sec:results} validate the statistical acceptance, adaptive search, and retrieval mechanisms on synthetic tasks with analytically known ground truth, not on end-to-end optimization runs of the full framework against its baselines across the five-target benchmark suite described in \cref{sec:benchmark-suite}.
+A full multi-seed empirical comparison would require a computational and API budget outside the scope of this submission and is left to future work.
+This limits the strength of any claim that the specific magnitude of improvement observed on each mechanism-level gate translates into the same magnitude at the system level, though the gates are designed to isolate the exact effect that each subsystem contributes to the full loop.
+In particular, the domain-agnostic design claim in \cref{sec:introduction} rests on the architecture of the artifact--evaluation--agent triplet (\cref{sec:triplet}) rather than on empirical evidence across domains: the three gate benchmarks establish that the statistical, search, and retrieval subsystems behave as specified, but not that the framework composes into end-to-end optimization improvements across heterogeneous domains.
+
 \paragraph{External validity.}
-The five benchmark targets, while spanning three domains, may not represent the distribution of real-world optimization problems.
-Production artifacts are larger, have more complex dependency structures, and operate under constraints (backward compatibility, style guides, regulatory requirements) that the benchmarks do not capture.
-The benchmark targets were designed to be self-contained and reproducible; this simplification limits the generalizability of absolute score improvements, though the relative ordering of configurations should hold for targets within the same domain class.
+The five benchmark targets that ship with the framework are themselves a simplification of real-world optimization problems.
+Production artifacts are larger, have more complex dependency structures, and operate under constraints (backward compatibility, style guides, regulatory requirements) that the benchmark targets do not capture.
+The benchmark suite is intended as a reproducible reference workload for comparing configurations under controlled conditions, not as a representative sample of the distribution of problems a practitioner would encounter in practice.
+Relative ordering of configurations observed on the suite is expected to be more stable across deployment contexts than absolute performance numbers.
 
 \paragraph{Construct validity.}
 Stochastic evaluation quality depends on the specificity and completeness of the scoring criteria.
 Vague criteria (e.g., ``is the output high quality?'') produce noisy scores that obscure real improvements.
-All benchmark targets use criteria that were iteratively refined to achieve inter-rater reliability above \NUM{irr-threshold} (measured as agreement rate between two independent LLM judges on a held-out sample).
-This refinement process is itself a limitation: in practice, users may not invest equivalent effort in criteria design, leading to lower optimization effectiveness than the benchmarks suggest.
+The benchmark targets ship with criteria that are phrased as concrete yes/no questions with explicit acceptance conditions, and the position-bias cancellation and Bradley--Terry scoring described in \cref{sec:eval-pipeline} further reduce judge-level artefacts.
+This investment in criterion design is itself a limitation: in practice, users may not invest equivalent effort, leading to lower optimization effectiveness than the benchmark design suggests.
 
 \subsection{Future Work}
 \label{sec:future-work}
@@ -62,7 +75,7 @@ The current evaluation interface is command-based: the engine invokes a shell co
 A typed Python callable protocol (already prototyped in the codebase) would enable programmatic evaluation with structured return types, eliminating parsing fragility and supporting evaluation functions that require in-process state (database connections, loaded ML models).
 
 \paragraph{MAP-Elites integration.}
-The quality-diversity archive (\cref{sec:method}) maintains a grid of behaviorally diverse solutions but is not yet integrated into the search loop as a solution source.
+The quality-diversity archive (\cref{sec:enhancements}) maintains a grid of behaviorally diverse solutions but is not yet integrated into the search loop as a solution source.
 Full MAP-Elites integration would allow the engine to optimize for diversity and quality simultaneously, producing a portfolio of distinct high-scoring artifacts rather than a single best solution.
 
 \paragraph{Continuous optimization.}

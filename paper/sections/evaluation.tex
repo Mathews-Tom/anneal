@@ -1,15 +1,28 @@
 % !TEX root = ../main.tex
-\section{Experimental Evaluation}
+\section{Benchmark Suite}
 \label{sec:evaluation}
 
-We evaluate Anneal across three domains---prompt optimization, code optimization, and documentation generation---using a suite of five benchmark targets that exercise both evaluation modes (deterministic and stochastic) and a range of optimization objectives.
+\textsc{anneal} ships with a benchmark suite of five optimization targets
+spanning three domains---prompt optimization, code optimization, and
+documentation generation---that exercise both evaluation modes (deterministic
+and stochastic) and a range of optimization objectives.
+The suite is part of the open-source distribution and is intended as a
+reproducible reference workload for the full end-to-end comparison of the
+treatment configuration against its baselines (\cref{sec:empirical-scope}).
+The mechanism-level validation presented in \cref{sec:results} uses
+synthetic benchmarks with analytically known ground truth instead of the
+full benchmark suite runs, for the budget and feasibility reasons discussed
+in \cref{sec:threats}.
+This section documents the suite's targets and the statistical protocol the
+harness applies when an end-to-end run is performed.
 
-\subsection{Benchmark Suite}
+\subsection{Benchmark Targets}
 \label{sec:benchmark-suite}
 
 \cref{tab:benchmark-targets} summarizes the five benchmark targets.
-Each target defines an artifact, an evaluation function, and a set of editable files;
-the evaluation function and its criteria are immutable and outside the agent's mutation scope.
+Each target defines an artifact, an evaluation function, and a set of
+editable files; the evaluation function and its criteria are immutable and
+outside the agent's mutation scope.
 
 \begin{table}[t]
   \centering
@@ -30,76 +43,75 @@ the evaluation function and its criteria are immutable and outside the agent's m
 \end{table}
 
 The targets were selected to satisfy three coverage criteria.
-First, they span both evaluation modes: B3 and B4 use deterministic evaluation (a single scalar from a shell command---wall-clock time and a composite quality score, respectively), while B1, B2, and B5 use the $N \times K$ stochastic evaluation framework with binary criteria.
-Second, they cover three distinct optimization domains---prompt engineering, code transformation, and technical writing---ensuring that results are not domain-specific.
-Third, they exercise different optimization objectives: maximization (B1, B2, B4, B5) and minimization (B3), testing the engine's directional generality.
+First, they span both evaluation modes: B3 and B4 use deterministic
+evaluation (a single scalar from a shell command---wall-clock time and a
+composite quality score, respectively), while B1, B2, and B5 use the
+$N \times K$ stochastic evaluation framework with binary criteria.
+Second, they cover three distinct optimization domains---prompt engineering,
+code transformation, and technical writing---so that results are not
+tied to a single domain.
+Third, they exercise different optimization directions: maximization
+(B1, B2, B4, B5) and minimization (B3), testing the engine's directional
+generality.
 
-Each target ships with a TOML configuration specifying artifact paths, scope constraints, evaluation commands, and scoring criteria.
-The evaluation functions are self-contained: B3 runs a subprocess and parses wall-clock time; B4 runs a composite quality scorer (covering correctness, input validation, error handling, and security); B1, B2, and B5 invoke an LLM judge with fixed rubric criteria and aggregate binary pass/fail scores across $N = 5$ test prompts.
+Each target ships with a TOML configuration specifying artifact paths,
+scope constraints, evaluation commands, and scoring criteria.
+The evaluation functions are self-contained: B3 runs a subprocess and
+parses wall-clock time; B4 runs a composite quality scorer (covering
+correctness, input validation, error handling, and security); B1, B2, and
+B5 invoke an LLM judge with fixed rubric criteria and aggregate binary
+pass/fail scores across $N = 5$ test prompts.
 
-\subsection{Experimental Configurations}
-\label{sec:configurations}
+The harness defines four configurations for end-to-end comparison---a raw
+baseline (no optimization), a greedy baseline (iterative loop only), a
+control (hybrid search with basic history), and a treatment (all
+enhancements from \cref{sec:enhancements}).
+The progression from raw to treatment forms a nested ablation in which
+each configuration adds a layer of capability, so pairwise comparisons
+isolate the marginal contribution of each layer.
+The specific enabled-feature matrix for each configuration is part of the
+harness (\texttt{benchmarks/suite/runner.py}) and is not reproduced here
+since no empirical comparison using it is reported in this paper.
 
-We compare four configurations of increasing capability, isolating the contribution of each enhancement layer:
-
-\paragraph{Raw baseline.}
-Evaluate the initial, unoptimized artifact using the target's evaluation function.
-No mutation, no optimization loop, no LLM involvement.
-This baseline measures the artifact's starting quality before any iterative refinement, establishing the lower bound for all optimization configurations.
-
-\paragraph{Greedy baseline.}
-Run the Anneal engine with greedy search only: accept a mutation if and only if it produces a statistically significant improvement (Wilcoxon signed-rank test, $\alpha = 0.05$).
-No knowledge injection, no strategy adaptation, no meta-optimization.
-This isolates the contribution of the iterative mutate--evaluate--decide loop itself.
-
-\paragraph{Control.}
-Anneal with the default hybrid search (Thompson Sampling over greedy and simulated annealing), monolithic \texttt{program.md} mutation instructions, and basic experiment history.
-No knowledge injection, no strategy evolution, no two-phase mutation, no episodic memory.
-This configuration represents the engine's core search loop without the advanced enhancements described in \cref{sec:method}.
-
-\paragraph{Treatment.}
-Anneal with all enhancements enabled: strategy manifest with component-level evolution, two-phase mutation (structured diagnosis before targeted edit), policy agent for continuous instruction rewriting, episodic memory with transferable lessons, simulated annealing search with adaptive reheat, multi-draft mutation with verifier pruning, and the research operator for external knowledge injection on plateaus.
-This is the full system as described in \cref{sec:method}.
-
-The progression from raw to treatment forms a nested ablation: each configuration adds a layer of capability, so pairwise comparisons isolate the marginal contribution of each layer.
-
-\subsection{Statistical Design}
+\subsection{Statistical Design for End-to-End Comparison}
 \label{sec:stat-design}
 
-Each configuration runs 10 independent trials per benchmark target, each with a distinct random seed controlling LLM sampling temperature jitter and stochastic evaluation order.
-Every trial executes 50 experiments (mutations), yielding a total experimental budget of:
-\[
-  5 \text{ targets} \times 4 \text{ configs} \times 10 \text{ runs} \times 50 \text{ experiments} = 10{,}000 \text{ experiments.}
-\]
+The harness implements a paired-seed experimental design for comparing
+configurations.
+Each configuration runs 10 independent trials per benchmark target, each
+with a distinct random seed that controls LLM sampling temperature jitter
+and stochastic evaluation order.
+Every trial executes 50 experiments (mutations), yielding a total
+experimental budget of
+$5 \text{ targets} \times 4 \text{ configs} \times 10 \text{ runs}
+ \times 50 \text{ experiments} = 10{,}000$ experiments for a full
+end-to-end comparison.
 
 \paragraph{Pairwise comparison.}
-For each pair of configurations on each target, we apply the Wilcoxon signed-rank test across the 10 paired final scores (paired by random seed).
-This nonparametric test is appropriate because score distributions are not assumed normal, and pairing by seed controls for LLM sampling variability.
+For each pair of configurations on each target, the harness applies the
+Wilcoxon signed-rank test across the 10 paired final scores (paired by
+random seed).
+This nonparametric test is appropriate because score distributions are
+not assumed normal, and pairing by seed controls for LLM sampling
+variability.
 
 \paragraph{Multiple comparison correction.}
-We apply Holm--Bonferroni correction across the five targets for each configuration pair, controlling the family-wise error rate at $\alpha = 0.05$.
-This mirrors the correction used within the engine itself for consolidation-window decisions (\cref{sec:statistical-rigor}).
+Holm--Bonferroni correction is applied across the five targets for each
+configuration pair, controlling the family-wise error rate at
+$\alpha = 0.05$.
+This mirrors the correction used within the engine itself for
+consolidation-window decisions (\cref{sec:stat-comparison}).
 
 \paragraph{Effect size.}
-We report Cohen's $d$ with 95\% bootstrap confidence intervals (10{,}000 resamples, bias-corrected and accelerated).
-Bootstrap resampling uses deterministic seeding with float-precision normalization for cross-platform reproducibility.
+The harness reports Cohen's $d$ with 95\% bootstrap confidence intervals
+(10{,}000 resamples, bias-corrected and accelerated) using the bootstrap
+methodology of Efron and Tibshirani~\cite{efron1994bootstrap}.
+Bootstrap resampling uses deterministic seeding with float-precision
+normalization for cross-platform reproducibility.
 
 \paragraph{Cost-normalized comparison.}
-Because the treatment configuration incurs higher per-experiment cost (two-phase mutation, multi-draft generation), we additionally compare score-at-equivalent-budget: the best score each configuration achieves when constrained to the same total USD cost, rather than the same number of experiments.
-
-\subsection{Metrics}
-\label{sec:metrics}
-
-\paragraph{Primary metrics.}
-\begin{itemize}[nosep]
-  \item \textbf{Final score}: the best score achieved across all 50 experiments in a trial.
-  \item \textbf{Score at budget}: the best score achieved within a fixed cost budget (\$2.00 per trial), enabling cost-normalized comparison.
-  \item \textbf{Convergence speed}: the experiment number at which 90\% of the final improvement (over the initial score) is first achieved.
-  \item \textbf{Total cost}: cumulative USD cost per trial, computed from per-token pricing.
-\end{itemize}
-
-\paragraph{Secondary metrics.}
-\begin{itemize}[nosep]
-  \item \textbf{Mutation acceptance rate}: fraction of experiments where the mutation was kept (higher is not necessarily better; an acceptance rate near 1.0 suggests the evaluation is not discriminating).
-  \item \textbf{Eval cache hit rate}: fraction of evaluations served from the content-hash cache, indicating redundant mutation generation.
-\end{itemize}
+Because the treatment configuration incurs higher per-experiment cost
+(two-phase mutation, multi-draft generation), the harness also supports
+score-at-equivalent-budget comparison: the best score each configuration
+achieves when constrained to the same total USD cost, rather than the same
+number of experiments.

@@ -62,16 +62,16 @@ The diagnosis is prepended to the mutation prompt, focusing the agent on the ide
 \texttt{SimulatedAnnealingSearch} (\texttt{anneal/engine/search.py}) accepts regressions with probability $\exp(\Delta / T)$ where $\Delta$ is the signed score delta and $T$ is the current temperature.
 Temperature decays geometrically by a configurable \texttt{cooling\_rate} (default $0.95$) after each experiment, with a floor at \texttt{min\_temperature} (default $0.01$).
 
-Adaptive reheat prevents premature convergence: when the acceptance ratio over the last \NUM{10} experiments drops below half the \texttt{acceptance\_target} (default $0.3$), the temperature is multiplied by \texttt{reheat\_factor} (default $2.0$), capped at the initial temperature.
+Adaptive reheat prevents premature convergence: when the acceptance ratio over the last 10 experiments drops below half the \texttt{acceptance\_target} (default $0.3$), the temperature is multiplied by \texttt{reheat\_factor} (default $2.0$), capped at the initial temperature.
 This mechanism allows the search to escape local optima when the landscape becomes flat.
 
-\texttt{HybridSearch} provides a sensible default for users who do not configure a search strategy: greedy for the first \NUM{10} experiments to establish a strong baseline, then simulated annealing to explore the neighborhood.
+\texttt{HybridSearch} provides a sensible default for users who do not configure a search strategy: greedy for the first 10 experiments to establish a strong baseline, then simulated annealing to explore the neighborhood.
 
 \subsubsection{Island Population Search}\label{sec:island-search}
 
 \texttt{IslandPopulationSearch} (\texttt{anneal/engine/search.py}) maintains $N$ independent \texttt{PopulationSearch} instances, each with its own candidate pool and tournament selection.
 Islands are assigned experiments in round-robin order.
-Every \texttt{migration\_interval} experiments (default \NUM{10}), the best individual from each island is copied to every other island, injecting diversity without destroying each island's locally adapted population.
+Every \texttt{migration\_interval} experiments (default 10), the best individual from each island is copied to every other island, injecting diversity without destroying each island's locally adapted population.
 
 Each \texttt{PopulationSearch} instance supports tournament selection (sample $k$ candidates, discard the worst) and optional crossover: when \texttt{crossover\_rate} $> 0$, the two highest-scoring candidates' hypotheses are paired as parent inputs for the next mutation.
 
@@ -89,9 +89,9 @@ After each experiment, \texttt{extract\_lesson} (\texttt{anneal/engine/knowledge
 \end{itemize}
 
 The \texttt{KnowledgeStore} persists experiment records in \texttt{experiments.jsonl} and maintains a hypothesis similarity index (TF-IDF with cosine similarity, upgraded to sentence embeddings when \texttt{sentence-transformers} is installed).
-Context assembly follows a cold-start protocol: for the first \NUM{10} experiments, only raw records are injected; after that threshold, the agent receives the five most recent records, the five most similar past experiments by hypothesis embedding, and a consolidated learnings summary.
+Context assembly follows a cold-start protocol: for the first 10 experiments, only raw records are injected; after that threshold, the agent receives the five most recent records, the five most similar past experiments by hypothesis embedding, and a consolidated learnings summary.
 
-Every \NUM{50} experiments, deterministic consolidation produces a \texttt{ConsolidationRecord} summarizing kept/discarded/crashed counts, score trajectories, top improvements, failed approaches, tag frequencies, per-criterion variances, verifier block rates, and failure distribution.
+Every 50 experiments, deterministic consolidation produces a \texttt{ConsolidationRecord} summarizing kept/discarded/crashed counts, score trajectories, top improvements, failed approaches, tag frequencies, per-criterion variances, verifier block rates, and failure distribution.
 Consolidation records are appended to \texttt{learnings-structured.jsonl} and rendered into a human-readable \texttt{learnings.md}.
 
 \subsubsection{Lineage Context}\label{sec:lineage}
@@ -114,7 +114,7 @@ Each \texttt{Learning} is a frozen dataclass containing the observation text, si
 
 Retrieval is scope-aware (\texttt{LearningScope}: \texttt{condition}, \texttt{target}, \texttt{project}, \texttt{global}) and decay-adjusted: each learning's effective score is $|\Delta_{\text{score}}| \cdot e^{-\lambda t}$ where $\lambda$ is the decay rate (default $0.05$) and $t$ is the age in days.
 Cross-domain learnings are penalized by a \texttt{domain\_penalty} factor (default $0.5$), prioritizing same-domain transfer.
-The pool evicts lowest-impact learnings when it exceeds \texttt{max\_size} (default \NUM{1000}).
+The pool evicts lowest-impact learnings when it exceeds \texttt{max\_size} (default 1000).
 
 \texttt{PersistentLearningPool} backs the pool to \texttt{learnings-pool.jsonl} with file-level locking for concurrent safety.
 \texttt{GlobalLearningPool} extends this to \texttt{\~{}/.anneal/global-learnings.jsonl}, enabling knowledge transfer across unrelated projects.
@@ -128,7 +128,7 @@ Fixed sample counts waste budget when the effect is large (more samples than nee
 When \texttt{adaptive\_sampling} is enabled on \texttt{StochasticEval}, the evaluator starts with $\max(\texttt{min\_sample\_count},\; \lfloor\texttt{sample\_count} / 2\rfloor)$ samples and computes Cohen's $d$ against zero on the collected scores.
 If $d > \texttt{early\_stop\_effect\_size}$ (default $1.0$), evaluation terminates early.
 If $d < \texttt{extend\_effect\_size}$ (default $0.3$), up to $\lfloor\texttt{sample\_count} / 2\rfloor$ additional samples are collected, with a hard ceiling at $1.5 \times \texttt{sample\_count}$.
-This mechanism reduces cost by \NUM{30}--\NUM{50}\% on clear-cut experiments while increasing statistical power on marginal ones.
+This mechanism reduces cost on clear-cut experiments while increasing statistical power on marginal ones.
 
 \subsubsection{Eval Consistency Monitoring}\label{sec:drift-detection}
 
@@ -147,33 +147,38 @@ On a cache hit, the stored \texttt{CacheEntry} (score, raw scores, criterion nam
 
 The cache also tracks \texttt{score\_history}---the sequence of scores observed for the same content hash across multiple evaluations.
 The \texttt{consistency\_report} method flags entries where the standard deviation across evaluations exceeds $0.1$, surfacing potential evaluator inconsistency independent of the drift detection in the knowledge store.
-Maximum cache size is configurable (default \NUM{200} entries) with LRU eviction.
+Maximum cache size is configurable (default 200 entries) with LRU eviction.
 
 % ==================================================================
 % Summary table
 % ==================================================================
 \begin{table*}[t]
 \centering
-\caption{Summary of enhancements by track, mechanism, and benefit.}
+\caption{Summary of enhancements by track, mechanism, and benefit. The
+\emph{Val} column marks mechanism-level validation in \cref{sec:results}:
+$\checkmark$ indicates the component is one of the three mechanisms tested
+against an analytically known ground truth; a dash indicates the component
+is argued from design and awaits end-to-end empirical validation as future
+work.}
 \label{tab:enhancements}
 \small
-\begin{tabular}{@{}llllp{5.5cm}@{}}
+\begin{tabular}{@{}lllp{5.0cm}c@{}}
 \toprule
-\textbf{ID} & \textbf{Name} & \textbf{Track} & \textbf{Mechanism} & \textbf{Benefit} \\
+\textbf{Name} & \textbf{Track} & \textbf{Mechanism} & \textbf{Benefit} & \textbf{Val} \\
 \midrule
-E1 & Strategy Manifest & Representation & Structured YAML with named components & Component-level evolution; avoids catastrophic forgetting of working strategies \\
-E2 & Token-Efficient Context & Representation & Three compression modes & Reduces input token cost; keeps agent within context budget \\
-E3 & Dual-Agent Mutation & Search & Thompson Sampling over Beta-Binomial arms & Adaptive explore-exploit without manual scheduling \\
-E4 & Two-Phase Mutation & Search & Diagnosis step before mutation & Focuses mutations on weakest criteria and root cause \\
-E5 & Simulated Annealing & Search & $\exp(\Delta/T)$ acceptance with adaptive reheat & Escapes local optima; reheat prevents premature convergence \\
-E6 & Island Population & Search & $N$ independent populations with migration & Maintains diversity; best individuals propagate across islands \\
-E7 & Episodic Memory & Knowledge & Structured Lesson extraction + similarity retrieval & Avoids repeating failed approaches; transfers successful patterns \\
-E8 & Lineage Context & Knowledge & Causal chain of accepted mutations & Agent understands how current artifact state was reached \\
-E9 & Research Operator & Knowledge & External knowledge injection on plateau & Breaks out of exploration dead ends \\
-E10 & Cross-Domain Transfer & Knowledge & Learning pool with decay and domain penalties & Transfers insights across targets and projects \\
-E11 & Adaptive Sampling & Evaluation & Cohen's $d$ early-stop / extend & Reduces cost on clear experiments; increases power on marginal ones \\
-E12 & Drift Detection & Evaluation & Sliding-window variance comparison & Detects evaluator degradation before it corrupts optimization \\
-E13 & Eval Caching & Evaluation & Content-addressed LRU cache & Eliminates redundant evaluation of identical artifacts \\
+Strategy Manifest & Representation & Structured YAML with named components & Component-level evolution; avoids catastrophic forgetting of working strategies & --- \\
+Token-Efficient Context & Representation & Three compression modes & Reduces input token cost; keeps agent within context budget & --- \\
+Dual-Agent Mutation & Search & Thompson Sampling over Beta-Binomial arms & Adaptive explore-exploit without manual scheduling & --- \\
+Two-Phase Mutation & Search & Diagnosis step before mutation & Focuses mutations on weakest criteria and root cause & --- \\
+Simulated Annealing & Search & $\exp(\Delta/T)$ acceptance with adaptive reheat & Escapes local optima; reheat prevents premature convergence & $\checkmark$ \\
+Island Population & Search & $N$ independent populations with migration & Maintains diversity; best individuals propagate across islands & --- \\
+Episodic Memory & Knowledge & Structured Lesson extraction + similarity retrieval & Avoids repeating failed approaches; transfers successful patterns & $\checkmark$ \\
+Lineage Context & Knowledge & Causal chain of accepted mutations & Agent understands how current artifact state was reached & --- \\
+Research Operator & Knowledge & External knowledge injection on plateau & Breaks out of exploration dead ends & --- \\
+Cross-Domain Transfer & Knowledge & Learning pool with decay and domain penalties & Transfers insights across targets and projects & --- \\
+Adaptive Sampling & Evaluation & Cohen's $d$ early-stop / extend & Reduces cost on clear experiments; increases power on marginal ones & --- \\
+Drift Detection & Evaluation & Sliding-window variance comparison & Detects evaluator degradation before it corrupts optimization & --- \\
+Eval Caching & Evaluation & Content-addressed LRU cache & Eliminates redundant evaluation of identical artifacts & --- \\
 \bottomrule
 \end{tabular}
 \end{table*}

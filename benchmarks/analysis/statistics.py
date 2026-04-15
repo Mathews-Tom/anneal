@@ -55,9 +55,10 @@ class ComparisonResult:
 
 @dataclass
 class SummaryStats:
-    """Descriptive statistics for a metric within one configuration.
+    """Descriptive statistics for a metric within one (target, configuration) cell.
 
     Attributes:
+        target_id: Benchmark target the stats belong to (e.g. "B1").
         config_name: Configuration label.
         metric: Metric name.
         n: Number of observations.
@@ -69,6 +70,7 @@ class SummaryStats:
         maximum: Maximum value.
     """
 
+    target_id: str
     config_name: str
     metric: str
     n: int
@@ -352,13 +354,19 @@ def run_all_comparisons(
 def summarize_config(
     results: list[RunResult],
     config_name: str,
+    target_id: str,
     metric: str = "final_score",
 ) -> SummaryStats:
-    """Compute descriptive statistics for one configuration's metric values.
+    """Compute descriptive statistics for one (target, configuration) cell.
+
+    Callers must pre-filter ``results`` to a single target so that summary
+    statistics never pool observations across heterogeneous metric spaces
+    (e.g. B3 wall-clock seconds and B1 composite 0-5 scores).
 
     Args:
-        results: Run results (may span multiple targets).
+        results: Run results for a single target.
         config_name: Configuration to summarize.
+        target_id: Benchmark target identifier the stats apply to.
         metric: Metric name.
 
     Returns:
@@ -369,18 +377,22 @@ def summarize_config(
     """
     runs = [r for r in results if r.config_name == config_name]
     if not runs:
-        raise ValueError(f"No results found for config '{config_name}'")
+        raise ValueError(
+            f"No results found for config '{config_name}' in target '{target_id}'"
+        )
 
     values = _extract_metric(runs, metric)
+    std = float(np.std(values, ddof=1)) if len(values) > 1 else 0.0
     q1, q3 = float(np.percentile(values, 25)), float(np.percentile(values, 75))
 
     return SummaryStats(
+        target_id=target_id,
         config_name=config_name,
         metric=metric,
         n=len(values),
         mean=float(np.mean(values)),
         median=float(np.median(values)),
-        std=float(np.std(values, ddof=1)),
+        std=std,
         iqr=q3 - q1,
         minimum=float(np.min(values)),
         maximum=float(np.max(values)),

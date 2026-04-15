@@ -1,0 +1,12 @@
+============================================================
+Gate: TF-IDF vs Jaccard Retrieval Precision
+============================================================
+Corpus: 30 hypotheses in 5 groups
+Metric: precision@5
+
+Jaccard precision@5: 0.647
+TF-IDF  precision@5: 1.000
+Ratio (TF-IDF / Jaccard): 1.55x
+
+Gate (>=1.5x): PASS
+============================================================

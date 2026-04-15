@@ -1,0 +1,14 @@
+============================================================
+Gate: SA Convergence on Rastrigin
+============================================================
+Runs: 50 x 100 experiments (3D Rastrigin)
+Metric: best score found during trajectory
+SA params: T0=10.0, cooling=0.75, min_T=0.01
+
+Fixed SA best score (avg):    18.3144
+Adaptive SA best score (avg): 14.8228
+Improvement: 19.1%
+Adaptive wins: 27/50
+
+Gate (>=15% improvement): PASS
+============================================================

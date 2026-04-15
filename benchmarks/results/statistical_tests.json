@@ -1,0 +1,1553 @@
+{
+  "comparisons": [
+    {
+      "target_id": "B1",
+      "config_a": "control",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 3.5,
+      "mean_b": 3.6,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B2",
+      "config_a": "control",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 2.9,
+      "mean_b": 2.8,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B3",
+      "config_a": "control",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 173.07,
+      "mean_b": 3.15,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B4",
+      "config_a": "control",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 1.0,
+      "mean_b": 1.0,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B5",
+      "config_a": "control",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 1.8,
+      "mean_b": 2.6,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B1",
+      "config_a": "greedy",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 3.6,
+      "mean_b": 3.6,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B2",
+      "config_a": "greedy",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 2.6,
+      "mean_b": 2.8,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B3",
+      "config_a": "greedy",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 175.36,
+      "mean_b": 3.15,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B4",
+      "config_a": "greedy",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 1.0,
+      "mean_b": 1.0,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B5",
+      "config_a": "greedy",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 0.6,
+      "mean_b": 2.6,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B1",
+      "config_a": "raw",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 0.0,
+      "mean_b": 3.6,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B2",
+      "config_a": "raw",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 0.0,
+      "mean_b": 2.8,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B3",
+      "config_a": "raw",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 470.7,
+      "mean_b": 3.15,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B4",
+      "config_a": "raw",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 0.435,
+      "mean_b": 1.0,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B5",
+      "config_a": "raw",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 0.0,
+      "mean_b": 2.6,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B1",
+      "config_a": "raw",
+      "config_b": "control",
+      "metric": "final_score",
+      "mean_a": 0.0,
+      "mean_b": 3.5,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B2",
+      "config_a": "raw",
+      "config_b": "control",
+      "metric": "final_score",
+      "mean_a": 0.0,
+      "mean_b": 2.9,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B3",
+      "config_a": "raw",
+      "config_b": "control",
+      "metric": "final_score",
+      "mean_a": 470.7,
+      "mean_b": 173.07,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B4",
+      "config_a": "raw",
+      "config_b": "control",
+      "metric": "final_score",
+      "mean_a": 0.435,
+      "mean_b": 1.0,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B5",
+      "config_a": "raw",
+      "config_b": "control",
+      "metric": "final_score",
+      "mean_a": 0.0,
+      "mean_b": 1.8,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B1",
+      "config_a": "greedy",
+      "config_b": "control",
+      "metric": "final_score",
+      "mean_a": 3.6,
+      "mean_b": 3.5,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B2",
+      "config_a": "greedy",
+      "config_b": "control",
+      "metric": "final_score",
+      "mean_a": 2.6,
+      "mean_b": 2.9,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B3",
+      "config_a": "greedy",
+      "config_b": "control",
+      "metric": "final_score",
+      "mean_a": 175.36,
+      "mean_b": 173.07,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B4",
+      "config_a": "greedy",
+      "config_b": "control",
+      "metric": "final_score",
+      "mean_a": 1.0,
+      "mean_b": 1.0,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B5",
+      "config_a": "greedy",
+      "config_b": "control",
+      "metric": "final_score",
+      "mean_a": 0.6,
+      "mean_b": 1.8,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": NaN,
+      "cohens_d_ci": [
+        NaN,
+        NaN
+      ],
+      "significant": false
+    }
+  ],
+  "summary_stats": [
+    {
+      "target_id": "B1",
+      "config_name": "control",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 3.5,
+      "median": 3.5,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 3.5,
+      "maximum": 3.5
+    },
+    {
+      "target_id": "B1",
+      "config_name": "control",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B1",
+      "config_name": "control",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.68,
+      "median": 0.68,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.68,
+      "maximum": 0.68
+    },
+    {
+      "target_id": "B1",
+      "config_name": "control",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 9.7250914,
+      "median": 9.7250914,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 9.7250914,
+      "maximum": 9.7250914
+    },
+    {
+      "target_id": "B1",
+      "config_name": "greedy",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 3.6,
+      "median": 3.6,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 3.6,
+      "maximum": 3.6
+    },
+    {
+      "target_id": "B1",
+      "config_name": "greedy",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B1",
+      "config_name": "greedy",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.02,
+      "median": 0.02,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.02,
+      "maximum": 0.02
+    },
+    {
+      "target_id": "B1",
+      "config_name": "greedy",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 11.617846649999995,
+      "median": 11.617846649999995,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 11.617846649999995,
+      "maximum": 11.617846649999995
+    },
+    {
+      "target_id": "B1",
+      "config_name": "raw",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.0,
+      "maximum": 0.0
+    },
+    {
+      "target_id": "B1",
+      "config_name": "raw",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B1",
+      "config_name": "raw",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.0,
+      "maximum": 0.0
+    },
+    {
+      "target_id": "B1",
+      "config_name": "raw",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.0,
+      "maximum": 0.0
+    },
+    {
+      "target_id": "B1",
+      "config_name": "treatment",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 3.6,
+      "median": 3.6,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 3.6,
+      "maximum": 3.6
+    },
+    {
+      "target_id": "B1",
+      "config_name": "treatment",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B1",
+      "config_name": "treatment",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.625,
+      "median": 0.625,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.625,
+      "maximum": 0.625
+    },
+    {
+      "target_id": "B1",
+      "config_name": "treatment",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 12.11163915,
+      "median": 12.11163915,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 12.11163915,
+      "maximum": 12.11163915
+    },
+    {
+      "target_id": "B2",
+      "config_name": "control",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 2.9,
+      "median": 2.9,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 2.9,
+      "maximum": 2.9
+    },
+    {
+      "target_id": "B2",
+      "config_name": "control",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B2",
+      "config_name": "control",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.5833333333333334,
+      "median": 0.5833333333333334,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.5833333333333334,
+      "maximum": 0.5833333333333334
+    },
+    {
+      "target_id": "B2",
+      "config_name": "control",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 12.359871799999995,
+      "median": 12.359871799999995,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 12.359871799999995,
+      "maximum": 12.359871799999995
+    },
+    {
+      "target_id": "B2",
+      "config_name": "greedy",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 2.6,
+      "median": 2.6,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 2.6,
+      "maximum": 2.6
+    },
+    {
+      "target_id": "B2",
+      "config_name": "greedy",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 2.0,
+      "median": 2.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 2.0,
+      "maximum": 2.0
+    },
+    {
+      "target_id": "B2",
+      "config_name": "greedy",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.041666666666666664,
+      "median": 0.041666666666666664,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.041666666666666664,
+      "maximum": 0.041666666666666664
+    },
+    {
+      "target_id": "B2",
+      "config_name": "greedy",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 9.649213850000002,
+      "median": 9.649213850000002,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 9.649213850000002,
+      "maximum": 9.649213850000002
+    },
+    {
+      "target_id": "B2",
+      "config_name": "raw",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.0,
+      "maximum": 0.0
+    },
+    {
+      "target_id": "B2",
+      "config_name": "raw",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B2",
+      "config_name": "raw",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.0,
+      "maximum": 0.0
+    },
+    {
+      "target_id": "B2",
+      "config_name": "raw",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.0,
+      "maximum": 0.0
+    },
+    {
+      "target_id": "B2",
+      "config_name": "treatment",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 2.8,
+      "median": 2.8,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 2.8,
+      "maximum": 2.8
+    },
+    {
+      "target_id": "B2",
+      "config_name": "treatment",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 2.0,
+      "median": 2.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 2.0,
+      "maximum": 2.0
+    },
+    {
+      "target_id": "B2",
+      "config_name": "treatment",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.56,
+      "median": 0.56,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.56,
+      "maximum": 0.56
+    },
+    {
+      "target_id": "B2",
+      "config_name": "treatment",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 11.357257399999998,
+      "median": 11.357257399999998,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 11.357257399999998,
+      "maximum": 11.357257399999998
+    },
+    {
+      "target_id": "B3",
+      "config_name": "control",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 173.07,
+      "median": 173.07,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 173.07,
+      "maximum": 173.07
+    },
+    {
+      "target_id": "B3",
+      "config_name": "control",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B3",
+      "config_name": "control",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B3",
+      "config_name": "control",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 0.6904682999999998,
+      "median": 0.6904682999999998,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.6904682999999998,
+      "maximum": 0.6904682999999998
+    },
+    {
+      "target_id": "B3",
+      "config_name": "greedy",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 175.36,
+      "median": 175.36,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 175.36,
+      "maximum": 175.36
+    },
+    {
+      "target_id": "B3",
+      "config_name": "greedy",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B3",
+      "config_name": "greedy",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B3",
+      "config_name": "greedy",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 0.30225930000000006,
+      "median": 0.30225930000000006,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.30225930000000006,
+      "maximum": 0.30225930000000006
+    },
+    {
+      "target_id": "B3",
+      "config_name": "raw",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 470.7,
+      "median": 470.7,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 470.7,
+      "maximum": 470.7
+    },
+    {
+      "target_id": "B3",
+      "config_name": "raw",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B3",
+      "config_name": "raw",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.0,
+      "maximum": 0.0
+    },
+    {
+      "target_id": "B3",
+      "config_name": "raw",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.0,
+      "maximum": 0.0
+    },
+    {
+      "target_id": "B3",
+      "config_name": "treatment",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 3.15,
+      "median": 3.15,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 3.15,
+      "maximum": 3.15
+    },
+    {
+      "target_id": "B3",
+      "config_name": "treatment",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B3",
+      "config_name": "treatment",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.8333333333333334,
+      "median": 0.8333333333333334,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.8333333333333334,
+      "maximum": 0.8333333333333334
+    },
+    {
+      "target_id": "B3",
+      "config_name": "treatment",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 2.6127662,
+      "median": 2.6127662,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 2.6127662,
+      "maximum": 2.6127662
+    },
+    {
+      "target_id": "B4",
+      "config_name": "control",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B4",
+      "config_name": "control",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B4",
+      "config_name": "control",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.75,
+      "median": 0.75,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.75,
+      "maximum": 0.75
+    },
+    {
+      "target_id": "B4",
+      "config_name": "control",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 1.51621135,
+      "median": 1.51621135,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.51621135,
+      "maximum": 1.51621135
+    },
+    {
+      "target_id": "B4",
+      "config_name": "greedy",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B4",
+      "config_name": "greedy",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 2.0,
+      "median": 2.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 2.0,
+      "maximum": 2.0
+    },
+    {
+      "target_id": "B4",
+      "config_name": "greedy",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B4",
+      "config_name": "greedy",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 0.7625413499999999,
+      "median": 0.7625413499999999,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.7625413499999999,
+      "maximum": 0.7625413499999999
+    },
+    {
+      "target_id": "B4",
+      "config_name": "raw",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 0.435,
+      "median": 0.435,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.435,
+      "maximum": 0.435
+    },
+    {
+      "target_id": "B4",
+      "config_name": "raw",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B4",
+      "config_name": "raw",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.0,
+      "maximum": 0.0
+    },
+    {
+      "target_id": "B4",
+      "config_name": "raw",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.0,
+      "maximum": 0.0
+    },
+    {
+      "target_id": "B4",
+      "config_name": "treatment",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B4",
+      "config_name": "treatment",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B4",
+      "config_name": "treatment",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.75,
+      "median": 0.75,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.75,
+      "maximum": 0.75
+    },
+    {
+      "target_id": "B4",
+      "config_name": "treatment",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 1.2815507000000002,
+      "median": 1.2815507000000002,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.2815507000000002,
+      "maximum": 1.2815507000000002
+    },
+    {
+      "target_id": "B5",
+      "config_name": "control",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 1.8,
+      "median": 1.8,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.8,
+      "maximum": 1.8
+    },
+    {
+      "target_id": "B5",
+      "config_name": "control",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 8.0,
+      "median": 8.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 8.0,
+      "maximum": 8.0
+    },
+    {
+      "target_id": "B5",
+      "config_name": "control",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.47619047619047616,
+      "median": 0.47619047619047616,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.47619047619047616,
+      "maximum": 0.47619047619047616
+    },
+    {
+      "target_id": "B5",
+      "config_name": "control",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 28.186731500000004,
+      "median": 28.186731500000004,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 28.186731500000004,
+      "maximum": 28.186731500000004
+    },
+    {
+      "target_id": "B5",
+      "config_name": "greedy",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 0.6,
+      "median": 0.6,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.6,
+      "maximum": 0.6
+    },
+    {
+      "target_id": "B5",
+      "config_name": "greedy",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 17.0,
+      "median": 17.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 17.0,
+      "maximum": 17.0
+    },
+    {
+      "target_id": "B5",
+      "config_name": "greedy",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.04,
+      "median": 0.04,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.04,
+      "maximum": 0.04
+    },
+    {
+      "target_id": "B5",
+      "config_name": "greedy",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 25.25708369999999,
+      "median": 25.25708369999999,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 25.25708369999999,
+      "maximum": 25.25708369999999
+    },
+    {
+      "target_id": "B5",
+      "config_name": "raw",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.0,
+      "maximum": 0.0
+    },
+    {
+      "target_id": "B5",
+      "config_name": "raw",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 1.0,
+      "median": 1.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    {
+      "target_id": "B5",
+      "config_name": "raw",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.0,
+      "maximum": 0.0
+    },
+    {
+      "target_id": "B5",
+      "config_name": "raw",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.0,
+      "maximum": 0.0
+    },
+    {
+      "target_id": "B5",
+      "config_name": "treatment",
+      "metric": "final_score",
+      "n": 1,
+      "mean": 2.6,
+      "median": 2.6,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 2.6,
+      "maximum": 2.6
+    },
+    {
+      "target_id": "B5",
+      "config_name": "treatment",
+      "metric": "convergence_experiment",
+      "n": 1,
+      "mean": 7.0,
+      "median": 7.0,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 7.0,
+      "maximum": 7.0
+    },
+    {
+      "target_id": "B5",
+      "config_name": "treatment",
+      "metric": "acceptance_rate",
+      "n": 1,
+      "mean": 0.5555555555555556,
+      "median": 0.5555555555555556,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 0.5555555555555556,
+      "maximum": 0.5555555555555556
+    },
+    {
+      "target_id": "B5",
+      "config_name": "treatment",
+      "metric": "total_cost_usd",
+      "n": 1,
+      "mean": 30.98307219999999,
+      "median": 30.98307219999999,
+      "std": 0.0,
+      "iqr": 0.0,
+      "minimum": 30.98307219999999,
+      "maximum": 30.98307219999999
+    }
+  ],
+  "attribution": {
+    "Strategy Manifest": {
+      "B1": {
+        "metric": "final_score",
+        "direction": "maximize",
+        "control_mean": 3.5,
+        "treatment_mean": 3.6,
+        "relative_change_pct": 2.86
+      },
+      "B2": {
+        "metric": "final_score",
+        "direction": "maximize",
+        "control_mean": 2.9,
+        "treatment_mean": 2.8,
+        "relative_change_pct": -3.45
+      },
+      "B3": {
+        "metric": "final_score",
+        "direction": "minimize",
+        "control_mean": 173.07,
+        "treatment_mean": 3.15,
+        "relative_change_pct": 98.18
+      },
+      "B4": {
+        "metric": "final_score",
+        "direction": "maximize",
+        "control_mean": 1.0,
+        "treatment_mean": 1.0,
+        "relative_change_pct": 0.0
+      },
+      "B5": {
+        "metric": "final_score",
+        "direction": "maximize",
+        "control_mean": 1.8,
+        "treatment_mean": 2.6,
+        "relative_change_pct": 44.44
+      }
+    },
+    "Dual-Agent Mutation": {
+      "B1": {
+        "metric": "total_cost_usd",
+        "direction": "maximize",
+        "control_mean": 9.725091,
+        "treatment_mean": 12.111639,
+        "relative_change_pct": 24.54
+      },
+      "B2": {
+        "metric": "total_cost_usd",
+        "direction": "maximize",
+        "control_mean": 12.359872,
+        "treatment_mean": 11.357257,
+        "relative_change_pct": -8.11
+      },
+      "B3": {
+        "metric": "total_cost_usd",
+        "direction": "minimize",
+        "control_mean": 0.690468,
+        "treatment_mean": 2.612766,
+        "relative_change_pct": -278.4
+      },
+      "B4": {
+        "metric": "total_cost_usd",
+        "direction": "maximize",
+        "control_mean": 1.516211,
+        "treatment_mean": 1.281551,
+        "relative_change_pct": -15.48
+      },
+      "B5": {
+        "metric": "total_cost_usd",
+        "direction": "maximize",
+        "control_mean": 28.186732,
+        "treatment_mean": 30.983072,
+        "relative_change_pct": 9.92
+      }
+    },
+    "Two-Phase Mutation": {
+      "B1": {
+        "metric": "acceptance_rate",
+        "direction": "maximize",
+        "control_mean": 0.68,
+        "treatment_mean": 0.625,
+        "relative_change_pct": -8.09
+      },
+      "B2": {
+        "metric": "acceptance_rate",
+        "direction": "maximize",
+        "control_mean": 0.583333,
+        "treatment_mean": 0.56,
+        "relative_change_pct": -4.0
+      },
+      "B3": {
+        "metric": "acceptance_rate",
+        "direction": "minimize",
+        "control_mean": 1.0,
+        "treatment_mean": 0.833333,
+        "relative_change_pct": 16.67
+      },
+      "B4": {
+        "metric": "acceptance_rate",
+        "direction": "maximize",
+        "control_mean": 0.75,
+        "treatment_mean": 0.75,
+        "relative_change_pct": 0.0
+      },
+      "B5": {
+        "metric": "acceptance_rate",
+        "direction": "maximize",
+        "control_mean": 0.47619,
+        "treatment_mean": 0.555556,
+        "relative_change_pct": 16.67
+      }
+    },
+    "Lineage Context": {
+      "B1": {
+        "metric": "convergence_experiment",
+        "direction": "maximize",
+        "control_mean": 1.0,
+        "treatment_mean": 1.0,
+        "relative_change_pct": 0.0
+      },
+      "B2": {
+        "metric": "convergence_experiment",
+        "direction": "maximize",
+        "control_mean": 1.0,
+        "treatment_mean": 2.0,
+        "relative_change_pct": 100.0
+      },
+      "B3": {
+        "metric": "convergence_experiment",
+        "direction": "minimize",
+        "control_mean": 1.0,
+        "treatment_mean": 1.0,
+        "relative_change_pct": -0.0
+      },
+      "B4": {
+        "metric": "convergence_experiment",
+        "direction": "maximize",
+        "control_mean": 1.0,
+        "treatment_mean": 1.0,
+        "relative_change_pct": 0.0
+      },
+      "B5": {
+        "metric": "convergence_experiment",
+        "direction": "maximize",
+        "control_mean": 8.0,
+        "treatment_mean": 7.0,
+        "relative_change_pct": -12.5
+      }
+    },
+    "Episodic Memory": {
+      "B1": {
+        "metric": "final_score",
+        "direction": "maximize",
+        "control_mean": 3.5,
+        "treatment_mean": 3.6,
+        "relative_change_pct": 2.86
+      },
+      "B2": {
+        "metric": "final_score",
+        "direction": "maximize",
+        "control_mean": 2.9,
+        "treatment_mean": 2.8,
+        "relative_change_pct": -3.45
+      },
+      "B3": {
+        "metric": "final_score",
+        "direction": "minimize",
+        "control_mean": 173.07,
+        "treatment_mean": 3.15,
+        "relative_change_pct": 98.18
+      },
+      "B4": {
+        "metric": "final_score",
+        "direction": "maximize",
+        "control_mean": 1.0,
+        "treatment_mean": 1.0,
+        "relative_change_pct": 0.0
+      },
+      "B5": {
+        "metric": "final_score",
+        "direction": "maximize",
+        "control_mean": 1.8,
+        "treatment_mean": 2.6,
+        "relative_change_pct": 44.44
+      }
+    }
+  }
+}

@@ -1,0 +1,102 @@
+# B5: Technical README documentation quality.
+# Stochastic eval — 6 binary criteria, 50 experiments per run.
+
+[meta]
+target_id = "B5"
+domain = "documentation"
+eval_mode = "stochastic"
+direction = "maximize"
+experiment_budget = 50
+sample_count = 10
+confidence_level = 0.95
+
+[generation]
+prompt_template = "You are evaluating the documentation quality of a technical README. Read the README in B5_technical_readme.md and answer each criterion question for this audience and context:\n\n'{test_prompt}'"
+output_format = "text"
+
+[[criteria]]
+name = "quick_start_present"
+question = "Does the README include a quick-start section that allows a new user to install and run the software in under 5 minutes? Answer only YES or NO."
+
+[[criteria]]
+name = "api_documented"
+question = "Are the primary public interfaces, functions, or CLI commands documented with their parameters and return values or outputs? Answer only YES or NO."
+
+[[criteria]]
+name = "prerequisites_clear"
+question = "Are all prerequisites (language version, OS, dependencies) listed explicitly before the installation instructions? Answer only YES or NO."
+
+[[criteria]]
+name = "examples_runnable"
+question = "Do all code examples in the README appear complete and runnable (no placeholder ellipsis or TODO stubs)? Answer only YES or NO."
+
+[[criteria]]
+name = "error_guidance"
+question = "Does the README include troubleshooting guidance or point to where users can get help when things go wrong? Answer only YES or NO."
+
+[[criteria]]
+name = "contribution_path"
+question = "Is there a clear path for contributors — whether a CONTRIBUTING.md link, a brief description of the PR process, or instructions for running tests locally? Answer only YES or NO."
+
+[[test_prompts]]
+prompt = "Audience: Python developer installing the library for the first time. Task: evaluate whether this README is sufficient to get started without reading any other documentation."
+
+[[test_prompts]]
+prompt = "Audience: DevOps engineer evaluating the tool for production use. Task: evaluate whether this README answers questions about deployment, configuration, and operational requirements."
+
+[[test_prompts]]
+prompt = "Audience: open-source contributor who wants to submit a bug fix. Task: evaluate whether this README gives enough context to run tests and understand the development workflow."
+
+[[test_prompts]]
+prompt = "Audience: engineering manager assessing the project's maturity. Task: evaluate whether this README conveys the scope, stability, and maintenance status of the project."
+
+[[test_prompts]]
+prompt = "Audience: data scientist who wants to integrate this tool into an existing Python notebook. Task: evaluate whether the README makes it clear how to install, import, and call the core functionality."
+
+# ------------------------------------------------------------------
+# Per-configuration overrides
+# ------------------------------------------------------------------
+
+[configs.raw]
+description = "Raw LLM generation, no anneal optimization"
+search_strategy = "none"
+
+[configs.raw.enhancements]
+strategy_manifest = false
+dual_agent = false
+two_phase = false
+lineage_context = false
+episodic_memory = false
+
+[configs.greedy]
+description = "Anneal with greedy search, no knowledge injection"
+search_strategy = "greedy"
+
+[configs.greedy.enhancements]
+strategy_manifest = false
+dual_agent = false
+two_phase = false
+lineage_context = false
+episodic_memory = false
+
+[configs.control]
+description = "Anneal with default hybrid search and monolithic program.md"
+search_strategy = "hybrid"
+
+[configs.control.enhancements]
+strategy_manifest = false
+dual_agent = false
+two_phase = false
+lineage_context = false
+episodic_memory = false
+
+[configs.treatment]
+description = "Anneal with all enhancements: manifest, dual-agent, two-phase, lineage, episodic memory"
+search_strategy = "hybrid"
+
+[configs.treatment.enhancements]
+strategy_manifest = true
+dual_agent = true
+two_phase = true
+lineage_context = true
+episodic_memory = true

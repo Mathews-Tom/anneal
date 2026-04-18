@@ -1,0 +1,37 @@
+Large language models can propose mutations to any text-based artifact---prompts,
+code, configurations---but using them as optimization oracles demands more than
+iterative generation and manual inspection.
+%
+Existing approaches lack statistical rigor when comparing stochastic outputs,
+default to greedy search with no mechanism to escape local optima, accumulate
+no structured knowledge across experiments, and provide few safety guarantees
+around cost or scope.
+%
+We present \textsc{anneal}, a domain-agnostic framework that brings statistical
+decision theory to the accept/reject boundary of iterative LLM-guided artifact
+optimization---a problem overlooked by frameworks that compare stochastic
+evaluations through point scores.
+%
+The framework composes three subsystems: a statistical acceptance layer built
+on the Wilcoxon signed-rank test with Holm--Bonferroni correction for
+multiplicity control, a strategy-diverse search layer spanning greedy,
+simulated annealing with adaptive reheat, population-based, and Thompson
+Sampling meta-strategy selection, and an episodic knowledge layer with TF-IDF
+hypothesis retrieval and cross-target lesson transfer.
+%
+Around this core, \textsc{anneal} isolates every experiment in a git worktree,
+calibrates the LLM judge via position-bias-cancelled Bradley--Terry scoring,
+and controls evaluation cost through adaptive sample sizing with held-out
+divergence detection.
+%
+We validate the three core mechanisms in isolation on synthetic benchmarks
+with analytically known ground truth, showing that Holm--Bonferroni correction
+reduces false-positive acceptance by 86\% under a null distribution, adaptive
+reheat yields a 19.1\% improvement over fixed cooling on the Rastrigin
+function, and TF-IDF retrieval achieves $1.55\times$ the precision of Jaccard
+similarity on a controlled corpus.
+%
+\textsc{anneal} ships as open-source software under the Apache-2.0 license,
+together with a benchmark suite spanning prompt, code, and documentation
+optimization targets that the framework's harness and analysis pipeline can
+execute for full end-to-end configuration comparison as future work.

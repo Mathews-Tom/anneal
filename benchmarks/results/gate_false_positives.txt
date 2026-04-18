@@ -1,0 +1,12 @@
+============================================================
+Gate: False Positive Rate Validation
+============================================================
+Runs: 100 x 50-experiment windows
+Null distribution: N(0.5, 0.1), n=10 paired samples
+
+Without correction: 2.1 avg false positives per window
+With Holm-Bonferroni: 0.3 avg false positives per window
+Reduction: 86%
+
+Gate (>50% reduction): PASS
+============================================================

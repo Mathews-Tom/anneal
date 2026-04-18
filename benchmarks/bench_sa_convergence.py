@@ -117,7 +117,7 @@ def main() -> None:
     adaptive_wins = sum(1 for a, f in zip(adaptive_best, fixed_best) if a < f)
 
     print("=" * 60)
-    print("Phase 3 Gate: SA Convergence on Rastrigin")
+    print("Gate: SA Convergence on Rastrigin")
     print("=" * 60)
     print(f"Runs: {n_runs} x {n_experiments} experiments (3D Rastrigin)")
     print(f"Metric: best score found during trajectory")

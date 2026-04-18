@@ -1,0 +1,121 @@
+% !TEX root = ../main.tex
+\section{Mechanism Validation}
+\label{sec:results}
+
+A full end-to-end empirical comparison of the four configurations across all five benchmark targets is outside the scope of this paper: each configuration requires a multi-seed run on every target, and the associated compute and API budget is substantial.
+Instead, we validate the three central mechanisms---statistical acceptance, adaptive metaheuristic search, and structured knowledge retrieval---in isolation on synthetic tasks where the ground truth is known analytically.
+Each mechanism is evaluated against a specific quantitative gate defined before the experiment was run.
+The gate benchmarks are implemented in \texttt{benchmarks/\allowbreak{}bench\_\allowbreak{}false\_\allowbreak{}positives.py}, \texttt{benchmarks/\allowbreak{}bench\_\allowbreak{}sa\_\allowbreak{}convergence.py}, and \texttt{benchmarks/\allowbreak{}bench\_\allowbreak{}retrieval\_\allowbreak{}precision.py}.
+All results below are fully reproducible by invoking those scripts; each completes in under a minute and makes no LLM API calls.
+
+% ==================================================================
+\subsection{Statistical Acceptance under a Null Distribution}
+\label{sec:gate-false-positives}
+
+\paragraph{Setup.}
+We construct a synthetic null distribution where no real improvement exists: paired score vectors of length $n = 10$ are drawn from $\mathcal{N}(0.5, 0.1)$ for both challenger and baseline on every experiment.
+Any mutation accepted under this distribution is, by construction, a false positive.
+We run 100 independent 50-experiment windows and count the average number of false positives per window under two decision rules:
+(i) uncorrected comparison using a fixed significance threshold of $\alpha = 0.05$, and
+(ii) Holm--Bonferroni-corrected comparison with the adjusted threshold $\alpha / (W - i)$ within a rolling window of size $W = 50$, as described in \cref{sec:stat-comparison}.
+
+\paragraph{Result.}
+Uncorrected comparison produces an average of 2.1 false positives per 50-experiment window.
+Holm--Bonferroni correction reduces this to 0.3 false positives per window, a reduction of 86\%, comfortably exceeding the gate threshold of 50\% committed to in the benchmark harness before the experiment was run.
+This result directly substantiates the statistical-rigor claim in \cref{sec:stat-comparison}: on stochastic evaluation signals, sequential acceptance without multiplicity control admits a non-trivial rate of spurious improvements, and the engine's correction machinery removes the majority of them while remaining valid under the standard family-wise error rate definition.
+
+\begin{table}[t]
+  \centering
+  \caption{False positive rate under a synthetic null distribution ($\mathcal{N}(0.5, 0.1)$, $n = 10$ paired samples, $W = 50$-experiment windows, 100 replicates). The Holm--Bonferroni correction reduces false positives by 86\% with no loss of validity.}
+  \label{tab:gate-fp}
+  \small
+  \begin{tabular}{@{}lr@{}}
+    \toprule
+    Decision rule & Avg. false positives / window \\
+    \midrule
+    Uncorrected ($\alpha = 0.05$) & 2.1 \\
+    Holm--Bonferroni (rolling $W = 50$) & 0.3 \\
+    \midrule
+    Reduction & 86\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% ==================================================================
+\subsection{Adaptive Simulated Annealing on Rastrigin}
+\label{sec:gate-sa}
+
+\paragraph{Setup.}
+We evaluate the adaptive-reheat mechanism (\cref{sec:simulated-annealing}) against a fixed-temperature simulated annealing baseline on the 3-dimensional Rastrigin function, a standard nonconvex optimization testbed with a large number of local minima and a known global minimum at the origin.
+Each configuration runs 50 independent trajectories of 100 experiments with matched seeds and identical starting temperatures ($T_0 = 10.0$, cooling rate $0.75$, minimum temperature $0.01$).
+The fixed baseline disables reheat (\texttt{reheat\_factor} $= 1.0$); the adaptive configuration multiplies temperature by $2.0$ when the acceptance ratio over the last 10 experiments drops below half the target acceptance rate.
+The primary metric is the best Rastrigin value encountered during the trajectory, since reheat is designed to escape local optima mid-run rather than to improve the asymptotic converged value.
+
+\paragraph{Result.}
+Fixed SA achieves an average best score of 18.3144 across the 50 trajectories.
+Adaptive SA with reheat achieves 14.8228, a 19.1\% improvement.
+Adaptive SA strictly outperforms fixed SA on 27 of the 50 seeds, with the remaining seeds either tied or marginally worse when the fixed schedule happens to cool into a basin containing the trajectory-best value before the reheat would fire.
+The 19.1\% average improvement exceeds the 15\% gate threshold committed to in the benchmark harness before the experiment was run.
+
+\begin{table}[t]
+  \centering
+  \caption{Adaptive vs. fixed simulated annealing on 3D Rastrigin ($T_0 = 10.0$, cooling rate $0.75$, 50 seeds $\times$ 100 experiments). Adaptive reheat yields a 19.1\% average reduction in the best Rastrigin value encountered, meeting the 15\% gate threshold.}
+  \label{tab:gate-sa}
+  \small
+  \begin{tabular}{@{}lr@{}}
+    \toprule
+    Configuration & Avg. best Rastrigin score \\
+    \midrule
+    Fixed SA (no reheat) & 18.3144 \\
+    Adaptive SA (with reheat) & 14.8228 \\
+    \midrule
+    Improvement & 19.1\% \\
+    Adaptive wins / seeds & 27 / 50 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+This result substantiates the claim in \cref{sec:simulated-annealing} that adaptive reheat materially helps the search escape local optima in a multimodal landscape, relative to a fixed geometric cooling schedule.
+The experiment uses a closed-form analytical objective rather than a learned LLM judge, isolating the contribution of the temperature schedule from any variance in the evaluation signal itself.
+
+% ==================================================================
+\subsection{Retrieval Precision for Episodic Memory}
+\label{sec:gate-retrieval}
+
+\paragraph{Setup.}
+The knowledge system in \cref{sec:episodic-memory} retrieves past experiment records by similarity to the current hypothesis, upgrading from TF-IDF cosine similarity to sentence embeddings when available.
+We evaluate the TF-IDF implementation against a Jaccard-similarity baseline on a controlled retrieval corpus.
+The corpus consists of 30 synthetic experiment hypotheses organized into 5 groups of 6 hypotheses each, where intra-group hypotheses share a distinctive group-level keyword (e.g., ``gradient'', ``tensor'') against a background of shared generic terms.
+The metric is precision@5: for each query, we retrieve the top 5 most similar documents and compute the fraction that belong to the same ground-truth group as the query.
+
+\paragraph{Result.}
+Jaccard retrieval achieves precision@5 of 0.647.
+TF-IDF retrieval achieves precision@5 of 1.000, corresponding to a $1.55\times$ improvement ratio.
+This exceeds the $1.5\times$ gate threshold committed to in the benchmark harness before the experiment was run.
+The gap reflects the inverse-document-frequency weighting: shared generic terms inflate the Jaccard set union and dilute the discriminative signal, while TF-IDF down-weights those terms and surfaces the group-unique keyword.
+In the context of episodic memory, this precision difference directly controls how often the system surfaces genuinely similar prior experiments---as opposed to superficially overlapping but topically unrelated records---when assembling agent context.
+
+\begin{table}[t]
+  \centering
+  \caption{Retrieval precision@5 on a controlled similarity corpus (30 hypotheses, 5 ground-truth groups of 6). TF-IDF's IDF weighting yields a $1.55\times$ improvement over Jaccard by suppressing shared generic vocabulary.}
+  \label{tab:gate-retrieval}
+  \small
+  \begin{tabular}{@{}lr@{}}
+    \toprule
+    Retrieval method & precision@5 \\
+    \midrule
+    Jaccard (word-level) & 0.647 \\
+    TF-IDF (cosine) & 1.000 \\
+    \midrule
+    Ratio (TF-IDF / Jaccard) & $1.55\times$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% ==================================================================
+\subsection{From Mechanism to System}
+\label{sec:empirical-scope}
+
+The three gate benchmarks above isolate the statistical, search, and knowledge subsystems and establish that each behaves as specified under controlled conditions.
+They are not a substitute for an end-to-end evaluation of the full framework against its baselines across the benchmark suite described in \cref{sec:benchmark-suite}, which we treat as future work and discuss under threats to validity in \cref{sec:threats}.
+The benchmark suite, its harness, and the analysis pipeline (\cref{sec:stat-design}) ship as part of the open-source distribution to enable independent replication at the scale the experimental design specifies.

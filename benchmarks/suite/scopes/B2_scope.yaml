@@ -1,0 +1,8 @@
+editable:
+  - benchmarks/suite/artifacts/B2_summarization_few_shot.md
+
+immutable:
+  - scope.yaml
+  - metrics.yaml
+  - eval_criteria.toml
+  - benchmarks/suite/configs/B2_summarization_prompt.toml

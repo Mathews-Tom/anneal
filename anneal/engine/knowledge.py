@@ -20,8 +20,15 @@ import numpy as np
 from filelock import FileLock
 
 from anneal.engine.client import make_client, strip_provider_prefix
+from anneal.engine.display import OutputMode, format_delta, format_outcome, format_score
 from anneal.engine.taxonomy import FailureTaxonomy
-from anneal.engine.types import ConsolidationRecord, DriftEntry, ExperimentRecord, Lesson, Outcome
+from anneal.engine.types import (
+    ConsolidationRecord,
+    DriftEntry,
+    ExperimentRecord,
+    Lesson,
+    Outcome,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +93,11 @@ async def extract_lesson(
     """
     improved: list[str] = []
     regressed: list[str] = []
-    if record.per_criterion_scores and previous_record and previous_record.per_criterion_scores:
+    if (
+        record.per_criterion_scores
+        and previous_record
+        and previous_record.per_criterion_scores
+    ):
         for name, score in record.per_criterion_scores.items():
             prev = previous_record.per_criterion_scores.get(name, 0.0)
             if score >= 0.5 and prev < 0.5:
@@ -176,7 +187,7 @@ class TFIDFIndex:
         if not query_tfidf:
             return []
 
-        query_norm = math.sqrt(sum(v ** 2 for v in query_tfidf.values()))
+        query_norm = math.sqrt(sum(v**2 for v in query_tfidf.values()))
 
         results: list[tuple[str, float]] = []
         for doc_id, doc_terms in self._docs:
@@ -185,7 +196,7 @@ class TFIDFIndex:
             for term, count in doc_terms.items():
                 df = self._df.get(term, 1)
                 tfidf = count * math.log(n_docs / df)
-                doc_norm_sq += tfidf ** 2
+                doc_norm_sq += tfidf**2
                 if term in query_tfidf:
                     dot_product += query_tfidf[term] * tfidf
             doc_norm = math.sqrt(doc_norm_sq) if doc_norm_sq > 0 else 0.0
@@ -295,7 +306,9 @@ class KnowledgeStore:
                     count += 1
         return count
 
-    def get_lineage(self, current_best_sha: str, depth: int = 5) -> list[ExperimentRecord]:
+    def get_lineage(
+        self, current_best_sha: str, depth: int = 5
+    ) -> list[ExperimentRecord]:
         """Trace the chain of KEPT mutations from current best back to initial."""
         records = self.load_records()
 
@@ -386,9 +399,7 @@ class KnowledgeStore:
         top_indices = np.argsort(similarities)[-k:][::-1]
         return [(ids[i], float(similarities[i])) for i in top_indices]
 
-    def retrieve_similar(
-        self, query: str, k: int = 5
-    ) -> list[ExperimentRecord]:
+    def retrieve_similar(self, query: str, k: int = 5) -> list[ExperimentRecord]:
         """Return K most similar past experiments by hypothesis similarity.
 
         Uses sentence embeddings when available, TF-IDF otherwise.
@@ -431,7 +442,10 @@ class KnowledgeStore:
         if not consolidations:
             return True  # total >= CONSOLIDATION_INTERVAL already guaranteed above
 
-        return total - consolidations[-1].experiment_range[1] >= self.CONSOLIDATION_INTERVAL
+        return (
+            total - consolidations[-1].experiment_range[1]
+            >= self.CONSOLIDATION_INTERVAL
+        )
 
     def consolidate(self) -> ConsolidationRecord:
         """Extract a ConsolidationRecord from recent experiments.
@@ -456,9 +470,7 @@ class KnowledgeStore:
 
         # Counts
         kept_count = sum(1 for r in window if r.outcome == Outcome.KEPT)
-        discarded_count = sum(
-            1 for r in window if r.outcome == Outcome.DISCARDED
-        )
+        discarded_count = sum(1 for r in window if r.outcome == Outcome.DISCARDED)
         crashed_count = sum(1 for r in window if r.outcome == Outcome.CRASHED)
 
         # Score range
@@ -467,9 +479,7 @@ class KnowledgeStore:
 
         # Top improvements: KEPT records sorted by delta descending
         kept_records = [r for r in window if r.outcome == Outcome.KEPT]
-        kept_with_delta = [
-            (r, r.score - r.baseline_score) for r in kept_records
-        ]
+        kept_with_delta = [(r, r.score - r.baseline_score) for r in kept_records]
         kept_with_delta.sort(key=lambda x: x[1], reverse=True)
         top_improvements: list[dict[str, str | float]] = [
             {
@@ -481,9 +491,7 @@ class KnowledgeStore:
         ]
 
         # Failed approaches: DISCARDED records sorted by delta ascending (worst first)
-        discarded_records = [
-            r for r in window if r.outcome == Outcome.DISCARDED
-        ]
+        discarded_records = [r for r in window if r.outcome == Outcome.DISCARDED]
         discarded_with_delta = [
             (r, r.score - r.baseline_score) for r in discarded_records
         ]
@@ -589,8 +597,7 @@ class KnowledgeStore:
         # Build name -> index mapping
         if records_with_raw and records_with_raw[0].criterion_names:
             name_to_idx = {
-                cname: i
-                for i, cname in enumerate(records_with_raw[0].criterion_names)
+                cname: i for i, cname in enumerate(records_with_raw[0].criterion_names)
             }
         else:
             name_to_idx = {
@@ -623,9 +630,8 @@ class KnowledgeStore:
             var_first = _variance(vals_first) if len(vals_first) >= 2 else 0.0
             var_second = _variance(vals_second) if len(vals_second) >= 2 else 0.0
 
-            drift_detected = (
-                total_var > variance_threshold
-                or (var_first > 0 and var_second > 2 * var_first)
+            drift_detected = total_var > variance_threshold or (
+                var_first > 0 and var_second > 2 * var_first
             )
             if drift_detected:
                 all_vals = vals_first + vals_second
@@ -646,11 +652,7 @@ class KnowledgeStore:
             return []
 
         lines = self._consolidations_file.read_text().splitlines()
-        return [
-            _json_to_consolidation(ln)
-            for ln in lines
-            if ln.strip()
-        ]
+        return [_json_to_consolidation(ln) for ln in lines if ln.strip()]
 
     # ------------------------------------------------------------------
     # 2.17 — Narrative Learnings
@@ -676,16 +678,12 @@ class KnowledgeStore:
                 f"Discarded: {cr.discarded_count} | "
                 f"Crashed: {cr.crashed_count}\n"
             )
-            lines.append(
-                f"Score: {cr.score_start:.4f} -> {cr.score_end:.4f}\n"
-            )
+            lines.append(f"Score: {cr.score_start:.4f} -> {cr.score_end:.4f}\n")
 
             if cr.top_improvements:
                 lines.append("### Top Improvements\n")
                 for imp in cr.top_improvements:
-                    lines.append(
-                        f"- (+{imp['score_delta']:.4f}) {imp['hypothesis']}\n"
-                    )
+                    lines.append(f"- (+{imp['score_delta']:.4f}) {imp['hypothesis']}\n")
 
             if cr.failed_approaches:
                 lines.append("### Failed Approaches\n")
@@ -771,12 +769,16 @@ class KnowledgeStore:
     @staticmethod
     def _format_record(record: ExperimentRecord) -> str:
         """Format a single ExperimentRecord for context injection."""
-        delta = record.score - record.baseline_score
-        sign = "+" if delta >= 0 else ""
+        outcome_label = format_outcome(
+            record.outcome, mode=OutputMode.PLAIN, abbreviate=False
+        )
+        delta_str = format_delta(
+            record.score, record.baseline_score, mode=OutputMode.PLAIN
+        )
         tags_str = ", ".join(record.tags) if record.tags else "none"
         return (
-            f"- [{record.outcome.value}] {record.hypothesis}\n"
-            f"  Score: {record.score:.4f} ({sign}{delta:.4f}) | "
+            f"- [{outcome_label}] {record.hypothesis}\n"
+            f"  Score: {format_score(record.score)} ({delta_str}) | "
             f"Tags: {tags_str}\n"
             f"  {record.learnings}\n"
         )

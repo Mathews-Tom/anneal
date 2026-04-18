@@ -1,0 +1,117 @@
+% !TEX root = ../main.tex
+\section{Benchmark Suite}
+\label{sec:evaluation}
+
+\textsc{anneal} ships with a benchmark suite of five optimization targets
+spanning three domains---prompt optimization, code optimization, and
+documentation generation---that exercise both evaluation modes (deterministic
+and stochastic) and a range of optimization objectives.
+The suite is part of the open-source distribution and is intended as a
+reproducible reference workload for the full end-to-end comparison of the
+treatment configuration against its baselines (\cref{sec:empirical-scope}).
+The mechanism-level validation presented in \cref{sec:results} uses
+synthetic benchmarks with analytically known ground truth instead of the
+full benchmark suite runs, for the budget and feasibility reasons discussed
+in \cref{sec:threats}.
+This section documents the suite's targets and the statistical protocol the
+harness applies when an end-to-end run is performed.
+
+\subsection{Benchmark Targets}
+\label{sec:benchmark-suite}
+
+\cref{tab:benchmark-targets} summarizes the five benchmark targets.
+Each target defines an artifact, an evaluation function, and a set of
+editable files; the evaluation function and its criteria are immutable and
+outside the agent's mutation scope.
+
+\begin{table}[t]
+  \centering
+  \caption{Benchmark targets. \emph{Eval}: D = deterministic (single scalar), S = stochastic ($N$ samples $\times$ $K$ binary criteria). \emph{Dir}: optimization direction.}
+  \label{tab:benchmark-targets}
+  \small
+  \begin{tabular}{@{}lllcrl@{}}
+    \toprule
+    ID & Target & Domain & Eval & $K$ & Dir \\
+    \midrule
+    B1 & Classification prompt & Prompt & S & 5 & max \\
+    B2 & Summarization prompt & Prompt & S & 4 & max \\
+    B3 & Performance opt. & Code & D & --- & min \\
+    B4 & Code quality refactor & Code & D & --- & max \\
+    B5 & README generation & Docs & S & 6 & max \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The targets were selected to satisfy three coverage criteria.
+First, they span both evaluation modes: B3 and B4 use deterministic
+evaluation (a single scalar from a shell command---wall-clock time and a
+composite quality score, respectively), while B1, B2, and B5 use the
+$N \times K$ stochastic evaluation framework with binary criteria.
+Second, they cover three distinct optimization domains---prompt engineering,
+code transformation, and technical writing---so that results are not
+tied to a single domain.
+Third, they exercise different optimization directions: maximization
+(B1, B2, B4, B5) and minimization (B3), testing the engine's directional
+generality.
+
+Each target ships with a TOML configuration specifying artifact paths,
+scope constraints, evaluation commands, and scoring criteria.
+The evaluation functions are self-contained: B3 runs a subprocess and
+parses wall-clock time; B4 runs a composite quality scorer (covering
+correctness, input validation, error handling, and security); B1, B2, and
+B5 invoke an LLM judge with fixed rubric criteria and aggregate binary
+pass/fail scores across $N = 5$ test prompts.
+
+The harness defines four configurations for end-to-end comparison---a raw
+baseline (no optimization), a greedy baseline (iterative loop only), a
+control (hybrid search with basic history), and a treatment (all
+enhancements from \cref{sec:enhancements}).
+The progression from raw to treatment forms a nested ablation in which
+each configuration adds a layer of capability, so pairwise comparisons
+isolate the marginal contribution of each layer.
+The specific enabled-feature matrix for each configuration is part of the
+harness (\texttt{benchmarks/suite/runner.py}) and is not reproduced here
+since no empirical comparison using it is reported in this paper.
+
+\subsection{Statistical Design for End-to-End Comparison}
+\label{sec:stat-design}
+
+The harness implements a paired-seed experimental design for comparing
+configurations.
+Each configuration runs 10 independent trials per benchmark target, each
+with a distinct random seed that controls LLM sampling temperature jitter
+and stochastic evaluation order.
+Every trial executes 50 experiments (mutations), yielding a total
+experimental budget of
+$5 \text{ targets} \times 4 \text{ configs} \times 10 \text{ runs}
+ \times 50 \text{ experiments} = 10{,}000$ experiments for a full
+end-to-end comparison.
+
+\paragraph{Pairwise comparison.}
+For each pair of configurations on each target, the harness applies the
+Wilcoxon signed-rank test across the 10 paired final scores (paired by
+random seed).
+This nonparametric test is appropriate because score distributions are
+not assumed normal, and pairing by seed controls for LLM sampling
+variability.
+
+\paragraph{Multiple comparison correction.}
+Holm--Bonferroni correction is applied across the five targets for each
+configuration pair, controlling the family-wise error rate at
+$\alpha = 0.05$.
+This mirrors the correction used within the engine itself for
+consolidation-window decisions (\cref{sec:stat-comparison}).
+
+\paragraph{Effect size.}
+The harness reports Cohen's $d$ with 95\% bootstrap confidence intervals
+(10{,}000 resamples, bias-corrected and accelerated) using the bootstrap
+methodology of Efron and Tibshirani~\cite{efron1994bootstrap}.
+Bootstrap resampling uses deterministic seeding with float-precision
+normalization for cross-platform reproducibility.
+
+\paragraph{Cost-normalized comparison.}
+Because the treatment configuration incurs higher per-experiment cost
+(two-phase mutation, multi-draft generation), the harness also supports
+score-at-equivalent-budget comparison: the best score each configuration
+achieves when constrained to the same total USD cost, rather than the same
+number of experiments.

@@ -1,0 +1,7 @@
+editable:
+  - benchmarks/suite/artifacts/B3_utility_function.py
+
+immutable:
+  - scope.yaml
+  - metrics.yaml
+  - benchmarks/suite/harness/eval_b3.py

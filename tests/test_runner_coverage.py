@@ -63,11 +63,15 @@ def _make_git_repo(path: Path) -> Path:
     subprocess.run(["git", "init"], cwd=path, capture_output=True, check=True)
     subprocess.run(
         ["git", "config", "user.email", "test@test.com"],
-        cwd=path, capture_output=True, check=True,
+        cwd=path,
+        capture_output=True,
+        check=True,
     )
     subprocess.run(
         ["git", "config", "user.name", "Test"],
-        cwd=path, capture_output=True, check=True,
+        cwd=path,
+        capture_output=True,
+        check=True,
     )
     scope = path / "scope.yaml"
     scope.write_text("editable:\n  - artifact.md\nimmutable:\n  - scope.yaml\n")
@@ -75,7 +79,9 @@ def _make_git_repo(path: Path) -> Path:
     subprocess.run(["git", "add", "."], cwd=path, capture_output=True, check=True)
     subprocess.run(
         ["git", "commit", "-m", "init"],
-        cwd=path, capture_output=True, check=True,
+        cwd=path,
+        capture_output=True,
+        check=True,
     )
     return path
 
@@ -125,7 +131,9 @@ def _make_target(
                 generation_prompt_template="{test_prompt}",
                 output_format="text",
                 held_out_prompts=held_out_prompts or [],
-            ) if held_out_prompts else None,
+            )
+            if held_out_prompts
+            else None,
         ),
         agent_config=AgentConfig(
             mode="api",
@@ -195,7 +203,9 @@ def _build_runner(
     git.checkout_paths = AsyncMock()
     git.checkout = AsyncMock()
     git.apply_diff = AsyncMock(return_value=True)
-    git.capture_diff = AsyncMock(return_value="diff --git a/artifact.md b/artifact.md\n+change")
+    git.capture_diff = AsyncMock(
+        return_value="diff --git a/artifact.md b/artifact.md\n+change"
+    )
     git.fsck = AsyncMock(return_value=True)
 
     agent = AsyncMock(spec=AgentInvoker)
@@ -203,9 +213,11 @@ def _build_runner(
     agent.invoke_deployment = AsyncMock(return_value=_mock_agent_result())
     agent.invoke_meta = AsyncMock(return_value=_mock_agent_result("meta mutation"))
     agent.invoke_api_text = AsyncMock(return_value="Revised approach text")
-    agent.generate_drafts = AsyncMock(return_value=[
-        (_mock_agent_result(), "diff --git a/artifact.md b/artifact.md\n+change"),
-    ])
+    agent.generate_drafts = AsyncMock(
+        return_value=[
+            (_mock_agent_result(), "diff --git a/artifact.md b/artifact.md\n+change"),
+        ]
+    )
 
     registry = MagicMock(spec=Registry)
     registry.update_target = MagicMock()
@@ -292,6 +304,7 @@ class TestMakeSearchStrategy:
 
         # Act
         import logging
+
         with caplog.at_level(logging.WARNING):
             strategy = ExperimentRunner.make_search_strategy(target)
 
@@ -307,7 +320,9 @@ class TestMakeSearchStrategy:
 
 class TestRunOneInPlaceMode:
     @pytest.mark.asyncio
-    async def test_in_place_mode_backup_env_created_before_mutation(self, tmp_path: Path) -> None:
+    async def test_in_place_mode_backup_env_created_before_mutation(
+        self, tmp_path: Path
+    ) -> None:
         """In-place mode creates FileBackupEnvironment and calls backup() before mutation.
 
         The source has an unresolved `backup_id` reference in _evaluate_and_decide that
@@ -387,7 +402,9 @@ class TestRunOneRestartPath:
         assert "restart" not in record.tags
 
     @pytest.mark.asyncio
-    async def test_simulated_annealing_scales_restart_probability(self, tmp_path: Path) -> None:
+    async def test_simulated_annealing_scales_restart_probability(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(
@@ -414,7 +431,9 @@ class TestRunOneRestartPath:
 
 class TestRunOneKnowledgeAutoActivation:
     @pytest.mark.asyncio
-    async def test_knowledge_auto_activates_above_threshold(self, tmp_path: Path) -> None:
+    async def test_knowledge_auto_activates_above_threshold(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path), inject_knowledge_context=False)
@@ -476,7 +495,9 @@ class TestRunOneKnowledgeAutoActivation:
 
 class TestRunOneSimplificationPrePass:
     @pytest.mark.asyncio
-    async def test_simplify_before_mutate_invokes_agent_twice(self, tmp_path: Path) -> None:
+    async def test_simplify_before_mutate_invokes_agent_twice(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path), simplify_before_mutate=True)
@@ -491,7 +512,9 @@ class TestRunOneSimplificationPrePass:
         assert agent.invoke.call_count >= 2
 
     @pytest.mark.asyncio
-    async def test_simplify_exception_continues_without_crash(self, tmp_path: Path) -> None:
+    async def test_simplify_exception_continues_without_crash(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path), simplify_before_mutate=True)
@@ -508,7 +531,12 @@ class TestRunOneSimplificationPrePass:
         record = await runner.run_one(target)
 
         # Assert — exception in simplify pass does not crash the run
-        assert record.outcome in (Outcome.KEPT, Outcome.DISCARDED, Outcome.BLOCKED, Outcome.CRASHED)
+        assert record.outcome in (
+            Outcome.KEPT,
+            Outcome.DISCARDED,
+            Outcome.BLOCKED,
+            Outcome.CRASHED,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -540,7 +568,9 @@ class TestRunOneMultiDraft:
         assert record.outcome in (Outcome.KEPT, Outcome.DISCARDED, Outcome.BLOCKED)
 
     @pytest.mark.asyncio
-    async def test_multi_draft_all_generation_failed_returns_blocked(self, tmp_path: Path) -> None:
+    async def test_multi_draft_all_generation_failed_returns_blocked(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
@@ -563,7 +593,9 @@ class TestRunOneMultiDraft:
         assert record.failure_mode == "all_drafts_failed_generation"
 
     @pytest.mark.asyncio
-    async def test_multi_draft_all_drafts_fail_verifiers_returns_blocked(self, tmp_path: Path) -> None:
+    async def test_multi_draft_all_drafts_fail_verifiers_returns_blocked(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
@@ -574,7 +606,9 @@ class TestRunOneMultiDraft:
             n_drafts=2,
         )
         target.eval_config.verifiers = [
-            VerifierCommand(name="test_check", run_command="exit 1", timeout_seconds=10),
+            VerifierCommand(
+                name="test_check", run_command="exit 1", timeout_seconds=10
+            ),
         ]
         target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
 
@@ -607,10 +641,15 @@ class TestRunOneMultiDraft:
 
         runner, git, agent = _build_runner(tmp_path)
         # First draft has empty diff (skipped), second is valid
-        agent.generate_drafts = AsyncMock(return_value=[
-            (_mock_agent_result(), "   "),  # Empty diff — skipped
-            (_mock_agent_result(), "diff --git a/artifact.md b/artifact.md\n+change"),
-        ])
+        agent.generate_drafts = AsyncMock(
+            return_value=[
+                (_mock_agent_result(), "   "),  # Empty diff — skipped
+                (
+                    _mock_agent_result(),
+                    "diff --git a/artifact.md b/artifact.md\n+change",
+                ),
+            ]
+        )
 
         # Act
         record = await runner.run_one(target)
@@ -626,7 +665,9 @@ class TestRunOneMultiDraft:
 
 class TestRunOneVerifierFailure:
     @pytest.mark.asyncio
-    async def test_verifier_failure_returns_blocked_record(self, tmp_path: Path) -> None:
+    async def test_verifier_failure_returns_blocked_record(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
@@ -697,7 +738,9 @@ class TestInvokeAgent:
         git.reset_hard.assert_called()
 
     @pytest.mark.asyncio
-    async def test_invocation_error_returns_crashed_record(self, tmp_path: Path) -> None:
+    async def test_invocation_error_returns_crashed_record(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
@@ -741,7 +784,9 @@ class TestEnforceAndCommit:
         assert record.outcome is Outcome.CRASHED
 
     @pytest.mark.asyncio
-    async def test_all_blocked_scope_returns_blocked_outcome(self, tmp_path: Path) -> None:
+    async def test_all_blocked_scope_returns_blocked_outcome(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
@@ -751,6 +796,7 @@ class TestEnforceAndCommit:
 
         with patch("anneal.engine.runner.enforce_scope") as mock_scope:
             from anneal.engine.types import ScopeViolationResult
+
             mock_scope.return_value = ScopeViolationResult(
                 valid_paths=[],
                 violated_paths=["scope.yaml"],
@@ -766,7 +812,10 @@ class TestEnforceAndCommit:
         # Assert
         assert record.outcome is Outcome.BLOCKED
         assert record.failure_mode is not None
-        assert "violated scope" in record.failure_mode or "All changes violated" in record.failure_mode
+        assert (
+            "violated scope" in record.failure_mode
+            or "All changes violated" in record.failure_mode
+        )
 
     @pytest.mark.asyncio
     async def test_no_valid_paths_returns_blocked(self, tmp_path: Path) -> None:
@@ -779,6 +828,7 @@ class TestEnforceAndCommit:
 
         with patch("anneal.engine.runner.enforce_scope") as mock_scope:
             from anneal.engine.types import ScopeViolationResult
+
             mock_scope.return_value = ScopeViolationResult(
                 valid_paths=[],
                 violated_paths=[],
@@ -795,7 +845,9 @@ class TestEnforceAndCommit:
         assert record.failure_mode == "Agent made no file changes"
 
     @pytest.mark.asyncio
-    async def test_has_violations_resets_violated_but_continues(self, tmp_path: Path) -> None:
+    async def test_has_violations_resets_violated_but_continues(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
@@ -806,16 +858,19 @@ class TestEnforceAndCommit:
 
         with patch("anneal.engine.runner.enforce_scope") as mock_scope:
             from anneal.engine.types import ScopeViolationResult
+
             mock_scope.return_value = ScopeViolationResult(
                 valid_paths=["artifact.md"],
                 violated_paths=["scope.yaml"],
                 all_blocked=False,
                 has_violations=True,
             )
-            git.status_porcelain = AsyncMock(return_value=[
-                ("M", "artifact.md"),
-                ("M", "scope.yaml"),
-            ])
+            git.status_porcelain = AsyncMock(
+                return_value=[
+                    ("M", "artifact.md"),
+                    ("M", "scope.yaml"),
+                ]
+            )
 
             # Act
             record = await runner.run_one(target)
@@ -832,7 +887,9 @@ class TestEnforceAndCommit:
 
 class TestEvaluateAndDecide:
     @pytest.mark.asyncio
-    async def test_stochastic_cold_start_keeps_first_result(self, tmp_path: Path) -> None:
+    async def test_stochastic_cold_start_keeps_first_result(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path), held_out_prompts=["p"])
@@ -858,7 +915,9 @@ class TestEvaluateAndDecide:
 
         runner, git, _ = _build_runner(tmp_path)
 
-        with patch.object(runner._eval, "evaluate", side_effect=EvalError("eval exploded")):
+        with patch.object(
+            runner._eval, "evaluate", side_effect=EvalError("eval exploded")
+        ):
             # Act
             record = await runner.run_one(target)
 
@@ -867,7 +926,9 @@ class TestEvaluateAndDecide:
         git.reset_hard.assert_called()
 
     @pytest.mark.asyncio
-    async def test_taxonomy_classification_called_on_discarded(self, tmp_path: Path) -> None:
+    async def test_taxonomy_classification_called_on_discarded(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
@@ -875,6 +936,7 @@ class TestEvaluateAndDecide:
         target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
 
         from anneal.engine.taxonomy import FailureTaxonomy
+
         taxonomy = MagicMock(spec=FailureTaxonomy)
         taxonomy.classify = AsyncMock(return_value=("score_regression", 0.001))
 
@@ -929,7 +991,9 @@ class TestEvaluateAndDecide:
         tree_search = MagicMock(spec=UCBTreeSearch)
         tree_search.select_parent = MagicMock(return_value="abc123")
         # tree_info must include 'depth' key (used by build_target_context)
-        tree_search.get_tree_info = MagicMock(return_value={"nodes": 1, "depth": 0, "leaves": 1, "pruned": 0})
+        tree_search.get_tree_info = MagicMock(
+            return_value={"nodes": 1, "depth": 0, "leaves": 1, "pruned": 0}
+        )
         tree_search.record_outcome = MagicMock()
         tree_search.persist = MagicMock()
         tree_search.should_keep = MagicMock(return_value=True)
@@ -1190,7 +1254,9 @@ class TestRunLoopHeldOutEval:
         assert records[0].held_out_score == 0.85
 
     @pytest.mark.asyncio
-    async def test_held_out_eval_error_does_not_crash_loop(self, tmp_path: Path) -> None:
+    async def test_held_out_eval_error_does_not_crash_loop(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(
@@ -1206,7 +1272,9 @@ class TestRunLoopHeldOutEval:
         eval_engine = MagicMock(spec=EvalEngine)
         eval_engine.evaluate = AsyncMock(return_value=EvalResult(score=0.9))
         eval_engine.check_constraints = AsyncMock(return_value=[])
-        eval_engine.evaluate_held_out = AsyncMock(side_effect=EvalError("held out failed"))
+        eval_engine.evaluate_held_out = AsyncMock(
+            side_effect=EvalError("held out failed")
+        )
 
         git = AsyncMock(spec=GitEnvironment)
         git.rev_parse = AsyncMock(return_value="abc123")
@@ -1256,7 +1324,9 @@ class TestRunLoopHeldOutEval:
 
 class TestRunLoopComponentEvolution:
     @pytest.mark.asyncio
-    async def test_component_evolution_called_at_consolidation_interval(self, tmp_path: Path) -> None:
+    async def test_component_evolution_called_at_consolidation_interval(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
@@ -1264,6 +1334,7 @@ class TestRunLoopComponentEvolution:
         target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
 
         from anneal.engine.strategy import StrategyManifest, save_strategy
+
         manifest = StrategyManifest(lineage=[])
         manifest.hypothesis_generation.approach = "initial approach"
         knowledge_path = Path(target.knowledge_path)
@@ -1380,7 +1451,9 @@ class TestRunLoopPlateauMetaOptimization:
 
 class TestResetViolated:
     @pytest.mark.asyncio
-    async def test_reset_violated_checks_out_tracked_files(self, tmp_path: Path) -> None:
+    async def test_reset_violated_checks_out_tracked_files(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         git = AsyncMock(spec=GitEnvironment)
         git.rev_parse = AsyncMock(return_value="abc123")
@@ -1471,7 +1544,9 @@ class TestResetViolated:
 
 class TestHandleKilled:
     @pytest.mark.asyncio
-    async def test_handle_killed_calls_cleanup_reset_clean(self, tmp_path: Path) -> None:
+    async def test_handle_killed_calls_cleanup_reset_clean(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         git = AsyncMock(spec=GitEnvironment)
         git.cleanup_index_lock = AsyncMock()
@@ -1497,15 +1572,66 @@ class TestHandleKilled:
         git.fsck.assert_called_once_with(tmp_path)
 
     @pytest.mark.asyncio
-    async def test_handle_killed_logs_corruption_on_fsck_fail(
+    async def test_handle_killed_attempts_gc_repair_on_fsck_fail(
         self, tmp_path: Path, caplog
     ) -> None:
+        """When fsck detects corruption, _handle_killed should attempt gc repair
+        then re-create the worktree if gc doesn't fix it."""
+        from anneal.engine.types import WorktreeInfo
+
+        # Arrange — worktree path must match .anneal/worktrees/<target_id> layout
+        worktree = tmp_path / ".anneal" / "worktrees" / "test-target"
+        worktree.mkdir(parents=True)
+
+        git = AsyncMock(spec=GitEnvironment)
+        git.cleanup_index_lock = AsyncMock()
+        git.reset_hard = AsyncMock()
+        git.clean_untracked = AsyncMock()
+        git.fsck = AsyncMock(return_value=False)  # Corruption persists after gc
+        git.gc_prune = AsyncMock(return_value=True)
+        git.remove_worktree = AsyncMock()
+        git.create_worktree = AsyncMock(
+            return_value=WorktreeInfo(
+                path=worktree, branch="anneal/test-target", head_sha="abc123"
+            )
+        )
+
+        runner = ExperimentRunner(
+            git=git,
+            agent_invoker=AsyncMock(spec=AgentInvoker),
+            eval_engine=EvalEngine(),
+            search=GreedySearch(),
+            registry=MagicMock(spec=Registry),
+            repo_root=tmp_path,
+        )
+
+        import logging
+
+        # Act
+        with caplog.at_level(logging.WARNING):
+            await runner._handle_killed(worktree, "abc123")
+
+        # Assert — gc was attempted
+        git.gc_prune.assert_called_once_with(worktree)
+        # Assert — worktree was re-created after gc failed to fix corruption
+        git.remove_worktree.assert_called_once_with(tmp_path, "test-target")
+        git.create_worktree.assert_called_once_with(tmp_path, "test-target")
+        # Assert — warning about corruption logged
+        assert "corruption" in caplog.text.lower() or "gc repair" in caplog.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_handle_killed_gc_repair_succeeds(
+        self, tmp_path: Path, caplog
+    ) -> None:
+        """When gc_prune fixes the corruption, no worktree re-creation needed."""
         # Arrange
         git = AsyncMock(spec=GitEnvironment)
         git.cleanup_index_lock = AsyncMock()
         git.reset_hard = AsyncMock()
         git.clean_untracked = AsyncMock()
-        git.fsck = AsyncMock(return_value=False)  # Corruption detected
+        # First fsck fails, second (after gc) succeeds
+        git.fsck = AsyncMock(side_effect=[False, True])
+        git.gc_prune = AsyncMock(return_value=True)
 
         runner = ExperimentRunner(
             git=git,
@@ -1516,12 +1642,13 @@ class TestHandleKilled:
         )
 
         import logging
-        # Act
-        with caplog.at_level(logging.ERROR):
+
+        with caplog.at_level(logging.WARNING):
             await runner._handle_killed(tmp_path, "abc123")
 
-        # Assert — corruption log emitted
-        assert "corruption" in caplog.text.lower() or "corrupt" in caplog.text.lower()
+        # gc was called but worktree was NOT re-created
+        git.gc_prune.assert_called_once_with(tmp_path)
+        assert not hasattr(git, "remove_worktree") or not git.remove_worktree.called
 
 
 class TestSafeRestore:
@@ -1555,13 +1682,16 @@ class TestSafeRestore:
 
 class TestRunLoopEvalEnvironment:
     @pytest.mark.asyncio
-    async def test_eval_env_setup_and_teardown_commands_invoked(self, tmp_path: Path) -> None:
+    async def test_eval_env_setup_and_teardown_commands_invoked(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
         target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
 
         from anneal.engine.types import EvalEnvironment
+
         target.eval_environment = EvalEnvironment(
             setup_command="echo setup",
             teardown_command="echo teardown",
@@ -1570,7 +1700,9 @@ class TestRunLoopEvalEnvironment:
         runner, _, _ = _build_runner(tmp_path)
         runner._write_status = AsyncMock()
 
-        with patch.object(runner, "_run_lifecycle_command", new_callable=AsyncMock) as mock_lifecycle:
+        with patch.object(
+            runner, "_run_lifecycle_command", new_callable=AsyncMock
+        ) as mock_lifecycle:
             # Act
             await runner.run_loop(target, max_experiments=1)
 
@@ -1628,7 +1760,9 @@ class TestRunLoopState:
 
 class TestScopeIntegrityError:
     @pytest.mark.asyncio
-    async def test_scope_hash_mismatch_raises_scope_integrity_error(self, tmp_path: Path) -> None:
+    async def test_scope_hash_mismatch_raises_scope_integrity_error(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
@@ -1639,6 +1773,7 @@ class TestScopeIntegrityError:
 
         # Act / Assert
         from anneal.engine.runner import ScopeIntegrityError
+
         with pytest.raises(ScopeIntegrityError, match="scope.yaml hash mismatch"):
             await runner.run_one(target)
 
@@ -1718,7 +1853,9 @@ class TestTwoPhaseMutation:
         assert record.outcome in (Outcome.KEPT, Outcome.DISCARDED, Outcome.BLOCKED)
 
     @pytest.mark.asyncio
-    async def test_diagnosis_failure_continues_without_crash(self, tmp_path: Path) -> None:
+    async def test_diagnosis_failure_continues_without_crash(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange — two_phase_mutation=True + inject_knowledge_context=True + history
         _make_git_repo(tmp_path)
         target = _make_target(
@@ -1803,7 +1940,7 @@ class TestSimplificationVerifierRevert:
             # First verifier call (simplify check) fails; second (mutation check) passes
             mock_vfy.side_effect = [
                 [("check", False, "failed")],  # simplify verifier fails
-                [("check", True, "")],          # mutation verifier passes
+                [("check", True, "")],  # mutation verifier passes
             ]
 
             # Act
@@ -1864,6 +2001,7 @@ class TestWriteStatus:
         status_path = tmp_path / target.notifications.status_file
         assert status_path.exists()
         import json as _json
+
         data = _json.loads(status_path.read_text())
         assert data["target_id"] == "test-target"
         assert "state" in data
@@ -1910,6 +2048,7 @@ class TestRunLoopPolicyAgent:
         target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
 
         from anneal.engine.types import PolicyConfig
+
         target.policy_config = PolicyConfig(enabled=True, rewrite_interval=100)
 
         runner, _, _ = _build_runner(tmp_path)
@@ -1998,7 +2137,9 @@ class TestFidelityStageEvalError:
 
 class TestRunLifecycleCommand:
     @pytest.mark.asyncio
-    async def test_lifecycle_command_success_logs_info(self, tmp_path: Path, caplog) -> None:
+    async def test_lifecycle_command_success_logs_info(
+        self, tmp_path: Path, caplog
+    ) -> None:
         # Arrange
         runner = ExperimentRunner(
             git=AsyncMock(spec=GitEnvironment),
@@ -2009,6 +2150,7 @@ class TestRunLifecycleCommand:
         )
 
         import logging
+
         # Act
         with caplog.at_level(logging.INFO):
             await runner._run_lifecycle_command("echo hello", "setup")
@@ -2017,7 +2159,9 @@ class TestRunLifecycleCommand:
         assert "setup" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_lifecycle_command_failure_logs_error(self, tmp_path: Path, caplog) -> None:
+    async def test_lifecycle_command_failure_logs_error(
+        self, tmp_path: Path, caplog
+    ) -> None:
         # Arrange
         runner = ExperimentRunner(
             git=AsyncMock(spec=GitEnvironment),
@@ -2028,6 +2172,7 @@ class TestRunLifecycleCommand:
         )
 
         import logging
+
         # Act
         with caplog.at_level(logging.ERROR):
             await runner._run_lifecycle_command("exit 1", "teardown")
@@ -2052,7 +2197,9 @@ class TestTreeSearchParentCheckout:
         # select_parent returns a sha different from HEAD
         tree_search = MagicMock(spec=UCBTreeSearch)
         tree_search.select_parent = MagicMock(return_value="parent111")
-        tree_search.get_tree_info = MagicMock(return_value={"nodes": 2, "depth": 1, "leaves": 1, "pruned": 0})
+        tree_search.get_tree_info = MagicMock(
+            return_value={"nodes": 2, "depth": 1, "leaves": 1, "pruned": 0}
+        )
         tree_search.record_outcome = MagicMock()
         tree_search.persist = MagicMock()
         tree_search.should_keep = MagicMock(return_value=True)
@@ -2088,6 +2235,7 @@ class TestVerifierFailureWithLearningPool:
         target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
 
         from anneal.engine.learning_pool import LearningPool
+
         pool = LearningPool()
 
         git = AsyncMock(spec=GitEnvironment)
@@ -2141,7 +2289,9 @@ class TestVerifierFailureWithLearningPool:
 
 class TestMultiDraftKnowledgeRecording:
     @pytest.mark.asyncio
-    async def test_all_drafts_failed_verifiers_records_to_knowledge(self, tmp_path: Path) -> None:
+    async def test_all_drafts_failed_verifiers_records_to_knowledge(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
@@ -2201,6 +2351,7 @@ class TestFidelityStageWithLearningPool:
         target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
 
         from anneal.engine.learning_pool import LearningPool
+
         pool = LearningPool()
 
         git = AsyncMock(spec=GitEnvironment)
@@ -2252,7 +2403,9 @@ class TestFidelityStageWithLearningPool:
 
 class TestConstraintPostKeepFailure:
     @pytest.mark.asyncio
-    async def test_constraint_fails_after_keep_decision_discards(self, tmp_path: Path) -> None:
+    async def test_constraint_fails_after_keep_decision_discards(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange — deterministic eval returns high score (KEEP decision),
         # but constraint check then fails
         _make_git_repo(tmp_path)
@@ -2261,6 +2414,7 @@ class TestConstraintPostKeepFailure:
 
         # Add a MetricConstraint that will fail
         from anneal.engine.types import MetricConstraint
+
         target.eval_config.constraints = [
             MetricConstraint(
                 metric_name="quality",
@@ -2273,7 +2427,9 @@ class TestConstraintPostKeepFailure:
         # Main eval returns score > baseline (keep decision)
         eval_engine.evaluate = AsyncMock(return_value=EvalResult(score=0.95))
         # Constraint check: quality check returns failing result
-        eval_engine.check_constraints = AsyncMock(return_value=[("quality", False, 0.5)])
+        eval_engine.check_constraints = AsyncMock(
+            return_value=[("quality", False, 0.5)]
+        )
 
         git = AsyncMock(spec=GitEnvironment)
         git.rev_parse = AsyncMock(return_value="abc123")
@@ -2330,6 +2486,7 @@ class TestRunLoopNotifications:
         target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
 
         from anneal.engine.notifications import NotificationManager
+
         notifications = MagicMock(spec=NotificationManager)
         notifications.notify_milestone = AsyncMock()
         notifications.notify_state = AsyncMock()
@@ -2378,7 +2535,9 @@ class TestRunLoopNotifications:
             notifications.notify_milestone.assert_called()
 
     @pytest.mark.asyncio
-    async def test_notification_halted_called_on_consecutive_failures(self, tmp_path: Path) -> None:
+    async def test_notification_halted_called_on_consecutive_failures(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
@@ -2386,6 +2545,7 @@ class TestRunLoopNotifications:
         target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
 
         from anneal.engine.notifications import NotificationManager
+
         notifications = MagicMock(spec=NotificationManager)
         notifications.notify_state = AsyncMock()
         notifications.notify_milestone = AsyncMock()
@@ -2428,7 +2588,9 @@ class TestRunLoopNotifications:
         assert RunnerState.HALTED in states
 
     @pytest.mark.asyncio
-    async def test_run_loop_blocked_outcome_sets_blocked_state(self, tmp_path: Path) -> None:
+    async def test_run_loop_blocked_outcome_sets_blocked_state(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
@@ -2439,6 +2601,7 @@ class TestRunLoopNotifications:
 
         with patch("anneal.engine.runner.enforce_scope") as mock_scope:
             from anneal.engine.types import ScopeViolationResult
+
             mock_scope.return_value = ScopeViolationResult(
                 valid_paths=[],
                 violated_paths=["scope.yaml"],
@@ -2477,6 +2640,7 @@ class TestManifestStreakTracking:
         target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
 
         from anneal.engine.strategy import StrategyManifest, save_strategy
+
         manifest = StrategyManifest(lineage=[])
         manifest.hypothesis_generation.approach = "approach"
         for comp in manifest.components:
@@ -2505,6 +2669,7 @@ class TestManifestStreakTracking:
         target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
 
         from anneal.engine.strategy import StrategyManifest, save_strategy
+
         manifest = StrategyManifest(lineage=[])
         manifest.hypothesis_generation.approach = "approach"
         save_strategy(manifest, knowledge_path)
@@ -2526,7 +2691,9 @@ class TestManifestStreakTracking:
 
 class TestHeldOutDivergenceWarning:
     @pytest.mark.asyncio
-    async def test_held_out_warning_divergence_logged(self, tmp_path: Path, caplog) -> None:
+    async def test_held_out_warning_divergence_logged(
+        self, tmp_path: Path, caplog
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(
@@ -2578,6 +2745,7 @@ class TestHeldOutDivergenceWarning:
         runner._write_status = AsyncMock()
 
         import logging
+
         # Act
         with caplog.at_level(logging.WARNING):
             await runner.run_loop(target, max_experiments=1)
@@ -2601,14 +2769,19 @@ class TestRunLoopPolicyRewrite:
 
         from anneal.engine.types import PolicyConfig
         from anneal.engine.policy_agent import PolicyAgent
+
         target.policy_config = PolicyConfig(enabled=True, rewrite_interval=1)
 
         runner, _, _ = _build_runner(tmp_path)
         runner._write_status = AsyncMock()
 
-        with patch.object(PolicyAgent, "should_rewrite", return_value=True), \
-             patch.object(PolicyAgent, "rewrite_instructions", new_callable=AsyncMock) as mock_rw, \
-             patch.object(PolicyAgent, "compute_reward", return_value=0.1):
+        with (
+            patch.object(PolicyAgent, "should_rewrite", return_value=True),
+            patch.object(
+                PolicyAgent, "rewrite_instructions", new_callable=AsyncMock
+            ) as mock_rw,
+            patch.object(PolicyAgent, "compute_reward", return_value=0.1),
+        ):
             mock_rw.return_value = ("new instructions", 0.01)
 
             # Act
@@ -2618,7 +2791,9 @@ class TestRunLoopPolicyRewrite:
         mock_rw.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_policy_rewrite_exception_does_not_crash_loop(self, tmp_path: Path) -> None:
+    async def test_policy_rewrite_exception_does_not_crash_loop(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
@@ -2626,13 +2801,18 @@ class TestRunLoopPolicyRewrite:
 
         from anneal.engine.types import PolicyConfig
         from anneal.engine.policy_agent import PolicyAgent
+
         target.policy_config = PolicyConfig(enabled=True, rewrite_interval=1)
 
         runner, _, _ = _build_runner(tmp_path)
         runner._write_status = AsyncMock()
 
-        with patch.object(PolicyAgent, "should_rewrite", return_value=True), \
-             patch.object(PolicyAgent, "rewrite_instructions", new_callable=AsyncMock) as mock_rw:
+        with (
+            patch.object(PolicyAgent, "should_rewrite", return_value=True),
+            patch.object(
+                PolicyAgent, "rewrite_instructions", new_callable=AsyncMock
+            ) as mock_rw,
+        ):
             mock_rw.side_effect = Exception("policy rewrite crashed")
 
             # Act — must not raise
@@ -2649,7 +2829,9 @@ class TestRunLoopPolicyRewrite:
 
 class TestComponentEvolutionException:
     @pytest.mark.asyncio
-    async def test_component_evolution_exception_continues(self, tmp_path: Path) -> None:
+    async def test_component_evolution_exception_continues(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
@@ -2660,6 +2842,7 @@ class TestComponentEvolutionException:
         target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
 
         from anneal.engine.strategy import StrategyManifest, save_strategy
+
         manifest = StrategyManifest(lineage=[])
         manifest.hypothesis_generation.approach = "approach"
         save_strategy(manifest, knowledge_path)
@@ -2675,7 +2858,9 @@ class TestComponentEvolutionException:
 
         runner, _, agent = _build_runner(tmp_path, knowledge=knowledge)
         runner._write_status = AsyncMock()
-        agent.invoke_api_text = AsyncMock(side_effect=AgentInvocationError("evolve failed"))
+        agent.invoke_api_text = AsyncMock(
+            side_effect=AgentInvocationError("evolve failed")
+        )
 
         # Trigger consolidation by patching CONSOLIDATION_INTERVAL to 1
         with patch("anneal.engine.runner.KnowledgeStore") as mock_ks:
@@ -2709,10 +2894,12 @@ class TestMultiDraftApplyDiffFailed:
         # First draft: apply_diff fails; second draft: apply_diff succeeds (verify loop),
         # then apply_diff succeeds again when winner is applied permanently (line 455)
         git.apply_diff = AsyncMock(side_effect=[False, True, True])
-        agent.generate_drafts = AsyncMock(return_value=[
-            (_mock_agent_result("draft1"), "diff --git a/artifact.md\n+d1"),
-            (_mock_agent_result("draft2"), "diff --git a/artifact.md\n+d2"),
-        ])
+        agent.generate_drafts = AsyncMock(
+            return_value=[
+                (_mock_agent_result("draft1"), "diff --git a/artifact.md\n+d1"),
+                (_mock_agent_result("draft2"), "diff --git a/artifact.md\n+d2"),
+            ]
+        )
 
         # Act
         record = await runner.run_one(target)
@@ -2888,13 +3075,16 @@ class TestTaxonomyClassificationException:
 
 class TestRunLoopNotificationPaused:
     @pytest.mark.asyncio
-    async def test_notification_paused_called_on_safety_fail(self, tmp_path: Path) -> None:
+    async def test_notification_paused_called_on_safety_fail(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
         target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
 
         from anneal.engine.notifications import NotificationManager
+
         notifications = MagicMock(spec=NotificationManager)
         notifications.notify_state = AsyncMock()
         notifications.notify_milestone = AsyncMock()
@@ -2945,7 +3135,9 @@ class TestRunLoopNotificationPaused:
 
 class TestManifestStreakNonKept:
     @pytest.mark.asyncio
-    async def test_manifest_non_kept_increments_streak_value(self, tmp_path: Path) -> None:
+    async def test_manifest_non_kept_increments_streak_value(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange — baseline > eval score so DISCARDED
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
@@ -2956,7 +3148,12 @@ class TestManifestStreakNonKept:
         target.knowledge_path = str(knowledge_path)
         target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
 
-        from anneal.engine.strategy import StrategyManifest, save_strategy, load_strategy
+        from anneal.engine.strategy import (
+            StrategyManifest,
+            save_strategy,
+            load_strategy,
+        )
+
         manifest = StrategyManifest(lineage=[])
         manifest.hypothesis_generation.approach = "approach"
         save_strategy(manifest, knowledge_path)
@@ -2973,9 +3170,10 @@ class TestManifestStreakNonKept:
         assert reloaded is not None
         assert reloaded.hypothesis_generation.streak_without_improvement == 1
 
-
     @pytest.mark.asyncio
-    async def test_component_evolution_exception_continues(self, tmp_path: Path) -> None:
+    async def test_component_evolution_exception_continues(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         _make_git_repo(tmp_path)
         target = _make_target(str(tmp_path))
@@ -2986,6 +3184,7 @@ class TestManifestStreakNonKept:
         target.scope_hash = compute_scope_hash(tmp_path / "scope.yaml")
 
         from anneal.engine.strategy import StrategyManifest, save_strategy
+
         manifest = StrategyManifest(lineage=[])
         manifest.hypothesis_generation.approach = "approach"
         save_strategy(manifest, knowledge_path)
@@ -3001,7 +3200,9 @@ class TestManifestStreakNonKept:
 
         runner, _, agent = _build_runner(tmp_path, knowledge=knowledge)
         runner._write_status = AsyncMock()
-        agent.invoke_api_text = AsyncMock(side_effect=AgentInvocationError("evolve failed"))
+        agent.invoke_api_text = AsyncMock(
+            side_effect=AgentInvocationError("evolve failed")
+        )
 
         # Trigger consolidation by patching CONSOLIDATION_INTERVAL to 1
         with patch("anneal.engine.runner.KnowledgeStore") as mock_ks:

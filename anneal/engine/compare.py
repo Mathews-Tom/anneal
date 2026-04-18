@@ -11,6 +11,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from anneal.engine.display import OutputMode, format_delta
+
 console = Console(stderr=True)
 
 
@@ -28,7 +30,9 @@ def load_run_records(run_path: Path) -> list[dict[str, Any]]:
             jsonl_path = run_path / "experiments.csv"
             if jsonl_path.exists():
                 return _load_csv_records(jsonl_path)
-            raise FileNotFoundError(f"No experiments.jsonl or experiments.csv in {run_path}")
+            raise FileNotFoundError(
+                f"No experiments.jsonl or experiments.csv in {run_path}"
+            )
     else:
         raise FileNotFoundError(f"Not a valid run path: {run_path}")
 
@@ -46,12 +50,20 @@ def load_run_records(run_path: Path) -> list[dict[str, Any]]:
 def _load_csv_records(csv_path: Path) -> list[dict[str, Any]]:
     """Load records from a CSV file (gate experiment format)."""
     import csv
+
     records: list[dict[str, Any]] = []
     with open(csv_path) as f:
         reader = csv.DictReader(f)
         for row in reader:
             record: dict[str, Any] = dict(row)
-            for numeric_field in ["score", "ci_lower", "ci_upper", "baseline_score", "cost_usd", "duration_seconds"]:
+            for numeric_field in [
+                "score",
+                "ci_lower",
+                "ci_upper",
+                "baseline_score",
+                "cost_usd",
+                "duration_seconds",
+            ]:
                 if numeric_field in record and record[numeric_field]:
                     try:
                         record[numeric_field] = float(record[numeric_field])
@@ -75,7 +87,9 @@ def compare_runs(
     stats_b = _compute_stats(records_b)
 
     # Summary comparison table
-    table = Table(title="Experiment Run Comparison", show_header=True, header_style="bold cyan")
+    table = Table(
+        title="Experiment Run Comparison", show_header=True, header_style="bold cyan"
+    )
     table.add_column("Metric", style="dim")
     table.add_column(label_a, justify="right")
     table.add_column(label_b, justify="right")
@@ -92,7 +106,11 @@ def compare_runs(
         ("Crashed", stats_a["crashed"], stats_b["crashed"]),
         ("Total cost", stats_a["total_cost"], stats_b["total_cost"]),
         ("Avg duration (s)", stats_a["avg_duration"], stats_b["avg_duration"]),
-        ("Total duration (min)", stats_a["total_duration_min"], stats_b["total_duration_min"]),
+        (
+            "Total duration (min)",
+            stats_a["total_duration_min"],
+            stats_b["total_duration_min"],
+        ),
     ]
 
     for label, val_a, val_b in rows:
@@ -107,7 +125,9 @@ def compare_runs(
     # Score trajectory comparison (text-based)
     if stats_a["scores"] and stats_b["scores"]:
         console.print()
-        _print_trajectory_comparison(stats_a["scores"], stats_b["scores"], label_a, label_b)
+        _print_trajectory_comparison(
+            stats_a["scores"], stats_b["scores"], label_a, label_b
+        )
 
 
 def _compute_stats(records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -178,14 +198,7 @@ def _format_value(val: object) -> str:
 def _format_delta(val_a: object, val_b: object) -> str:
     if not isinstance(val_a, (int, float)) or not isinstance(val_b, (int, float)):
         return ""
-    delta = val_b - val_a
-    if delta == 0:
-        return "[dim]--[/dim]"
-    sign = "+" if delta > 0 else ""
-    color = "green" if delta > 0 else "red"
-    if isinstance(delta, float):
-        return f"[{color}]{sign}{delta:.4f}[/{color}]"
-    return f"[{color}]{sign}{delta}[/{color}]"
+    return format_delta(float(val_b), float(val_a), mode=OutputMode.RICH)
 
 
 def _print_trajectory_comparison(
@@ -195,6 +208,7 @@ def _print_trajectory_comparison(
     label_b: str,
 ) -> None:
     """Print a text-based running-best comparison."""
+
     def running_best(scores: list[float]) -> list[float]:
         result: list[float] = []
         best = float("-inf")
@@ -218,8 +232,10 @@ def _print_trajectory_comparison(
             )
 
     if lines:
-        console.print(Panel(
-            "\n".join(lines),
-            title="Running Best Score at Milestones",
-            style="dim",
-        ))
+        console.print(
+            Panel(
+                "\n".join(lines),
+                title="Running Best Score at Milestones",
+                style="dim",
+            )
+        )

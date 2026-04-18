@@ -1,0 +1,419 @@
+\section{Related Work}
+\label{sec:related_work}
+
+The design space of LLM-guided artifact optimization admits a spectrum of
+framework philosophies.
+At one end are minimalist scaffolds that delegate almost all decision-making
+to the coding agent itself: the framework provides an edit--evaluate--commit
+loop, a single deterministic metric, and a human-maintained log of prior
+attempts, and the agent's intrinsic reasoning supplies acceptance judgment,
+search strategy, and memory of past experiments.
+This design bet is that as frontier LLMs improve, elaborate scaffolding
+becomes overhead rather than value, and that a thin framework plus a capable
+agent is sufficient for optimization on problems with clean deterministic
+metrics.
+
+\textsc{anneal} occupies a different corner of this design space, one in
+which the framework assumes responsibility for three decisions the agent
+would otherwise make implicitly: whether a candidate is genuinely better
+than its predecessor under stochastic evaluation, which search strategy
+to use when the current one has stalled, and which prior experiments are
+relevant to the current hypothesis.
+These decisions are outside the reliable competence of a single-turn agent
+call, particularly when the evaluation signal is noisy (LLM-judge scores,
+small-sample benchmarks) and when the optimization trajectory spans dozens
+of experiments.
+The trade-off is more framework complexity in exchange for stronger
+correctness guarantees and better use of accumulated experiment history.
+The paper's three technical contributions (\cref{sec:results}) quantify
+the value of each of the three decisions the framework makes on the
+agent's behalf.
+
+\cref{tab:related-comparison} summarizes the five closest prior systems
+along the axes that distinguish \textsc{anneal}: the form of acceptance
+decision, the search strategy layer, the knowledge accumulation
+mechanism, the evaluation modes supported, and the scope of artifacts
+optimized.
+No prior system addresses all five axes simultaneously, though many cover
+a subset.
+
+\begin{table*}[t]
+  \centering
+  \caption{Comparison of \textsc{anneal} with the closest prior systems along
+  five axes. \textbf{Accept:} how accept/reject decisions are made---point-score
+  (P), best-shot selection (B), statistical test (S). \textbf{Search:} search
+  strategy layer---greedy (G), evolutionary (E), bandit meta-strategy (M),
+  reasoning-time search (R). \textbf{Memory:} knowledge accumulation
+  mechanism---none (---), program database (D), verbal self-reflection (V),
+  structured retrieval (S). \textbf{Eval modes:} deterministic (D),
+  stochastic / LLM-judge (L). \textbf{Scope:} artifact type---code functions
+  (C), prompts (P), reasoning traces (R), any text artifact (A).}
+  \label{tab:related-comparison}
+  \small
+  \begin{tabular}{@{}llllll@{}}
+    \toprule
+    System & Accept & Search & Memory & Eval modes & Scope \\
+    \midrule
+    AlphaEvolve~\cite{novikov2025alphaevolve} & B & E & D & D     & C \\
+    FunSearch~\cite{romera2024funsearch}      & B & E & D & D     & C \\
+    DSPy~\cite{khattab2024dspy}               & P & G & --- & D,L   & P \\
+    EvoPrompt~\cite{guo2023evoprompt}         & P & E & --- & D,L   & P \\
+    Promptbreeder~\cite{fernando2024promptbreeder} & P & E & --- & D,L & P \\
+    OPRO~\cite{yang2024opro}                  & P & G & --- & D,L   & P \\
+    ProTeGi~\cite{pryzant2023protegi}         & P & G & --- & D,L   & P \\
+    TextGrad~\cite{yuksekgonul2024textgrad}   & P & G & --- & D,L   & P \\
+    Reflexion~\cite{shinn2023reflexion}       & P & G & V   & D,L   & R \\
+    \midrule
+    \textbf{\textsc{anneal}}                  & \textbf{S} & \textbf{G,E,M} & \textbf{S} & \textbf{D,L} & \textbf{A} \\
+    \bottomrule
+  \end{tabular}
+\end{table*}
+
+We organize prior work into five areas: LLM-guided code optimization,
+LLM-guided prompt and reasoning optimization, evolutionary and metaheuristic
+methods with LLMs, agent memory and self-reflection, and statistical rigor
+in machine learning evaluation.
+For each, we identify what the approach contributes and where \textsc{anneal}
+differs or extends it.
+
+\subsection{LLM-Guided Code Optimization}
+
+The premise that LLMs trained on code can serve as plausible mutation
+operators traces to early demonstrations that such models can produce
+functionally correct edits from natural-language
+instructions~\cite{chen2021codex}.
+Recent work has built on this by coupling LLM proposal with automated
+evaluators that close the loop from edit to signal.
+
+\paragraph{AlphaEvolve.}
+Novikov et al.~\cite{novikov2025alphaevolve} use an ensemble of LLMs within an
+evolutionary framework to discover algorithms for mathematical and computational
+problems.
+AlphaEvolve operates on code functions, using an island-based population model
+with a database of programs ranked by fitness.
+The system achieved state-of-the-art results on problems ranging from matrix
+multiplication to bin packing.
+\textsc{anneal} shares the evolutionary search intuition---population-based
+strategies and island migration are available search modes---but differs in three
+respects.
+First, \textsc{anneal} is domain-agnostic: it optimizes any text artifact, not
+only code functions, by decoupling mutation from evaluation through a shell
+command or LLM-judge interface.
+Second, \textsc{anneal} applies statistical hypothesis testing (Wilcoxon
+signed-rank with Holm--Bonferroni correction) rather than best-score selection,
+which is critical when evaluation is stochastic.
+Third, \textsc{anneal} accumulates structured knowledge across experiments via
+episodic memory and cross-target learning pools, whereas AlphaEvolve relies on
+the program database as implicit memory.
+
+\paragraph{FunSearch.}
+Romera-Paredes et al.~\cite{romera2024funsearch} pair an LLM with an automated
+evaluator to search for novel mathematical functions, discovering new solutions
+to the cap set problem and online bin packing.
+FunSearch uses a best-shot selection strategy: the LLM generates many
+candidates, and the evaluator retains only the top-scoring outputs.
+This approach is effective when evaluation is cheap and deterministic but does
+not extend to stochastic evaluation, where a single score comparison is
+insufficient to distinguish signal from noise.
+\textsc{anneal} supports the same deterministic pipeline---generate, evaluate,
+keep the best---but adds paired statistical testing for stochastic settings,
+structured search strategies beyond best-shot, and a knowledge system that
+retains lessons from failed experiments rather than discarding them.
+
+\paragraph{Eureka.}
+Ma et al.~\cite{ma2023eureka} use LLMs as open-ended writers of reward
+functions for reinforcement learning in simulated robotics, iterating on
+the generated Python reward code against a deterministic task-success signal.
+Eureka demonstrates that LLMs can propose targeted edits to executable
+objective functions and that an outer loop over reward candidates improves
+downstream RL agent performance.
+The underlying loop---generate candidate code, evaluate via a deterministic
+metric, keep the best---is structurally similar to the deterministic branch
+of \textsc{anneal}'s evaluation pipeline; the difference is that Eureka
+is tightly scoped to reward-function synthesis for RL, while \textsc{anneal}
+is an artifact-agnostic framework whose evaluation function is user-defined.
+
+\subsection{LLM-Guided Prompt and Reasoning Optimization}
+
+Prompt optimization has generated a rich body of work, driven by the sensitivity
+of LLM performance to prompt wording.
+We review the most relevant systems.
+
+\paragraph{Promptbreeder.}
+Fernando et al.~\cite{fernando2024promptbreeder} evolve both task prompts and
+the mutation operators that generate them, creating a self-referential
+improvement loop.
+Promptbreeder's key insight is that the space of mutation operators is itself
+amenable to LLM-guided search.
+\textsc{anneal} captures a related idea through its strategy manifest, which
+decomposes the mutation approach into named components and evolves the weakest
+component when progress stalls, and through the policy agent, which continuously
+rewrites mutation instructions based on failure patterns.
+Unlike Promptbreeder, \textsc{anneal} applies statistical testing to accept/reject
+decisions and provides multiple search strategies rather than relying on a single
+evolutionary scheme.
+
+\paragraph{DSPy.}
+Khattab et al.~\cite{khattab2024dspy} introduce a programming framework that
+compiles declarative language model pipelines into optimized prompts and
+fine-tuning data.
+DSPy's optimizers (BootstrapFewShot, MIPRO) search over demonstrations and
+instructions using teleprompter abstractions.
+DSPy focuses on prompt pipeline compilation rather than general artifact
+optimization, and its optimizers compare candidates by aggregate score without
+hypothesis testing.
+\textsc{anneal} addresses a broader scope---any text artifact with any evaluation
+function---and uses the Wilcoxon test to control false-positive acceptance when
+scores are noisy.
+
+\paragraph{EvoPrompt.}
+Guo et al.~\cite{guo2023evoprompt} apply discrete evolutionary operators
+(genetic algorithm and differential evolution) to prompt optimization, treating
+prompts as individuals in a population.
+EvoPrompt demonstrates that evolutionary search outperforms greedy prompt
+editing on several benchmarks.
+\textsc{anneal} offers population-based search as one of several strategies and
+adds Thompson Sampling~\cite{thompson1933likelihood} to adaptively select among
+strategies, rather than committing to a single evolutionary algorithm.
+
+\paragraph{OPRO.}
+Yang et al.~\cite{yang2024opro} frame prompt optimization as an optimization
+problem where an LLM generates new prompts given a history of (prompt, score)
+pairs.
+OPRO relies on the LLM's in-context learning to identify improving directions
+from the optimization trajectory.
+\textsc{anneal} similarly provides experiment history as context but structures
+this history through episodic memory with per-criterion feedback, failure
+taxonomy classification, and lineage tracking---rather than presenting raw
+(prompt, score) tuples.
+
+\paragraph{APE.}
+Zhou et al.~\cite{zhou2023ape} automate prompt engineering by generating
+candidate instructions, scoring them, and selecting the best.
+APE uses a generate-and-filter approach without iterative refinement beyond
+resampling.
+\textsc{anneal} extends this with iterative mutation guided by structured
+feedback from prior experiments and statistical testing for candidate comparison.
+
+\paragraph{ProTeGi.}
+Pryzant et al.~\cite{pryzant2023protegi} use textual gradients---natural
+language descriptions of how to improve a prompt, generated by an LLM given
+input-output error pairs---to guide prompt optimization.
+The gradient metaphor provides directional feedback absent in random mutation.
+\textsc{anneal}'s two-phase mutation pipeline serves a similar function: a
+diagnosis step identifies the weakest evaluation criteria and their root causes
+before a targeted mutation step generates edits, providing structured direction
+without requiring the gradient abstraction.
+ProTeGi operates greedily; \textsc{anneal} provides multiple search strategies
+and statistical acceptance criteria.
+
+\paragraph{TextGrad.}
+Y\"uksekgonul et al.~\cite{yuksekgonul2024textgrad} formalize the textual
+gradient metaphor as a differentiable-style computation graph in which LLMs
+propagate natural-language feedback backward from a scalar loss through
+composed components.
+TextGrad extends ProTeGi's textual-gradient intuition to multi-component
+pipelines, treating each component's feedback as an analogue of a gradient
+update.
+\textsc{anneal}'s diagnosis--mutation split is complementary: where TextGrad
+generalizes gradient propagation through a computation graph, \textsc{anneal}
+operates on a single artifact but adds statistical acceptance testing on top
+of the resulting edits, ensuring that textual-gradient-style updates are not
+accepted when they fall within evaluation noise.
+
+\paragraph{Self-Refine.}
+Madaan et al.~\cite{madaan2023selfrefine} introduce a canonical iterative
+refinement loop in which a single LLM generates an output, critiques it, and
+revises it without any external training signal, showing consistent
+improvements across reasoning, code, and generation tasks.
+Self-Refine establishes that iterative self-critique is valuable even when
+the critic and generator are the same model.
+\textsc{anneal} generalizes this loop in two directions: the critic is an
+external evaluator rather than the LLM itself (removing the self-grading
+bias), and the accept/reject decision is made by a statistical test on
+paired evaluations rather than by the LLM's own judgment of whether a
+revision is an improvement.
+
+\paragraph{Tree of Thoughts.}
+Yao et al.~\cite{yao2023tot} frame reasoning-time problem solving as
+deliberate search over a tree of intermediate reasoning states, using
+breadth-first or depth-first traversal with LLM-scored node evaluation.
+Tree of Thoughts operates at reasoning time within a single model call,
+producing a search over thought trajectories.
+\textsc{anneal} operates at the outer loop instead---search over artifact
+states across many model calls---but shares the intuition that structured
+search over a model's proposals outperforms greedy single-shot generation
+once the solution space has meaningful local optima.
+
+\subsection{Evolutionary and Metaheuristic Methods with LLMs}
+
+\paragraph{MAP-Elites.}
+Mouret and Clune~\cite{mouret2015mapelites} introduce MAP-Elites, a
+quality-diversity algorithm that maintains an archive of solutions spanning
+a discretized behavioral space, keeping the highest-performing solution per
+cell.
+\textsc{anneal} incorporates a MAP-Elites archive as part of its knowledge
+system, maintaining best solutions per behavioral region to preserve diversity
+and enable the agent to draw on qualitatively different past solutions.
+
+\paragraph{Thompson Sampling.}
+Thompson Sampling~\cite{thompson1933likelihood} is a Bayesian approach to the
+multi-armed bandit problem: sample from the posterior distribution of each arm's
+reward and select the arm with the highest sample.
+Chapelle and Li~\cite{chapelle2011empirical} provide an empirical evaluation
+demonstrating its effectiveness relative to UCB and $\epsilon$-greedy
+strategies.
+\textsc{anneal} uses Thompson Sampling as a meta-strategy to select among search
+algorithms (greedy, simulated annealing, population-based) based on each
+algorithm's observed performance during the optimization run, treating strategy
+selection as a contextual bandit problem with Beta-distributed priors updated
+after each experiment.
+
+\paragraph{Simulated annealing.}
+Kirkpatrick et al.~\cite{kirkpatrick1983sa} introduced simulated annealing,
+which accepts worse solutions with a probability that decreases as a temperature
+parameter cools.
+\textsc{anneal} implements simulated annealing with adaptive cooling and reheat:
+when the acceptance ratio drops below a target threshold, the temperature
+increases to restore exploration, preventing premature convergence.
+
+\paragraph{Evolution through Large Models (ELM).}
+Lehman et al.~\cite{lehman2023elm} propose using LLMs as the mutation operator
+in a genetic algorithm, replacing hand-crafted mutation rules with
+LLM-proposed edits to a seed program.
+ELM establishes that LLM-as-mutation-operator is a viable alternative to
+symbolic mutation in evolutionary program search.
+\textsc{anneal} adopts the same proposal mechanism (LLM-generated edits to
+a seed artifact) but places it inside a decision layer that applies
+statistical acceptance rather than fitness-based selection, and generalizes
+the target from programs to any text artifact.
+
+\paragraph{LLaMEA.}
+van Stein and B\"ack~\cite{vanstein2024llamea} present an LLM-driven
+evolutionary algorithm for automatically generating metaheuristics,
+applying LLM mutation operators to metaheuristic code and evaluating the
+resulting algorithms on benchmark suites.
+LLaMEA demonstrates that the LLM-as-mutation approach scales from
+code-synthesis tasks to the generation of optimization algorithms
+themselves.
+\textsc{anneal} targets a different level: rather than generating new
+metaheuristics, it composes existing metaheuristic strategies (greedy,
+simulated annealing, population, Thompson Sampling meta-selection) into
+a decision layer over LLM-generated artifact edits.
+
+\subsection{Agent Memory and Self-Reflection}
+
+A parallel line of work focuses on memory architectures that let LLM
+agents accumulate knowledge across interactions, trials, or episodes.
+These systems are relevant to \textsc{anneal}'s episodic memory and
+cross-target learning pool.
+
+\paragraph{Reflexion.}
+Shinn et al.~\cite{shinn2023reflexion} equip LLM agents with verbal
+self-reflection: after each trial, the agent produces a natural-language
+critique of its own failure, which is appended to the context window for
+subsequent trials.
+Reflexion shows substantial gains on decision-making and reasoning
+benchmarks from this lightweight memory mechanism.
+\textsc{anneal}'s episodic memory carries a similar intuition---past
+experiment outcomes inform future mutations---but extends it along two
+axes: lessons are structured (\texttt{what\_changed},
+\texttt{transferable\_insight}, \texttt{domain\_tags}) rather than
+free-form critiques, and retrieval is similarity-based (TF-IDF or sentence
+embeddings) rather than simply appending the full history.
+This lets the agent see only the past experiments relevant to its current
+hypothesis, rather than the entire trajectory.
+
+\paragraph{Voyager.}
+Wang et al.~\cite{wang2023voyager} build an open-ended Minecraft agent
+whose central component is an incrementally-constructed skill library: as
+the agent solves tasks, it abstracts working solutions into reusable
+skills that are retrieved by semantic similarity for future tasks.
+The skill library serves as a persistent memory that survives across
+episodes.
+\textsc{anneal}'s learning pool plays an analogous role for optimization
+experiments: each kept mutation contributes a \texttt{Learning} to a
+pool that is retrieved for new experiments on the same target or related
+targets, with decay-adjusted impact and domain-aware relevance filtering.
+
+\paragraph{MemGPT.}
+Packer et al.~\cite{packer2023memgpt} introduce a hierarchical memory
+architecture that treats the LLM's context window as managed working
+memory with explicit paging to and from long-term storage.
+MemGPT establishes that deliberate memory hierarchy---what to keep in
+context, what to swap out, how to retrieve---is itself a system-design
+problem rather than a property of the model.
+\textsc{anneal} adopts a similar stance for experiment history: the
+context-assembly layer decides which past experiments to inject into the
+mutation agent's prompt based on recency, similarity, and a cold-start
+policy, rather than naively including the full experiment log.
+
+\subsection{Statistical Rigor in ML Evaluation}
+
+\paragraph{Hypothesis testing for NLP.}
+Dror et al.~\cite{dror2018hitchhiker} survey statistical significance testing
+in NLP and recommend the Wilcoxon signed-rank test for paired comparisons of
+system outputs, noting that parametric tests (paired $t$-test) assume normality
+that NLP metrics rarely satisfy.
+\textsc{anneal} implements this recommendation directly: stochastic evaluations
+produce paired score vectors (challenger and baseline evaluated on the same
+inputs), and the Wilcoxon signed-rank test~\cite{wilcoxon1945individual}
+determines whether the observed differences are statistically significant.
+When fewer than six paired samples are available, \textsc{anneal} falls back to
+a Cohen's $d$ effect-size threshold, requiring at least a medium effect
+($d > 0.5$) for acceptance.
+
+\paragraph{Statistical power and variance in ML benchmarks.}
+Card et al.~\cite{card2020power} analyze the statistical power of common
+NLP benchmarks and find that many published comparisons are underpowered,
+with effect sizes small enough that reported significant differences may
+not replicate.
+Bouthillier et al.~\cite{bouthillier2021variance} complement this analysis
+by showing that variance in machine-learning benchmark results is
+substantial and comes from multiple sources (data order, initialization,
+hardware non-determinism), and propose that ML evaluation should report
+paired variance estimates rather than single-run numbers.
+These findings motivate \textsc{anneal}'s paired-seed evaluation protocol
+and its use of variance-aware statistical tests at the accept/reject
+boundary of every experiment, rather than only at a single final
+comparison.
+
+\paragraph{Multiple comparison correction.}
+Holm~\cite{holm1979simple} proposes a sequentially rejective procedure that
+controls the family-wise error rate without the conservatism of the Bonferroni
+correction.
+In \textsc{anneal}, each experiment within a consolidation window constitutes a
+hypothesis test; the Holm--Bonferroni adjustment divides the significance level
+$\alpha$ by the number of remaining comparisons in the window, reducing the
+false-positive rate for sequential testing.
+We validate the magnitude of this reduction on a synthetic null distribution in
+\cref{sec:gate-false-positives}.
+
+\paragraph{Bootstrap confidence intervals.}
+Efron and Tibshirani~\cite{efron1994bootstrap} introduce the bootstrap as a
+general-purpose resampling method for estimating the sampling distribution
+of a statistic.
+\textsc{anneal} uses the bias-corrected and accelerated (BCa) bootstrap with
+10{,}000 resamples to produce confidence intervals on Cohen's $d$
+(\cref{sec:stat-design}) and on aggregate stochastic-evaluation scores
+(\cref{sec:eval-pipeline}), with deterministic seeding derived from the
+score vector so that bootstrap results are reproducible across runs.
+
+\paragraph{Bradley--Terry scoring and LLM-as-judge calibration.}
+Bradley and Terry~\cite{bradley1952rank} propose a paired-comparison model where
+each item has a latent strength parameter estimated from pairwise win/loss data.
+\textsc{anneal} uses Bradley--Terry scoring with position-bias cancellation to
+calibrate its LLM judge: when the number of evaluation votes is two or more,
+half are presented with criteria in forward order and half in reverse, and the
+resulting win rates are combined to estimate calibrated quality scores that
+cancel the position bias inherent in LLM evaluation~\cite{zheng2023judging}.
+This position-bias concern is well-established in recent LLM-as-judge
+work: Liu et al.~\cite{liu2023geval} report that GPT-4 as a judge shows
+measurable order effects and prompt sensitivity, and that calibration via
+chain-of-thought and probability-weighted scoring yields better alignment
+with human judgments than raw preference counts.
+\textsc{anneal}'s Bradley--Terry aggregator is the mechanism-level
+counterpart: rather than trusting raw vote counts, it computes a latent
+strength parameter under the paired-comparison model, which is more
+robust to the position-bias and binary-threshold artefacts that raw
+counting inherits.

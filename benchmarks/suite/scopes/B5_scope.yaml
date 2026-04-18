@@ -1,0 +1,8 @@
+editable:
+  - benchmarks/suite/artifacts/B5_technical_readme.md
+
+immutable:
+  - scope.yaml
+  - metrics.yaml
+  - eval_criteria.toml
+  - benchmarks/suite/configs/B5_documentation_quality.toml

@@ -1,0 +1,40 @@
+% !TEX root = ../main.tex
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented \textsc{anneal}, a domain-agnostic framework that brings
+statistical decision theory to the accept/reject boundary of iterative
+LLM-guided artifact optimization.
+The system operates on the minimal abstraction of an (Artifact, Eval, Agent)
+triplet: given any measurable artifact and an evaluation function, an LLM
+agent generates informed mutations, the engine evaluates them under
+statistical rigor, and a search strategy decides whether to accept or
+revert each change.
+Every experiment is git-committed, scope-enforced, and logged.
+
+The framework's three technical contributions---statistical acceptance
+under stochastic evaluation, adaptive metaheuristic search, and structured
+episodic knowledge retrieval---are each validated as an independent
+mechanism in \cref{sec:results}.
+Holm--Bonferroni correction reduces false-positive acceptance by 86\% under
+a synthetic null distribution (\cref{sec:gate-false-positives}), adaptive
+simulated annealing yields a 19.1\% improvement over fixed cooling on the
+3D Rastrigin function (\cref{sec:gate-sa}), and TF-IDF retrieval achieves
+$1.55\times$ the precision of Jaccard similarity on a controlled corpus
+(\cref{sec:gate-retrieval}).
+These mechanism-level results are supported by two architectural
+contributions---git-native isolation with scope enforcement, and a
+domain-agnostic artifact--evaluation interface---that realize the framework
+as a production-grade system rather than a research prototype.
+
+A full end-to-end empirical comparison of the four configurations across
+the five-target benchmark suite is left to future work.
+The benchmark harness, targets, and analysis pipeline ship as part of the
+open-source distribution to enable independent replication, and the trimmed
+mechanism-level validation presented here is intended as a controlled
+substitute for that comparison until it can be run at the scale the
+experimental design (\cref{sec:stat-design}) specifies.
+
+\textsc{anneal} is available under the Apache-2.0 license at
+\url{https://github.com/Mathews-Tom/anneal} and as the \texttt{anneal-cli}
+package on PyPI.

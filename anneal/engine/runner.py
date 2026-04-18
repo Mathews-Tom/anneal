@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import random
+import shutil
 import threading
 import time
 import uuid
@@ -21,7 +22,7 @@ from typing import Literal
 
 from anneal.engine.agent import AgentInvocationError, AgentInvoker, AgentTimeoutError
 from anneal.engine.context import build_restart_context, build_target_context
-from anneal.engine.environment import FileBackupEnvironment, GitEnvironment
+from anneal.engine.environment import FileBackupEnvironment, GitEnvironment, GitError
 from anneal.engine.eval import EvalEngine, EvalError, run_verifiers
 from anneal.engine.eval_cache import EvalCache
 from anneal.engine.knowledge import KnowledgeStore, extract_lesson
@@ -67,7 +68,7 @@ from anneal.engine.types import (
 
 logger = logging.getLogger(__name__)
 
-DIVERGENCE_WARNING = 0.10   # 10%
+DIVERGENCE_WARNING = 0.10  # 10%
 DIVERGENCE_CRITICAL = 0.25  # 25%
 KNOWLEDGE_ACTIVATION_THRESHOLD = 20
 
@@ -76,8 +77,16 @@ class ExperimentContext:
     """Groups the co-traveling state threaded through pipeline stages."""
 
     __slots__ = (
-        "experiment_id", "target", "worktree", "pre_sha", "start_time",
-        "cost_usd", "hypothesis", "hypothesis_source", "tags", "backup_id",
+        "experiment_id",
+        "target",
+        "worktree",
+        "pre_sha",
+        "start_time",
+        "cost_usd",
+        "hypothesis",
+        "hypothesis_source",
+        "tags",
+        "backup_id",
     )
 
     def __init__(
@@ -131,13 +140,15 @@ class RunLoopState:
         """Persist loop state to JSON file."""
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            json.dumps({
-                "consecutive_failures": self.consecutive_failures,
-                "kept_count": self.kept_count,
-                "consecutive_no_kept": self.consecutive_no_kept,
-                "total_experiments": self.total_experiments,
-                "cumulative_cost_usd": self.cumulative_cost_usd,
-            }),
+            json.dumps(
+                {
+                    "consecutive_failures": self.consecutive_failures,
+                    "kept_count": self.kept_count,
+                    "consecutive_no_kept": self.consecutive_no_kept,
+                    "total_experiments": self.total_experiments,
+                    "cumulative_cost_usd": self.cumulative_cost_usd,
+                }
+            ),
             encoding="utf-8",
         )
 
@@ -262,7 +273,9 @@ class ExperimentRunner:
             case "pareto":
                 return ParetoSearch()
             case _:
-                logger.warning("Unknown strategy '%s', falling back to greedy", strategy_name)
+                logger.warning(
+                    "Unknown strategy '%s', falling back to greedy", strategy_name
+                )
                 return GreedySearch()
 
     # ------------------------------------------------------------------
@@ -296,10 +309,13 @@ class ExperimentRunner:
         backup_id: str | None = None
         if target.in_place:
             if target.id not in self._backup_envs:
-                backup_dir = Path(target.worktree_path) / ".anneal" / "backups" / target.id
+                backup_dir = (
+                    Path(target.worktree_path) / ".anneal" / "backups" / target.id
+                )
                 self._backup_envs[target.id] = FileBackupEnvironment(backup_dir)
             backup_id = await self._backup_envs[target.id].backup(
-                target.artifact_paths, worktree,
+                target.artifact_paths,
+                worktree,
             )
 
         # 1. Record pre-experiment state and verify scope integrity
@@ -326,19 +342,24 @@ class ExperimentRunner:
                 await self._git.checkout(worktree, parent_sha)
                 pre_sha = parent_sha
                 artifact_content = self._read_artifacts(worktree, target.artifact_paths)
-                logger.info("Tree search selected parent %s for %s", parent_sha[:8], target.id)
+                logger.info(
+                    "Tree search selected parent %s for %s", parent_sha[:8], target.id
+                )
 
         # 2. Build prompt with optional knowledge context
         # Check for restart: roll against restart_probability
         is_restart = False
         effective_restart_p = target.restart_probability
-        if effective_restart_p > 0 and isinstance(self._search, SimulatedAnnealingSearch):
+        if effective_restart_p > 0 and isinstance(
+            self._search, SimulatedAnnealingSearch
+        ):
             effective_restart_p *= self._search.temperature_ratio
         if effective_restart_p > 0 and random.random() < effective_restart_p:
             is_restart = True
             logger.info(
                 "Restart triggered for %s (effective_p=%.4f)",
-                target.id, effective_restart_p,
+                target.id,
+                effective_restart_p,
             )
 
         if is_restart:
@@ -354,14 +375,16 @@ class ExperimentRunner:
             inject_knowledge = target.inject_knowledge_context
             if not inject_knowledge and self._knowledge:
                 kept_total = sum(
-                    1 for r in self._knowledge.load_records()
+                    1
+                    for r in self._knowledge.load_records()
                     if r.outcome is Outcome.KEPT
                 )
                 if kept_total >= KNOWLEDGE_ACTIVATION_THRESHOLD:
                     inject_knowledge = True
                     logger.info(
                         "Auto-enabling knowledge context for %s (%d KEPT experiments)",
-                        target.id, kept_total,
+                        target.id,
+                        kept_total,
                     )
 
             history = []
@@ -399,15 +422,21 @@ class ExperimentRunner:
             )
             try:
                 simplify_result = await self._agent.invoke(
-                    target.agent_config, simplify_prompt, worktree,
+                    target.agent_config,
+                    simplify_prompt,
+                    worktree,
                     target.time_budget_seconds,
                 )
                 if simplify_result.success and target.eval_config.verifiers:
-                    verifier_results = await run_verifiers(worktree, target.eval_config.verifiers)
+                    verifier_results = await run_verifiers(
+                        worktree, target.eval_config.verifiers
+                    )
                     if not all(passed for _, passed, _ in verifier_results):
                         if not target.in_place:
                             await self._git.reset_hard(worktree, pre_sha)
-                        logger.info("Simplification pre-pass reverted (verifier failure)")
+                        logger.info(
+                            "Simplification pre-pass reverted (verifier failure)"
+                        )
                     else:
                         logger.info("Simplification pre-pass accepted")
             except Exception as exc:
@@ -453,14 +482,22 @@ class ExperimentRunner:
         if n_drafts > 1 and target.agent_config.mode == "claude_code":
             # Multi-draft path: generate N drafts, verify each, select best
             drafts = await self._agent.generate_drafts(
-                target.agent_config, prompt, worktree, target.time_budget_seconds,
-                n_drafts=n_drafts, git=self._git,
+                target.agent_config,
+                prompt,
+                worktree,
+                target.time_budget_seconds,
+                n_drafts=n_drafts,
+                git=self._git,
             )
             drafts_generated = len(drafts)
             if not drafts:
                 return _make_early_record(
-                    experiment_id, target, pre_sha, start_time,
-                    Outcome.BLOCKED, failure_mode="all_drafts_failed_generation",
+                    experiment_id,
+                    target,
+                    pre_sha,
+                    start_time,
+                    Outcome.BLOCKED,
+                    failure_mode="all_drafts_failed_generation",
                 )
 
             # Verify each draft: apply diff, run verifiers, reset
@@ -473,7 +510,9 @@ class ExperimentRunner:
                 if not applied:
                     continue
                 if target.eval_config.verifiers:
-                    v_results = await run_verifiers(worktree, target.eval_config.verifiers)
+                    v_results = await run_verifiers(
+                        worktree, target.eval_config.verifiers
+                    )
                     passed = all(v_passed for _, v_passed, _ in v_results)
                     await self._git.reset_hard(worktree, pre_sha)
                     if not passed:
@@ -485,8 +524,12 @@ class ExperimentRunner:
             drafts_survived = len(surviving)
             if not surviving:
                 blocked = _make_early_record(
-                    experiment_id, target, pre_sha, start_time,
-                    Outcome.BLOCKED, failure_mode="all_drafts_failed_verifiers",
+                    experiment_id,
+                    target,
+                    pre_sha,
+                    start_time,
+                    Outcome.BLOCKED,
+                    failure_mode="all_drafts_failed_verifiers",
                     cost_usd=total_cost,
                 )
                 blocked.drafts_generated = drafts_generated
@@ -506,7 +549,12 @@ class ExperimentRunner:
         else:
             # Single-draft path (existing behavior)
             result = await self._invoke_agent(
-                target, worktree, prompt, pre_sha, start_time, experiment_id,
+                target,
+                worktree,
+                prompt,
+                pre_sha,
+                start_time,
+                experiment_id,
             )
             if isinstance(result, ExperimentRecord):
                 return result
@@ -532,14 +580,22 @@ class ExperimentRunner:
             )
             logger.info(
                 "Knowledge ablation for %s: injected=%d records, hypothesis_references_knowledge=%s",
-                target.id, len(history), referenced,
+                target.id,
+                len(history),
+                referenced,
             )
 
         # Build shared context for pipeline stages
         ctx = ExperimentContext(
-            experiment_id, target, worktree, pre_sha, start_time,
-            cost_usd=cost_usd, hypothesis=hypothesis,
-            hypothesis_source=hypothesis_source, tags=tags,
+            experiment_id,
+            target,
+            worktree,
+            pre_sha,
+            start_time,
+            cost_usd=cost_usd,
+            hypothesis=hypothesis,
+            hypothesis_source=hypothesis_source,
+            tags=tags,
             backup_id=backup_id,
         )
 
@@ -554,26 +610,37 @@ class ExperimentRunner:
 
         # 4b. Run verifiers (single-draft only — multi-draft already verified per-draft)
         if n_drafts <= 1 and target.eval_config.verifiers:
-            verifier_results = await run_verifiers(worktree, target.eval_config.verifiers)
+            verifier_results = await run_verifiers(
+                worktree, target.eval_config.verifiers
+            )
             for v_name, v_passed, v_stderr in verifier_results:
                 if not v_passed:
                     await self._git.reset_hard(worktree, pre_sha)
                     logger.warning(
                         "Verifier %s failed for target %s: %s",
-                        v_name, target.id, v_stderr[:200],
+                        v_name,
+                        target.id,
+                        v_stderr[:200],
                     )
                     verifier_record = _make_early_record(
-                        ctx.experiment_id, target, pre_sha, start_time,
-                        Outcome.BLOCKED, hypothesis=ctx.hypothesis,
+                        ctx.experiment_id,
+                        target,
+                        pre_sha,
+                        start_time,
+                        Outcome.BLOCKED,
+                        hypothesis=ctx.hypothesis,
                         hypothesis_source=ctx.hypothesis_source,
-                        tags=ctx.tags, failure_mode=f"verifier:{v_name}",
+                        tags=ctx.tags,
+                        failure_mode=f"verifier:{v_name}",
                         cost_usd=ctx.cost_usd,
                     )
                     if self._knowledge:
                         self._knowledge.append_record(verifier_record)
                         self._knowledge.update_index(verifier_record)
                     if self._learning_pool is not None:
-                        self._learning_pool.add(extract_learning(verifier_record, source_target=target.id))
+                        self._learning_pool.add(
+                            extract_learning(verifier_record, source_target=target.id)
+                        )
                     return verifier_record
 
         # 5. Run pre-checks (constraints + fidelity stages)
@@ -587,7 +654,9 @@ class ExperimentRunner:
         record.drafts_survived = drafts_survived
 
         # Structured lesson extraction — populates learnings with JSON
-        lesson_model = target.agent_config.exploration_model or target.agent_config.model
+        lesson_model = (
+            target.agent_config.exploration_model or target.agent_config.model
+        )
         previous_record = history[-1] if history else None
         try:
             lesson = await extract_lesson(record, previous_record, lesson_model)
@@ -598,9 +667,11 @@ class ExperimentRunner:
                     f"Fix direction: {diagnosis.suggested_direction}. "
                     f"Category: {diagnosis.fix_category}. "
                 )
-                lesson = lesson.model_copy(update={
-                    "what_changed": diagnosis_prefix + lesson.what_changed,
-                })
+                lesson = lesson.model_copy(
+                    update={
+                        "what_changed": diagnosis_prefix + lesson.what_changed,
+                    }
+                )
             record.learnings = lesson.model_dump_json()
         except Exception as exc:
             logger.warning("Lesson extraction failed for %s: %s", target.id, exc)
@@ -640,7 +711,10 @@ class ExperimentRunner:
         try:
             if target.domain_tier is DomainTier.DEPLOYMENT:
                 agent_result = await self._agent.invoke_deployment(
-                    target.agent_config, prompt, worktree, target.time_budget_seconds,
+                    target.agent_config,
+                    prompt,
+                    worktree,
+                    target.time_budget_seconds,
                 )
                 if target.approval_callback is None:
                     raise ValueError(
@@ -649,9 +723,13 @@ class ExperimentRunner:
                     )
                 if not target.approval_callback(agent_result.raw_output):
                     return _make_early_record(
-                        experiment_id, target, pre_sha, start_time,
+                        experiment_id,
+                        target,
+                        pre_sha,
+                        start_time,
                         Outcome.DISCARDED,
-                        hypothesis=agent_result.hypothesis or "Deployment change rejected",
+                        hypothesis=agent_result.hypothesis
+                        or "Deployment change rejected",
                         hypothesis_source=agent_result.hypothesis_source,
                         tags=agent_result.tags,
                         failure_mode="approval_rejected",
@@ -659,19 +737,32 @@ class ExperimentRunner:
                     )
             else:
                 agent_result = await self._agent.invoke(
-                    target.agent_config, prompt, worktree, target.time_budget_seconds,
+                    target.agent_config,
+                    prompt,
+                    worktree,
+                    target.time_budget_seconds,
                 )
         except AgentTimeoutError as exc:
             await self._handle_killed(worktree, pre_sha)
             return _make_early_record(
-                experiment_id, target, pre_sha, start_time,
-                Outcome.KILLED, hypothesis="Agent timed out", failure_mode=str(exc),
+                experiment_id,
+                target,
+                pre_sha,
+                start_time,
+                Outcome.KILLED,
+                hypothesis="Agent timed out",
+                failure_mode=str(exc),
             )
         except AgentInvocationError as exc:
             await self._safe_restore(worktree, pre_sha)
             return _make_early_record(
-                experiment_id, target, pre_sha, start_time,
-                Outcome.CRASHED, hypothesis="Agent invocation failed", failure_mode=str(exc),
+                experiment_id,
+                target,
+                pre_sha,
+                start_time,
+                Outcome.CRASHED,
+                hypothesis="Agent invocation failed",
+                failure_mode=str(exc),
             )
         return agent_result
 
@@ -691,41 +782,66 @@ class ExperimentRunner:
 
         _INTERNAL_FILES = {".anneal-status", ".anneal.lock"}
         git_status = [
-            (code, path) for code, path in await self._git.status_porcelain(ctx.worktree)
+            (code, path)
+            for code, path in await self._git.status_porcelain(ctx.worktree)
             if path not in _INTERNAL_FILES and path not in pre_agent_status
         ]
         scope_result = await enforce_scope(ctx.worktree, scope, git_status)
 
         logger.info(
             "Scope check for %s: status=%s valid=%s violated=%s all_blocked=%s",
-            target.id, git_status, scope_result.valid_paths,
-            scope_result.violated_paths, scope_result.all_blocked,
+            target.id,
+            git_status,
+            scope_result.valid_paths,
+            scope_result.violated_paths,
+            scope_result.all_blocked,
         )
 
         if scope_result.all_blocked:
-            await self._reset_violated(ctx.worktree, scope_result.violated_paths, git_status)
+            await self._reset_violated(
+                ctx.worktree, scope_result.violated_paths, git_status
+            )
             await self._git.clean_untracked(ctx.worktree)
             return _make_early_record(
-                ctx.experiment_id, target, ctx.pre_sha, ctx.start_time,
-                Outcome.BLOCKED, hypothesis=ctx.hypothesis,
+                ctx.experiment_id,
+                target,
+                ctx.pre_sha,
+                ctx.start_time,
+                Outcome.BLOCKED,
+                hypothesis=ctx.hypothesis,
                 hypothesis_source=ctx.hypothesis_source,
-                tags=ctx.tags, failure_mode=f"All changes violated scope: {scope_result.violated_paths}",
+                tags=ctx.tags,
+                failure_mode=f"All changes violated scope: {scope_result.violated_paths}",
                 cost_usd=ctx.cost_usd,
             )
 
         if scope_result.has_violations:
-            await self._reset_violated(ctx.worktree, scope_result.violated_paths, git_status)
-            logger.warning("Scope violations reset for target %s: %s", target.id, scope_result.violated_paths)
+            await self._reset_violated(
+                ctx.worktree, scope_result.violated_paths, git_status
+            )
+            logger.warning(
+                "Scope violations reset for target %s: %s",
+                target.id,
+                scope_result.violated_paths,
+            )
 
         if not scope_result.valid_paths:
             return _make_early_record(
-                ctx.experiment_id, target, ctx.pre_sha, ctx.start_time,
-                Outcome.BLOCKED, hypothesis=ctx.hypothesis,
+                ctx.experiment_id,
+                target,
+                ctx.pre_sha,
+                ctx.start_time,
+                Outcome.BLOCKED,
+                hypothesis=ctx.hypothesis,
                 hypothesis_source=ctx.hypothesis_source,
-                tags=ctx.tags, failure_mode="Agent made no file changes", cost_usd=ctx.cost_usd,
+                tags=ctx.tags,
+                failure_mode="Agent made no file changes",
+                cost_usd=ctx.cost_usd,
             )
 
-        return await self._git.commit(ctx.worktree, f"hypothesis: {ctx.hypothesis}", scope_result.valid_paths)
+        return await self._git.commit(
+            ctx.worktree, f"hypothesis: {ctx.hypothesis}", scope_result.valid_paths
+        )
 
     async def _run_pre_checks(
         self,
@@ -737,21 +853,35 @@ class ExperimentRunner:
         target = ctx.target
         if target.eval_config.constraint_commands:
             fast_results = await self._eval.check_constraints(
-                ctx.worktree, target.eval_config, artifact_content,
+                ctx.worktree,
+                target.eval_config,
+                artifact_content,
             )
             for name, passed, actual in fast_results:
                 if not passed:
                     await self._git.reset_hard(ctx.worktree, ctx.pre_sha)
-                    logger.warning("Fast constraint %s failed for target %s: actual=%.4f", name, target.id, actual)
+                    logger.warning(
+                        "Fast constraint %s failed for target %s: actual=%.4f",
+                        name,
+                        target.id,
+                        actual,
+                    )
                     early_record = _make_early_record(
-                        ctx.experiment_id, target, ctx.pre_sha, ctx.start_time,
-                        Outcome.DISCARDED, hypothesis=ctx.hypothesis,
+                        ctx.experiment_id,
+                        target,
+                        ctx.pre_sha,
+                        ctx.start_time,
+                        Outcome.DISCARDED,
+                        hypothesis=ctx.hypothesis,
                         hypothesis_source=ctx.hypothesis_source,
-                        tags=ctx.tags, failure_mode=f"constraint_violated:{name}",
+                        tags=ctx.tags,
+                        failure_mode=f"constraint_violated:{name}",
                         cost_usd=ctx.cost_usd,
                     )
                     if self._learning_pool is not None:
-                        self._learning_pool.add(extract_learning(early_record, source_target=target.id))
+                        self._learning_pool.add(
+                            extract_learning(early_record, source_target=target.id)
+                        )
                     return early_record
 
         if target.eval_config.fidelity_stages:
@@ -766,7 +896,9 @@ class ExperimentRunner:
                     ),
                 )
                 try:
-                    stage_result = await self._eval.evaluate(ctx.worktree, stage_config, artifact_content)
+                    stage_result = await self._eval.evaluate(
+                        ctx.worktree, stage_config, artifact_content
+                    )
                 except EvalError as exc:
                     logger.warning("Fidelity stage %s failed: %s", stage.name, exc)
                     continue
@@ -780,17 +912,28 @@ class ExperimentRunner:
                     await self._git.reset_hard(ctx.worktree, ctx.pre_sha)
                     logger.info(
                         "Fidelity stage %s rejected mutation for %s: score=%.4f (min=%.4f)",
-                        stage.name, target.id, stage_result.score, stage.min_pass_score,
+                        stage.name,
+                        target.id,
+                        stage_result.score,
+                        stage.min_pass_score,
                     )
                     fidelity_record = _make_early_record(
-                        ctx.experiment_id, target, ctx.pre_sha, ctx.start_time,
-                        Outcome.DISCARDED, hypothesis=ctx.hypothesis,
+                        ctx.experiment_id,
+                        target,
+                        ctx.pre_sha,
+                        ctx.start_time,
+                        Outcome.DISCARDED,
+                        hypothesis=ctx.hypothesis,
                         hypothesis_source=ctx.hypothesis_source,
-                        tags=ctx.tags, failure_mode=f"fidelity_stage:{stage.name}",
-                        cost_usd=ctx.cost_usd, score=stage_result.score,
+                        tags=ctx.tags,
+                        failure_mode=f"fidelity_stage:{stage.name}",
+                        cost_usd=ctx.cost_usd,
+                        score=stage_result.score,
                     )
                     if self._learning_pool is not None:
-                        self._learning_pool.add(extract_learning(fidelity_record, source_target=target.id))
+                        self._learning_pool.add(
+                            extract_learning(fidelity_record, source_target=target.id)
+                        )
                     return fidelity_record
 
         return None
@@ -804,14 +947,22 @@ class ExperimentRunner:
         """Evaluate mutation, decide keep/discard, persist record."""
         target = ctx.target
         try:
-            eval_result = await self._eval.evaluate(ctx.worktree, target.eval_config, artifact_content)
+            eval_result = await self._eval.evaluate(
+                ctx.worktree, target.eval_config, artifact_content
+            )
         except EvalError as exc:
             await self._safe_restore(ctx.worktree, ctx.pre_sha)
             return _make_early_record(
-                ctx.experiment_id, target, ctx.pre_sha, ctx.start_time,
-                Outcome.CRASHED, hypothesis=ctx.hypothesis,
+                ctx.experiment_id,
+                target,
+                ctx.pre_sha,
+                ctx.start_time,
+                Outcome.CRASHED,
+                hypothesis=ctx.hypothesis,
                 hypothesis_source=ctx.hypothesis_source,
-                tags=ctx.tags, failure_mode=str(exc), cost_usd=ctx.cost_usd,
+                tags=ctx.tags,
+                failure_mode=str(exc),
+                cost_usd=ctx.cost_usd,
             )
 
         ctx.cost_usd += eval_result.cost_usd
@@ -822,14 +973,20 @@ class ExperimentRunner:
 
         experiment_index = 0
         if self._knowledge:
-            experiment_index = self._knowledge.record_count() % self._knowledge.CONSOLIDATION_INTERVAL
+            experiment_index = (
+                self._knowledge.record_count() % self._knowledge.CONSOLIDATION_INTERVAL
+            )
 
         if target.eval_config.stochastic is not None and not target.baseline_raw_scores:
-            logger.info("Cold-start for stochastic target %s: accepting first evaluation as baseline", target.id)
+            logger.info(
+                "Cold-start for stochastic target %s: accepting first evaluation as baseline",
+                target.id,
+            )
             keep = True
         else:
             keep = self._search.should_keep(
-                eval_result, target.baseline_score,
+                eval_result,
+                target.baseline_score,
                 target.baseline_raw_scores or None,
                 target.eval_config.direction,
                 target.eval_config.min_improvement_threshold,
@@ -842,15 +999,23 @@ class ExperimentRunner:
         constraint_failure: str | None = None
         if keep:
             constraint_results = await self._eval.check_constraints(
-                ctx.worktree, target.eval_config, artifact_content,
+                ctx.worktree,
+                target.eval_config,
+                artifact_content,
             )
             for name, passed, actual in constraint_results:
                 if not passed:
                     constraint_failure = f"constraint_violated:{name}"
-                    logger.warning("Constraint %s failed for target %s: actual=%.4f", name, target.id, actual)
+                    logger.warning(
+                        "Constraint %s failed for target %s: actual=%.4f",
+                        name,
+                        target.id,
+                        actual,
+                    )
                     break
 
         backup_id = ctx.backup_id
+        pre_experiment_baseline = target.baseline_score
         if keep and constraint_failure is None:
             outcome = Outcome.KEPT
             target.baseline_score = eval_result.score
@@ -865,7 +1030,9 @@ class ExperimentRunner:
             outcome = Outcome.DISCARDED
             if target.in_place and backup_id and target.id in self._backup_envs:
                 await self._backup_envs[target.id].restore(
-                    backup_id, target.artifact_paths, ctx.worktree,
+                    backup_id,
+                    target.artifact_paths,
+                    ctx.worktree,
                 )
                 await self._backup_envs[target.id].cleanup(backup_id)
             else:
@@ -885,7 +1052,7 @@ class ExperimentRunner:
             score_ci_lower=eval_result.ci_lower,
             score_ci_upper=eval_result.ci_upper,
             raw_scores=eval_result.raw_scores,
-            baseline_score=target.baseline_score,
+            baseline_score=pre_experiment_baseline,
             outcome=outcome,
             failure_mode=constraint_failure,
             duration_seconds=time.monotonic() - ctx.start_time,
@@ -910,13 +1077,17 @@ class ExperimentRunner:
                 record.failure_classification = classification
                 record.cost_usd += classify_cost
             except Exception as exc:
-                logger.warning("Failure classification failed for %s: %s", target.id, exc)
+                logger.warning(
+                    "Failure classification failed for %s: %s", target.id, exc
+                )
 
         # Record outcome in tree search and persist
         if isinstance(self._search, UCBTreeSearch):
             self._search.record_outcome(
-                parent_sha=ctx.pre_sha, child_sha=record.git_sha,
-                score=record.score, kept=outcome is Outcome.KEPT,
+                parent_sha=ctx.pre_sha,
+                child_sha=record.git_sha,
+                score=record.score,
+                kept=outcome is Outcome.KEPT,
             )
             tree_path = Path(target.knowledge_path) / "search_tree.json"
             self._search.persist(tree_path)
@@ -946,7 +1117,9 @@ class ExperimentRunner:
         if proc.returncode != 0:
             logger.error(
                 "Eval environment %s failed (exit %d): %s",
-                label, proc.returncode, stderr.decode(errors="replace").strip(),
+                label,
+                proc.returncode,
+                stderr.decode(errors="replace").strip(),
             )
         else:
             logger.info("Eval environment %s completed", label)
@@ -982,8 +1155,14 @@ class ExperimentRunner:
         if loop.total_experiments > 0:
             logger.info(
                 "Restored loop state for %s: %d experiments, %d kept, %d consecutive failures",
-                target.id, loop.total_experiments, loop.kept_count, loop.consecutive_failures,
+                target.id,
+                loop.total_experiments,
+                loop.kept_count,
+                loop.consecutive_failures,
             )
+            # Sync restored cumulative spend to budget cap
+            if target.budget_cap is not None:
+                target.budget_cap.cumulative_usd_spent = loop.cumulative_cost_usd
 
         # Load strategy manifest for component evolution (manifest mode only)
         strategy: StrategyManifest | None = None
@@ -1015,10 +1194,13 @@ class ExperimentRunner:
                     target.id,
                     loop.consecutive_failures,
                 )
-                await self._write_status(target, RunnerState.HALTED, records[-1] if records else None)
+                await self._write_status(
+                    target, RunnerState.HALTED, records[-1] if records else None
+                )
                 if self._notifications:
                     await self._notifications.notify_state(
-                        target.id, RunnerState.HALTED,
+                        target.id,
+                        RunnerState.HALTED,
                         f"{loop.consecutive_failures} consecutive failures",
                         score=target.baseline_score,
                         experiment_count=len(records),
@@ -1027,21 +1209,29 @@ class ExperimentRunner:
 
             # Pre-experiment safety checks
             safe, reason = pre_experiment_check(
-                target, Path(target.worktree_path), context_tokens=0,
+                target,
+                Path(target.worktree_path),
+                context_tokens=0,
             )
             if not safe:
                 logger.warning("Target %s paused: %s", target.id, reason)
-                await self._write_status(target, RunnerState.PAUSED, records[-1] if records else None)
+                await self._write_status(
+                    target, RunnerState.PAUSED, records[-1] if records else None
+                )
                 if self._notifications:
                     await self._notifications.notify_state(
-                        target.id, RunnerState.PAUSED, reason,
+                        target.id,
+                        RunnerState.PAUSED,
+                        reason,
                         score=target.baseline_score,
                         experiment_count=len(records),
                     )
                 break
 
             # Run one experiment
-            await self._write_status(target, RunnerState.RUNNING, records[-1] if records else None)
+            await self._write_status(
+                target, RunnerState.RUNNING, records[-1] if records else None
+            )
             record = await self.run_one(target)
             records.append(record)
 
@@ -1061,6 +1251,11 @@ class ExperimentRunner:
             loop.total_experiments += 1
             loop.cumulative_cost_usd += record.cost_usd
             loop.save(state_path)
+
+            # Sync cumulative spend to budget cap for pre-experiment safety checks
+            if target.budget_cap is not None:
+                target.budget_cap.cumulative_usd_spent = loop.cumulative_cost_usd
+                self._registry.update_target(target)
 
             # Component streak tracking (manifest mode)
             if strategy is not None:
@@ -1085,25 +1280,33 @@ class ExperimentRunner:
                 artifact_content = self._read_artifacts(worktree, target.artifact_paths)
                 try:
                     held_out_result = await self._eval.evaluate_held_out(
-                        worktree, target.eval_config, artifact_content,
+                        worktree,
+                        target.eval_config,
+                        artifact_content,
                     )
                     record.held_out_score = held_out_result.score
                     logger.info(
                         "Held-out eval for %s: score=%.4f (main=%.4f)",
-                        target.id, held_out_result.score, record.score,
+                        target.id,
+                        held_out_result.score,
+                        record.score,
                     )
                     if record.score > 0:
-                        divergence = abs(held_out_result.score - record.score) / record.score
+                        divergence = (
+                            abs(held_out_result.score - record.score) / record.score
+                        )
                         if divergence > DIVERGENCE_CRITICAL:
                             logger.error(
                                 "CRITICAL: Held-out diverges %.0f%% from main for %s. "
                                 "Evaluator may be compromised.",
-                                divergence * 100, target.id,
+                                divergence * 100,
+                                target.id,
                             )
                         elif divergence > DIVERGENCE_WARNING:
                             logger.warning(
                                 "Held-out diverges %.0f%% from main for %s",
-                                divergence * 100, target.id,
+                                divergence * 100,
+                                target.id,
                             )
                 except EvalError as exc:
                     logger.warning("Held-out eval failed for %s: %s", target.id, exc)
@@ -1121,8 +1324,10 @@ class ExperimentRunner:
                     for entry in flagged[:3]:
                         logger.warning(
                             "  hash=%s mean=%.4f std=%.4f n=%d",
-                            entry["content_hash"], entry["mean_score"],
-                            entry["std_dev"], entry["n_evals"],
+                            entry["content_hash"],
+                            entry["mean_score"],
+                            entry["std_dev"],
+                            entry["n_evals"],
                         )
 
             # Policy agent: continuous instruction rewriting
@@ -1132,8 +1337,16 @@ class ExperimentRunner:
                 and self._policy_agent is not None
                 and self._policy_agent.should_rewrite(loop.total_experiments)
             ):
-                recent = self._knowledge.load_records(limit=target.policy_config.lookback_window) if self._knowledge else []
-                failure_dist = FailureTaxonomy.distribution(recent) if self._taxonomy else None
+                recent = (
+                    self._knowledge.load_records(
+                        limit=target.policy_config.lookback_window
+                    )
+                    if self._knowledge
+                    else []
+                )
+                failure_dist = (
+                    FailureTaxonomy.distribution(recent) if self._taxonomy else None
+                )
                 try:
                     _, rewrite_cost = await self._policy_agent.rewrite_instructions(
                         recent_records=recent,
@@ -1145,7 +1358,9 @@ class ExperimentRunner:
                     loop.cumulative_cost_usd += rewrite_cost
                     logger.info(
                         "Policy rewrite #%d: reward=%.4f, cost=$%.4f",
-                        self._policy_agent.rewrite_count, reward, rewrite_cost,
+                        self._policy_agent.rewrite_count,
+                        reward,
+                        rewrite_cost,
                     )
                 except Exception as exc:
                     logger.warning("Policy rewrite failed for %s: %s", target.id, exc)
@@ -1159,11 +1374,13 @@ class ExperimentRunner:
                 and self._knowledge is not None
             ):
                 target_component, evolution_prompt = evolve_weakest_component(
-                    strategy, self._knowledge.load_records(limit=consolidation_interval),
+                    strategy,
+                    self._knowledge.load_records(limit=consolidation_interval),
                 )
                 try:
                     revised_text = await self._agent.invoke_api_text(
-                        target.agent_config, evolution_prompt,
+                        target.agent_config,
+                        evolution_prompt,
                     )
                     if revised_text:
                         target_component.approach = revised_text
@@ -1175,10 +1392,13 @@ class ExperimentRunner:
                         save_strategy(strategy, Path(target.knowledge_path))
                         logger.info(
                             "Component evolution: revised '%s' at experiment %d",
-                            target_component.name, loop.total_experiments,
+                            target_component.name,
+                            loop.total_experiments,
                         )
                 except (AgentInvocationError, AgentTimeoutError) as exc:
-                    logger.warning("Component evolution failed for %s: %s", target.id, exc)
+                    logger.warning(
+                        "Component evolution failed for %s: %s", target.id, exc
+                    )
 
             # Plateau meta-optimization (program_md mode only — manifest mode uses component evolution)
             meta_m = min(target.max_consecutive_failures, 10)
@@ -1190,7 +1410,8 @@ class ExperimentRunner:
             ):
                 logger.info(
                     "Plateau detected for %s (%d consecutive non-KEPT). Triggering meta-optimization.",
-                    target.id, loop.consecutive_no_kept,
+                    target.id,
+                    loop.consecutive_no_kept,
                 )
                 recent_scores = [r.score for r in records[-meta_m:]]
                 trajectory = ", ".join(f"{s:.4f}" for s in recent_scores)
@@ -1201,7 +1422,9 @@ class ExperimentRunner:
                     f"Current baseline: {target.baseline_score:.4f}. "
                     f"Revise the optimization strategy in program.md to break through."
                 )
-                base = self._repo_root if self._repo_root else Path(target.worktree_path)
+                base = (
+                    self._repo_root if self._repo_root else Path(target.worktree_path)
+                )
                 program_md = base / target.knowledge_path / "program.md"
                 if program_md.exists():
                     try:
@@ -1215,7 +1438,9 @@ class ExperimentRunner:
                         logger.info("Meta-optimization completed for %s", target.id)
                         loop.consecutive_no_kept = 0  # Reset plateau counter
                     except (AgentTimeoutError, AgentInvocationError) as exc:
-                        logger.warning("Meta-optimization failed for %s: %s", target.id, exc)
+                        logger.warning(
+                            "Meta-optimization failed for %s: %s", target.id, exc
+                        )
 
             # Research operator: track outcome when hints were active, trigger on plateau
             if self._research_operator is not None:
@@ -1234,10 +1459,13 @@ class ExperimentRunner:
                     and loop.consecutive_no_kept >= meta_m
                     and self._pending_research_hints is None
                 ):
-                    failed_criteria = self._get_recent_failed_criteria(records[-meta_m:])
+                    failed_criteria = self._get_recent_failed_criteria(
+                        records[-meta_m:]
+                    )
                     recent_hypotheses = [r.hypothesis for r in records[-meta_m:]]
                     artifact_summary = self._read_artifacts(
-                        Path(target.worktree_path), target.artifact_paths,
+                        Path(target.worktree_path),
+                        target.artifact_paths,
                     )[:500]
 
                     research_result = await self._research_operator.research(
@@ -1253,11 +1481,15 @@ class ExperimentRunner:
                         loop.cumulative_cost_usd += research_result.cost_usd
                         logger.info(
                             "Research operator: %d suggestions, cost=$%.4f",
-                            len(research_result.suggestions), research_result.cost_usd,
+                            len(research_result.suggestions),
+                            research_result.cost_usd,
                         )
 
             # Island migration: transfer best candidates between islands
-            if isinstance(self._search, IslandPopulationSearch) and self._search.should_migrate():
+            if (
+                isinstance(self._search, IslandPopulationSearch)
+                and self._search.should_migrate()
+            ):
                 migration_count = self._search.migrate(target.eval_config.direction)
                 logger.info("Island migration completed: %d transfers", migration_count)
 
@@ -1268,7 +1500,9 @@ class ExperimentRunner:
             # Milestone notification
             if self._notifications and record.outcome is Outcome.KEPT:
                 await self._notifications.notify_milestone(
-                    target.id, loop.kept_count, record.score,
+                    target.id,
+                    loop.kept_count,
+                    record.score,
                 )
 
             # Update status
@@ -1357,12 +1591,12 @@ class ExperimentRunner:
         git_status: list[tuple[str, str]],
     ) -> None:
         """Reset violated files: checkout tracked files, delete untracked ones."""
-        import shutil
-
         untracked_codes = {"??"}
         status_map = {path: code for code, path in git_status}
 
-        tracked = [p for p in violated_paths if status_map.get(p) not in untracked_codes]
+        tracked = [
+            p for p in violated_paths if status_map.get(p) not in untracked_codes
+        ]
         untracked = [p for p in violated_paths if status_map.get(p) in untracked_codes]
 
         if tracked:
@@ -1375,7 +1609,7 @@ class ExperimentRunner:
                 full.unlink()
 
     async def _handle_killed(self, worktree: Path, pre_experiment_sha: str) -> None:
-        """State-aware KILLED recovery with integrity verification."""
+        """State-aware KILLED recovery with integrity verification and auto-repair."""
         await self._git.cleanup_index_lock(worktree)
         await self._git.reset_hard(worktree, pre_experiment_sha)
         await self._git.clean_untracked(worktree)
@@ -1383,11 +1617,32 @@ class ExperimentRunner:
         # Verify git object integrity
         fsck_ok = await self._git.fsck(worktree)
         if not fsck_ok:
-            logger.error(
-                "Git object database corruption detected in %s after kill recovery. "
-                "Manual repair required: git -C %s fsck --full",
-                worktree, worktree,
+            logger.warning(
+                "Git corruption detected in %s after kill recovery, attempting gc repair",
+                worktree,
             )
+            await self._git.gc_prune(worktree)
+            # Re-verify after gc
+            fsck_ok = await self._git.fsck(worktree)
+
+        if not fsck_ok:
+            # gc wasn't enough — re-create the worktree from the branch
+            repo_root = self._repo_root or worktree.parent.parent.parent
+            target_id = worktree.name
+            logger.warning(
+                "gc repair failed for %s, re-creating worktree from branch",
+                worktree,
+            )
+            try:
+                await self._git.remove_worktree(repo_root, target_id)
+            except GitError:
+                # Worktree may already be in a bad state; force-remove directory
+                if worktree.exists():
+                    shutil.rmtree(worktree)
+                await self._git._run_git(["worktree", "prune"], cwd=repo_root)
+            wt_info = await self._git.create_worktree(repo_root, target_id)
+            await self._git.reset_hard(wt_info.path, pre_experiment_sha)
+            logger.info("Worktree re-created at %s", wt_info.path)
 
     async def _safe_restore(self, worktree: Path, pre_experiment_sha: str) -> None:
         """Restore worktree to pre-experiment state on error."""

@@ -1,0 +1,64 @@
+# B3: Python utility function — execution time optimization.
+# Deterministic eval — minimize execution time in milliseconds.
+
+[meta]
+target_id = "B3"
+domain = "code"
+eval_mode = "deterministic"
+direction = "minimize"
+experiment_budget = 50
+
+[eval]
+run_cmd = "uv run python benchmarks/suite/artifacts/B3_utility_function.py"
+parse_cmd = "uv run python benchmarks/suite/harness/parse_execution_time.py"
+# Metric: execution time in milliseconds (lower is better)
+metric_name = "execution_time_ms"
+time_budget_seconds = 60
+
+# ------------------------------------------------------------------
+# Per-configuration overrides
+# ------------------------------------------------------------------
+
+[configs.raw]
+description = "Raw LLM generation, no anneal optimization"
+search_strategy = "none"
+
+[configs.raw.enhancements]
+strategy_manifest = false
+dual_agent = false
+two_phase = false
+lineage_context = false
+episodic_memory = false
+
+[configs.greedy]
+description = "Anneal with greedy search, no knowledge injection"
+search_strategy = "greedy"
+
+[configs.greedy.enhancements]
+strategy_manifest = false
+dual_agent = false
+two_phase = false
+lineage_context = false
+episodic_memory = false
+
+[configs.control]
+description = "Anneal with default hybrid search and monolithic program.md"
+search_strategy = "hybrid"
+
+[configs.control.enhancements]
+strategy_manifest = false
+dual_agent = false
+two_phase = false
+lineage_context = false
+episodic_memory = false
+
+[configs.treatment]
+description = "Anneal with all enhancements: manifest, dual-agent, two-phase, lineage, episodic memory"
+search_strategy = "hybrid"
+
+[configs.treatment.enhancements]
+strategy_manifest = true
+dual_agent = true
+two_phase = true
+lineage_context = true
+episodic_memory = true

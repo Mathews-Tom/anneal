@@ -52,7 +52,7 @@ _ANNEAL_DIR = _REPO_ROOT / ".anneal"
 # (_load_pricing) or ~/.anneal/pricing.toml before cost tracking is accurate.
 _MUTATION_MODEL = "gpt-5.4"
 _DIAGNOSIS_MODEL = "gpt-5.4-mini"
-_JUDGE_MODEL = "gemini-3-flash-preview"
+_JUDGE_MODEL = "gpt-5.4-nano"
 
 # The four experimental configurations applied to every target.
 BENCHMARK_CONFIGS: list[BenchmarkConfig] = [

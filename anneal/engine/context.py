@@ -15,6 +15,47 @@ from typing import TYPE_CHECKING
 
 from anneal.engine.types import ArtifactError, ExperimentRecord, Outcome, OptimizationTarget
 
+
+def _api_response_format_instruction(target: OptimizationTarget) -> str | None:
+    """Return the API-mode response-format instruction, or None.
+
+    In ``claude_code`` mode the agent edits the worktree via the Edit/Write
+    tools, so the runner detects mutations by reading ``git status``. In
+    ``api`` mode the agent has no such tools and cannot touch the
+    filesystem; the runner must extract the new file content from the
+    chat-completions response text and write it to the artifact path
+    before scope enforcement runs.
+
+    This instruction tells the agent to emit a hypothesis header, a
+    tags header, and a single fenced code block containing the complete
+    new artifact. The runner's ``extract_code_block`` helper parses the
+    block and writes it.
+
+    Returns None for claude_code mode (no instruction needed) and for
+    multi-artifact api targets (the extraction path is single-file only).
+    """
+    if target.agent_config.mode != "api":
+        return None
+    if len(target.artifact_paths) != 1:
+        return None
+    artifact_rel = target.artifact_paths[0]
+    return (
+        "## Response Format (REQUIRED)\n\n"
+        "You have no file-editing tools. Emit your mutation inline using "
+        "exactly this structure:\n\n"
+        "## Hypothesis\n"
+        "<one short sentence describing the mutation>\n\n"
+        "## Tags\n"
+        "<comma-separated tags, optional — may be empty>\n\n"
+        f"## Code ({artifact_rel})\n"
+        "<single fenced code block containing the COMPLETE new file>\n\n"
+        "Rules:\n"
+        "- Emit exactly one fenced code block. No other fenced blocks anywhere.\n"
+        "- The block must contain the full replacement file, not a diff or patch.\n"
+        "- Do not include filename, path, or hypothesis text inside the block.\n"
+        "- Do not add explanations before, between, or after the sections."
+    )
+
 if TYPE_CHECKING:
     from anneal.engine.knowledge import KnowledgeStore
     from anneal.engine.research import ResearchResult
@@ -509,6 +550,16 @@ def build_target_context(
 
     budget.add_slot("artifact", artifact_content, priority=3, required=True)
 
+    # Slot 3b: API-mode response-format directive (only for api mode +
+    # single-artifact targets). Required so the agent emits an applyable
+    # code block instead of free-form prose that the runner cannot route
+    # back into the worktree. See `_api_response_format_instruction`.
+    api_instruction = _api_response_format_instruction(target)
+    if api_instruction is not None:
+        budget.add_slot(
+            "api_response_format", api_instruction, priority=1, required=True,
+        )
+
     # Slot 4: Recent history (last 5 experiment records)
     compression = getattr(target.agent_config, "context_compression", "none")
     history_content = _format_recent_history(history, compression=compression)
@@ -626,6 +677,15 @@ def build_restart_context(
         "system_prompt", program_content + restart_instruction,
         priority=1, required=True,
     )
+
+    # API-mode response-format directive (restart context has no existing
+    # artifact content, so the agent must still produce a complete new
+    # file from the scope definition + watch files alone).
+    api_instruction = _api_response_format_instruction(target)
+    if api_instruction is not None:
+        budget.add_slot(
+            "api_response_format", api_instruction, priority=1, required=True,
+        )
 
     # Slot 2: Scope definition (what files to create/modify)
     scope_path = repo_root / target.scope_path

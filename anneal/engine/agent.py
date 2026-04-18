@@ -60,6 +60,30 @@ def _extract_hypothesis(text: str) -> str | None:
     return None
 
 
+def extract_code_block(text: str) -> str | None:
+    """Extract the content of the longest fenced code block in ``text``.
+
+    API-mode mutations (see ``runner.run_one``) have no file-editing tool,
+    so the agent is prompted to emit the complete replacement artifact
+    inside a single fenced code block. This helper parses that block.
+
+    Accepts both triple-backtick and triple-tilde fences with an optional
+    language hint on the opening line. When multiple blocks are present,
+    returns the longest (agents sometimes include small illustrative
+    blocks before the full replacement). Returns None when no fenced
+    block is found; the caller should treat that as "agent produced no
+    applyable mutation" and let scope enforcement emit a BLOCKED record.
+    """
+    pattern = re.compile(
+        r"^(?P<fence>```|~~~)[^\n]*\n(?P<body>.*?)^(?P=fence)\s*$",
+        re.DOTALL | re.MULTILINE,
+    )
+    matches = [m.group("body") for m in pattern.finditer(text)]
+    if not matches:
+        return None
+    return max(matches, key=len)
+
+
 def _extract_tags(text: str) -> list[str]:
     """Extract comma-separated tags after '## Tags' header."""
     match = re.search(r"## Tags\s*\n(.*?)(?=\n## |\Z)", text, re.DOTALL)

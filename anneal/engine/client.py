@@ -168,6 +168,26 @@ def is_local_model(model: str) -> bool:
     return model.startswith(("ollama/", "lmstudio/", "local/"))
 
 
+# ---------------------------------------------------------------------------
+# Model capability awareness
+# ---------------------------------------------------------------------------
+#
+# Some providers reject chat-completions parameters that other providers
+# accept silently. The gpt-5 family rejects non-1 temperature; some
+# reasoning models require ``max_completion_tokens`` instead of
+# ``max_tokens``; others require an explicit ``reasoning_effort``.
+#
+# Rather than scatter ``if model.startswith(...)`` checks across call sites
+# in agent.py and eval.py, we centralize capability decisions here. Each
+# helper takes the model id and a requested value, returns the value (or
+# absence of it) the model will actually accept. When a new quirk is
+# discovered, add a helper here and call it from the affected call site;
+# do not duplicate the prefix check in agent/eval code.
+#
+# Currently handled: temperature (gpt-5 family coerces to 1.0).
+# ---------------------------------------------------------------------------
+
+
 def effective_temperature(model: str, requested: float) -> float:
     """Return the temperature the model will accept.
 

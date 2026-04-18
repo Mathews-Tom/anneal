@@ -168,6 +168,21 @@ def is_local_model(model: str) -> bool:
     return model.startswith(("ollama/", "lmstudio/", "local/"))
 
 
+def effective_temperature(model: str, requested: float) -> float:
+    """Return the temperature the model will accept.
+
+    The gpt-5 family (``gpt-5``, ``gpt-5-mini``, ``gpt-5-nano``, ``gpt-5.4``,
+    ``gpt-5.4-mini``, ``gpt-5.4-nano``) rejects any value other than 1 with
+    ``BadRequestError: Unsupported value: 'temperature' does not support X
+    with this model. Only the default (1) value is supported``. This helper
+    coerces the requested temperature to 1.0 for those models, preserving
+    the caller's request for every other provider and model family.
+    """
+    if model.startswith("gpt-5"):
+        return 1.0
+    return requested
+
+
 def compute_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     """Compute USD cost from token counts. Returns $0.00 for local models."""
     if is_local_model(model):

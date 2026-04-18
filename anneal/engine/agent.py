@@ -14,7 +14,12 @@ import re
 import signal
 from pathlib import Path
 
-from anneal.engine.client import compute_cost, make_client, strip_provider_prefix
+from anneal.engine.client import (
+    compute_cost,
+    effective_temperature,
+    make_client,
+    strip_provider_prefix,
+)
 from anneal.engine.environment import GitEnvironment
 from anneal.engine.types import (
     AgentConfig,
@@ -248,7 +253,7 @@ class AgentInvoker:
             response = await asyncio.wait_for(
                 client.chat.completions.create(
                     model=api_model,
-                    temperature=config.temperature,
+                    temperature=effective_temperature(config.model, config.temperature),
                     messages=[{"role": "user", "content": prompt}],
                 ),
                 timeout=time_budget_seconds,
@@ -334,7 +339,7 @@ class AgentInvoker:
             response = await asyncio.wait_for(
                 client.chat.completions.create(
                     model=api_model,
-                    temperature=0.3,
+                    temperature=effective_temperature(diagnosis_model, 0.3),
                     response_format={"type": "json_object"},
                     messages=[
                         {"role": "system", "content": DIAGNOSIS_SYSTEM_PROMPT},
@@ -371,7 +376,7 @@ class AgentInvoker:
         try:
             response = await client.chat.completions.create(
                 model=api_model,
-                temperature=0.7,
+                temperature=effective_temperature(config.model, 0.7),
                 messages=[{"role": "user", "content": prompt}],
             )
         except Exception as exc:

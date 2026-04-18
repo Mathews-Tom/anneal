@@ -249,11 +249,15 @@ class TestDeterministicEvaluatorOnce:
         config = _make_det_eval(timeout_seconds=1)
         evaluator = DeterministicEvaluator()
         run_proc = _make_subprocess_mock()
-        run_proc.communicate.side_effect = asyncio.TimeoutError()
+
+        async def _wait_for_timeout(coro: object, timeout: object) -> object:
+            if hasattr(coro, "close"):
+                coro.close()  # type: ignore[union-attr]
+            raise asyncio.TimeoutError()
 
         # Act + Assert
         with patch("anneal.engine.eval.asyncio.create_subprocess_shell", return_value=run_proc) as mock_create:
-            with patch("anneal.engine.eval.asyncio.wait_for", side_effect=asyncio.TimeoutError()):
+            with patch("anneal.engine.eval.asyncio.wait_for", side_effect=_wait_for_timeout):
                 with pytest.raises(EvalError, match="run_command timed out"):
                     await evaluator._evaluate_once(tmp_path, config)
 
@@ -299,7 +303,6 @@ class TestDeterministicEvaluatorOnce:
 
         run_proc = _make_subprocess_mock(returncode=0, stdout=b"raw output", stderr=b"")
         parse_proc = _make_subprocess_mock()
-        parse_proc.communicate.side_effect = asyncio.TimeoutError()
 
         create_calls = 0
 

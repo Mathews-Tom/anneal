@@ -76,6 +76,38 @@ count_lines() {
 ts() { date +%Y-%m-%dT%H:%M:%S%z; }
 
 # --------------------------------------------------------------------------
+# Signal handling
+# --------------------------------------------------------------------------
+#
+# Ctrl-C in the terminal delivers SIGINT to the entire foreground process
+# group, which kills the in-flight `uv run` child with rc=130 and returns
+# control to bash. Without a trap, bash treats that as "this command
+# failed" and proceeds to the next loop iteration — so a single Ctrl-C
+# only kills the current run, not the batch.
+#
+# This trap sets a STOP flag; the loop body checks it after each run and
+# breaks out of all three nested loops when set. A second Ctrl-C bypasses
+# the graceful path and exits immediately, so the operator is never stuck
+# waiting for a stubborn run.
+
+STOP=0
+INTERRUPTED_AT=""
+
+_on_interrupt() {
+  STOP=$(( STOP + 1 ))
+  if (( STOP >= 2 )); then
+    echo
+    echo "[$(ts)] second interrupt received — exiting immediately"
+    exit 130
+  fi
+  echo
+  echo "[$(ts)] interrupt received — stopping after current run completes"
+  echo "[$(ts)] press Ctrl-C again to exit immediately"
+  INTERRUPTED_AT=$(ts)
+}
+trap _on_interrupt INT TERM
+
+# --------------------------------------------------------------------------
 # Orchestration
 # --------------------------------------------------------------------------
 
@@ -124,9 +156,21 @@ for seed in "${SEEDS[@]}"; do
         echo "[$(ts)] [$current/$total] DONE $run_id ($lines records, ${elapsed}s, rc=$rc)"
         completed=$(( completed + 1 ))
       else
-        echo "[$(ts)] [$current/$total] FAIL $run_id (no records, ${elapsed}s, rc=$rc — see $run_log)"
-        failed=$(( failed + 1 ))
-        failed_list+=("$run_id")
+        # rc=130 means the child received SIGINT (likely propagated from
+        # our Ctrl-C). Tag it as interrupted rather than failed so the
+        # post-run summary is honest about what happened.
+        if (( rc == 130 )) || (( STOP )); then
+          echo "[$(ts)] [$current/$total] INTR $run_id (interrupted, ${elapsed}s — partial state in .anneal/targets/${run_id%-seed*})"
+        else
+          echo "[$(ts)] [$current/$total] FAIL $run_id (no records, ${elapsed}s, rc=$rc — see $run_log)"
+          failed=$(( failed + 1 ))
+          failed_list+=("$run_id")
+        fi
+      fi
+
+      if (( STOP )); then
+        echo "[$(ts)] stopping — interrupt requested at $INTERRUPTED_AT"
+        break 3
       fi
     done
   done
@@ -138,10 +182,17 @@ done
 
 echo
 echo "================================================================"
-echo "[$(ts)] session complete"
+if (( STOP )); then
+  echo "[$(ts)] session interrupted (stopped at combination $current/$total)"
+else
+  echo "[$(ts)] session complete"
+fi
 echo "  Completed:              $completed"
 echo "  Skipped (pre-existing): $skipped"
 echo "  Failed:                 $failed"
+if (( STOP )); then
+  echo "  Remaining:              $(( total - current ))"
+fi
 if (( ${#failed_list[@]} > 0 )); then
   echo
   echo "Failed runs (re-run this script to retry):"

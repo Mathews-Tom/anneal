@@ -48,15 +48,22 @@ _ANNEAL_DIR = _REPO_ROOT / ".anneal"
 #                       evaluator_model slot, since the CLI routes both
 #                       through --evaluator-model)
 #
-# Mutation runs through `claude -p` (claude_code mode) so it uses the Claude
-# CLI's login session and never touches ANTHROPIC_API_KEY directly. Diagnosis
-# and judge run over the OpenAI-compatible HTTP shim against Google's Gemini
-# endpoint using GEMINI_API_KEY. This split avoids the OpenAI account whose
-# restricted API key lacks the model.request scope for gpt-5.4 / gpt-5.4-nano.
+# All three roles run over the OpenAI-compatible HTTP shim against Google's
+# Gemini endpoint using GEMINI_API_KEY. The mutation role uses api mode, and
+# the agent's fenced-code-block response is extracted by the runner and
+# written to the artifact path (see extract_code_block in agent.py).
+#
+# Earlier attempts routed mutation through `claude -p` (claude_code mode) to
+# use the Anthropic CLI's login session, but that account's credit balance
+# was depleted mid-session and every Claude model began returning
+# `api_error_status=400 "Credit balance is too low"`. Similarly, the
+# restricted OpenAI account key lost model.request scope for gpt-5.4 /
+# gpt-5.4-nano. Gemini is the only remaining backend the benchmark can use
+# without an admin-controlled credential change.
 #
 # Pricing for all three models must be defined in anneal/engine/client.py
 # (_load_pricing) or ~/.anneal/pricing.toml before cost tracking is accurate.
-_MUTATION_MODEL = "claude-opus-4-7"
+_MUTATION_MODEL = "gemini-3.1-pro-preview"
 _DIAGNOSIS_MODEL = "gemini-3.1-pro-preview"
 _JUDGE_MODEL = "gemini-2.5-flash"
 
@@ -170,7 +177,7 @@ def build_register_command(run: BenchmarkRun) -> list[str]:
     # after registration by _patch_model_config().
     cmd += [
         "--agent-model", _MUTATION_MODEL,
-        "--agent-mode", "claude_code",
+        "--agent-mode", "api",
         "--evaluator-model", _JUDGE_MODEL,
         "--policy-model", _DIAGNOSIS_MODEL,
     ]

@@ -37,6 +37,8 @@ def _load_pricing() -> dict[str, tuple[float, float]]:
     defaults: dict[str, tuple[float, float]] = {
         "gemini-2.5-flash": (0.15, 0.60),
         "gemini-2.5-pro": (1.25, 10.0),
+        "gemini-3.1-pro-preview": (1.25, 10.0),
+        "gemini-3-flash-preview": (0.15, 0.60),
         "gpt-4.1": (2.0, 8.0),
         "gpt-4.1-mini": (0.4, 1.6),
         "gpt-5": (5.0, 20.0),
@@ -46,6 +48,7 @@ def _load_pricing() -> dict[str, tuple[float, float]]:
         "gpt-5.4-nano": (0.2, 0.8),
         "claude-sonnet-4-6": (3.0, 15.0),
         "claude-opus-4-6": (15.0, 75.0),
+        "claude-opus-4-7": (15.0, 75.0),
         "claude-haiku-4-5": (0.8, 4.0),
     }
     if _PRICING_CONFIG_PATH.exists():

@@ -48,11 +48,17 @@ _ANNEAL_DIR = _REPO_ROOT / ".anneal"
 #                       evaluator_model slot, since the CLI routes both
 #                       through --evaluator-model)
 #
+# Mutation runs through `claude -p` (claude_code mode) so it uses the Claude
+# CLI's login session and never touches ANTHROPIC_API_KEY directly. Diagnosis
+# and judge run over the OpenAI-compatible HTTP shim against Google's Gemini
+# endpoint using GEMINI_API_KEY. This split avoids the OpenAI account whose
+# restricted API key lacks the model.request scope for gpt-5.4 / gpt-5.4-nano.
+#
 # Pricing for all three models must be defined in anneal/engine/client.py
 # (_load_pricing) or ~/.anneal/pricing.toml before cost tracking is accurate.
-_MUTATION_MODEL = "gpt-5.4"
-_DIAGNOSIS_MODEL = "gpt-5.4-mini"
-_JUDGE_MODEL = "gpt-5.4-nano"
+_MUTATION_MODEL = "claude-opus-4-7"
+_DIAGNOSIS_MODEL = "gemini-3.1-pro-preview"
+_JUDGE_MODEL = "gemini-2.5-flash"
 
 # The four experimental configurations applied to every target.
 BENCHMARK_CONFIGS: list[BenchmarkConfig] = [
@@ -164,7 +170,7 @@ def build_register_command(run: BenchmarkRun) -> list[str]:
     # after registration by _patch_model_config().
     cmd += [
         "--agent-model", _MUTATION_MODEL,
-        "--agent-mode", "api",
+        "--agent-mode", "claude_code",
         "--evaluator-model", _JUDGE_MODEL,
         "--policy-model", _DIAGNOSIS_MODEL,
     ]

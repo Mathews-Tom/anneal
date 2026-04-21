@@ -191,15 +191,30 @@ def build_register_command(run: BenchmarkRun) -> list[str]:
     return cmd
 
 
-def build_run_command(run: BenchmarkRun) -> list[str]:
+def build_run_command(
+    run: BenchmarkRun, remaining_experiments: int | None = None
+) -> list[str]:
     """Build the anneal run command for a BenchmarkRun.
 
     Returns a list of string tokens suitable for subprocess.run.
     Raw config does not use anneal run; returns an empty list in that case.
     The caller is responsible for handling the empty-list case.
+
+    ``remaining_experiments`` is the number of NEW experiments to run in
+    this invocation. The anneal engine treats ``--experiments N`` as an
+    incremental count within a single process, not an absolute budget, so
+    when resuming a partially-complete target we pass the difference
+    between the target's total budget and the already-completed count.
+    Defaults to ``run.target.experiment_budget`` (full budget) when None.
     """
     if run.config.search_strategy == "none":
         return []
+
+    exp_count = (
+        remaining_experiments
+        if remaining_experiments is not None
+        else run.target.experiment_budget
+    )
 
     cmd: list[str] = [
         "uv",
@@ -209,7 +224,7 @@ def build_run_command(run: BenchmarkRun) -> list[str]:
         "--target",
         run.target_name,
         "--experiments",
-        str(run.target.experiment_budget),
+        str(exp_count),
         "--yes",  # non-interactive: skip cost confirmation prompt
     ]
 
@@ -321,6 +336,86 @@ def _read_experiment_records(target_name: str) -> list[dict[str, object]]:
             continue
         records.append(json.loads(line))
     return records
+
+
+# ---------------------------------------------------------------------------
+# Resume support
+# ---------------------------------------------------------------------------
+#
+# A target's anneal state directory (.anneal/targets/<name>/) holds
+# experiments.jsonl, hypotheses.jsonl, and .loop-state.json. The anneal
+# engine itself supports resume: RunLoopState.load() reads the loop file
+# and continues from the restored total_experiments count. The wrinkle
+# is that a single (target, config) pair in the benchmark is re-used
+# across seeds — .anneal/targets/B3-greedy/ holds seed N's state during
+# N's run, then seed N+1's during N+1's run. We need to distinguish
+# "current seed's interrupted run" (resume) from "prior seed's leftover
+# state" (wipe).
+#
+# A small marker file .benchmark-seed in the target dir records which
+# seed owns the current state. When _execute_run observes
+#   - the marker matches the requested seed AND
+#   - .loop-state.json shows total_experiments in (0, budget)
+# it takes the resume branch: skip deregister/register, and pass only
+# the remaining count to `anneal run --experiments N`.
+
+
+_BENCHMARK_SEED_FILE = ".benchmark-seed"
+
+
+def _read_benchmark_seed_marker(target_name: str) -> int | None:
+    """Return the seed recorded in the per-target marker file, or None."""
+    path = _ANNEAL_DIR / "targets" / target_name / _BENCHMARK_SEED_FILE
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return int(data.get("seed"))
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None
+
+
+def _write_benchmark_seed_marker(target_name: str, seed: int) -> None:
+    """Write the seed marker to .anneal/targets/<name>/.benchmark-seed."""
+    dir_path = _ANNEAL_DIR / "targets" / target_name
+    dir_path.mkdir(parents=True, exist_ok=True)
+    (dir_path / _BENCHMARK_SEED_FILE).write_text(
+        json.dumps({"seed": seed}) + "\n", encoding="utf-8"
+    )
+
+
+def _read_loop_total_experiments(target_name: str) -> int:
+    """Return total_experiments from .loop-state.json, or 0 if absent."""
+    path = _ANNEAL_DIR / "targets" / target_name / ".loop-state.json"
+    if not path.exists():
+        return 0
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return int(data.get("total_experiments", 0))
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return 0
+
+
+def _can_resume(run: BenchmarkRun) -> tuple[bool, int]:
+    """Return (resumable, already_completed) for this run.
+
+    Resumable means:
+      - The per-target seed marker matches the requested seed.
+      - The loop state shows at least one completed experiment.
+      - The completed count is strictly below the target's budget.
+
+    Returns (False, 0) for the raw config (no resume semantics — it just
+    captures the baseline score in a single step).
+    """
+    if run.config.search_strategy == "none":
+        return (False, 0)
+    marker_seed = _read_benchmark_seed_marker(run.target_name)
+    if marker_seed != run.seed:
+        return (False, 0)
+    done = _read_loop_total_experiments(run.target_name)
+    if done <= 0 or done >= run.target.experiment_budget:
+        return (False, 0)
+    return (True, done)
 
 
 def _patch_model_config(target_name: str) -> None:
@@ -448,57 +543,82 @@ def _execute_run(run: BenchmarkRun, dry_run: bool = False) -> dict[str, object]:
             console.print(f"  {format_command(run_cmd)}")
         return {"run_id": run.run_id, "dry_run": True}
 
-    # Step 1: Clean slate — deregister, delete branch, clear state, register fresh.
-    console.print(f"  [cyan]register[/cyan] {run.target_name}")
-    subprocess.run(
-        ["uv", "run", "anneal", "deregister", "--target", run.target_name],
-        cwd=str(_REPO_ROOT),
-        capture_output=True,
-        text=True,
-    )  # ignore errors — target may not exist yet
-    subprocess.run(
-        ["git", "branch", "-D", f"anneal/{run.target_name}"],
-        cwd=str(_REPO_ROOT),
-        capture_output=True,
-        text=True,
-    )  # ignore errors — branch may not exist
-    # Clear stale experiment/hypothesis records from prior runs.
-    # Deregister removes config but leaves knowledge files behind.
-    target_state_dir = _ANNEAL_DIR / "targets" / run.target_name
-    for stale_file in ("experiments.jsonl", "hypotheses.jsonl", ".loop-state.json"):
-        stale_path = target_state_dir / stale_file
-        if stale_path.exists():
-            stale_path.unlink()
-
-    reg_result = subprocess.run(
-        reg_cmd,
-        cwd=str(_REPO_ROOT),
-        capture_output=True,
-        text=True,
-    )
-    if reg_result.returncode != 0:
+    # Resume path: if the per-target .benchmark-seed marker matches this
+    # run's seed and the loop state shows a partial run, skip deregister
+    # and register entirely. The anneal engine loads .loop-state.json and
+    # continues from the restored total_experiments count on the next
+    # `anneal run` invocation, so all we need is to pass the remaining
+    # experiment count (budget minus already-completed).
+    resume_ok, already_done = _can_resume(run)
+    if resume_ok:
+        remaining = run.target.experiment_budget - already_done
         console.print(
-            f"  [red]register failed for {run.run_id}:[/red]\n{reg_result.stderr}"
+            f"  [cyan]resume[/cyan] {run.run_id} from experiment "
+            f"{already_done}/{run.target.experiment_budget} "
+            f"({remaining} remaining)"
         )
-        return {
-            "run_id": run.run_id,
-            "error": f"register failed (rc={reg_result.returncode})",
-            "stderr": reg_result.stderr,
-        }
+        run_cmd = build_run_command(run, remaining_experiments=remaining)
+    else:
+        # Step 1: Clean slate — deregister, delete branch, clear state, register fresh.
+        console.print(f"  [cyan]register[/cyan] {run.target_name}")
+        subprocess.run(
+            ["uv", "run", "anneal", "deregister", "--target", run.target_name],
+            cwd=str(_REPO_ROOT),
+            capture_output=True,
+            text=True,
+        )  # ignore errors — target may not exist yet
+        subprocess.run(
+            ["git", "branch", "-D", f"anneal/{run.target_name}"],
+            cwd=str(_REPO_ROOT),
+            capture_output=True,
+            text=True,
+        )  # ignore errors — branch may not exist
+        # Clear stale experiment/hypothesis records from prior runs.
+        # Deregister removes config but leaves knowledge files behind.
+        target_state_dir = _ANNEAL_DIR / "targets" / run.target_name
+        for stale_file in (
+            "experiments.jsonl",
+            "hypotheses.jsonl",
+            ".loop-state.json",
+            _BENCHMARK_SEED_FILE,
+        ):
+            stale_path = target_state_dir / stale_file
+            if stale_path.exists():
+                stale_path.unlink()
 
-    # Step 1a: Patch the three model slots the CLI does not expose
-    # (exploration_model, diagnosis_model, research_config.model).
-    _patch_model_config(run.target_name)
+        reg_result = subprocess.run(
+            reg_cmd,
+            cwd=str(_REPO_ROOT),
+            capture_output=True,
+            text=True,
+        )
+        if reg_result.returncode != 0:
+            console.print(
+                f"  [red]register failed for {run.run_id}:[/red]\n{reg_result.stderr}"
+            )
+            return {
+                "run_id": run.run_id,
+                "error": f"register failed (rc={reg_result.returncode})",
+                "stderr": reg_result.stderr,
+            }
 
-    # Step 1b: Scrub eval harness files from the worktree so the optimization
-    # agent cannot read the hidden test suite.  The eval commands reference
-    # the main repo's harness via absolute path (see {repo_root} placeholder).
-    worktree_dir = _ANNEAL_DIR / "worktrees" / run.target_name
-    if worktree_dir.is_dir():
-        harness_dir = worktree_dir / "benchmarks" / "suite" / "harness"
-        if harness_dir.is_dir():
-            shutil.rmtree(harness_dir)
-            console.print("    [dim]scrubbed harness from worktree[/dim]")
+        # Step 1a: Patch the three model slots the CLI does not expose
+        # (exploration_model, diagnosis_model, research_config.model).
+        _patch_model_config(run.target_name)
+
+        # Step 1b: Scrub eval harness files from the worktree so the optimization
+        # agent cannot read the hidden test suite.  The eval commands reference
+        # the main repo's harness via absolute path (see {repo_root} placeholder).
+        worktree_dir = _ANNEAL_DIR / "worktrees" / run.target_name
+        if worktree_dir.is_dir():
+            harness_dir = worktree_dir / "benchmarks" / "suite" / "harness"
+            if harness_dir.is_dir():
+                shutil.rmtree(harness_dir)
+                console.print("    [dim]scrubbed harness from worktree[/dim]")
+
+        # Step 1c: Claim this target state for the current seed so a
+        # subsequent interrupted run can detect and resume it.
+        _write_benchmark_seed_marker(run.target_name, run.seed)
 
     # Step 2: Raw baseline — no optimization, just record the baseline score.
     if not run_cmd:

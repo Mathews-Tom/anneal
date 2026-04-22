@@ -220,6 +220,48 @@ class TestRegistryCRUD:
             await registry.deregister_target("ghost")
 
     @pytest.mark.asyncio
+    async def test_deregister_tolerates_missing_worktree(
+        self, initialized_repo: Path, sample_scope_yaml: Path
+    ) -> None:
+        """Deregister must succeed even if the worktree dir was externally removed.
+
+        Regression: previously ``git worktree remove`` raised rc=128
+        ("not a working tree") when the worktree directory had been
+        externally deleted (e.g., by manual ``rm -rf`` during a failed
+        cleanup). That exception aborted ``deregister_target`` before the
+        ``config.toml`` cleanup, leaving a stale registry entry that then
+        blocked any subsequent ``register`` with the same id.
+        """
+        import shutil
+
+        registry = Registry(initialized_repo)
+        target = _make_target()
+        await registry.register_target(target)
+
+        # Simulate externally-removed worktree (e.g., manual `rm -rf` or
+        # a prior crashed cleanup that already wiped the dir).
+        worktree_dir = initialized_repo / ".anneal" / "worktrees" / "test_target"
+        assert worktree_dir.exists(), "worktree should be present after register"
+        shutil.rmtree(worktree_dir)
+
+        # Deregister must succeed despite the missing worktree.
+        await registry.deregister_target("test_target")
+
+        # Registry entry is gone both in memory...
+        assert registry.all_targets() == []
+        with pytest.raises(RegistryError, match="Target not found"):
+            registry.get_target("test_target")
+
+        # ...and persisted to config.toml (so a fresh Registry sees it gone).
+        reloaded = Registry(initialized_repo)
+        assert reloaded.all_targets() == []
+
+        # And a subsequent register with the same id must succeed — this is
+        # the specific failure the bug caused.
+        await reloaded.register_target(_make_target())
+        assert reloaded.get_target("test_target").id == "test_target"
+
+    @pytest.mark.asyncio
     async def test_register_duplicate_raises(
         self, initialized_repo: Path, sample_scope_yaml: Path
     ) -> None:

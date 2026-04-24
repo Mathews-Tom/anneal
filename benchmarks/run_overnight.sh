@@ -27,12 +27,27 @@ set -u  # undefined variables are errors; do NOT use -e (continue on per-run fai
 # Editable scope — adjust to restart, narrow, or extend the run
 # --------------------------------------------------------------------------
 
-# Iteration order: seed → target → config.
-# Leading with deterministic targets (B3, B4) validates the pipeline cheaply
-# before committing stochastic budget on B1/B2/B5.
-TARGETS=(B3 B4 B1 B2 B5)
+# Iteration order: target → seed → config.
+# Per-target seed lists let us extend the seed budget on the strongest-signal
+# targets (B3 and B5) without re-running already-completed cells on the rest
+# (the is_done check would skip them anyway, but the matrix is honest about
+# intent). Targets with new seeds are listed first so the work that actually
+# runs surfaces in the log immediately. Encoded as plain SEEDS_<target>
+# variables and looked up via seeds_for() because macOS ships bash 3.2,
+# which has no associative arrays.
+TARGETS=(B3 B5 B1 B2 B4)
 CONFIGS=(raw greedy control treatment)
-SEEDS=(2 3 4 5)
+SEEDS_B1="2 3 4 5"
+SEEDS_B2="2 3 4 5"
+SEEDS_B3="2 3 4 5 6 7 8 9 10"
+SEEDS_B4="2 3 4 5"
+SEEDS_B5="2 3 4 5 6 7 8 9 10"
+
+seeds_for() {
+  # Echo the space-separated seed list for target $1 via indirect expansion.
+  local var="SEEDS_$1"
+  echo "${!var}"
+}
 
 # --------------------------------------------------------------------------
 # Preflight
@@ -116,15 +131,23 @@ skipped=0
 failed=0
 failed_list=()
 
-total=$(( ${#SEEDS[@]} * ${#TARGETS[@]} * ${#CONFIGS[@]} ))
+total=0
+for _t in "${TARGETS[@]}"; do
+  read -ra _seeds <<< "$(seeds_for "$_t")"
+  total=$(( total + ${#CONFIGS[@]} * ${#_seeds[@]} ))
+done
 current=0
 
 echo "[$(ts)] session start — $total combinations planned"
-echo "[$(ts)] TARGETS=(${TARGETS[*]}) CONFIGS=(${CONFIGS[*]}) SEEDS=(${SEEDS[*]})"
+echo "[$(ts)] TARGETS=(${TARGETS[*]}) CONFIGS=(${CONFIGS[*]})"
+for _t in "${TARGETS[@]}"; do
+  echo "[$(ts)]   $_t SEEDS=($(seeds_for "$_t"))"
+done
 echo
 
-for seed in "${SEEDS[@]}"; do
-  for target in "${TARGETS[@]}"; do
+for target in "${TARGETS[@]}"; do
+  read -ra _seeds_for_target <<< "$(seeds_for "$target")"
+  for seed in "${_seeds_for_target[@]}"; do
     for config in "${CONFIGS[@]}"; do
       current=$(( current + 1 ))
       run_id="${target}-${config}-seed${seed}"

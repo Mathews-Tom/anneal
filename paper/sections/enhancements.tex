@@ -155,14 +155,16 @@ Maximum cache size is configurable (default 200 entries) with LRU eviction.
 \begin{table*}[t]
 \centering
 \caption{Summary of enhancements by track, mechanism, and benefit. The
-\emph{Val} column marks mechanism-level validation in \cref{sec:results}:
+\emph{Val} column marks isolated mechanism validation in \cref{sec:results}:
 $\checkmark$ indicates the component is one of the three mechanisms tested
-against an analytically known ground truth; a dash indicates the component
-is argued from design and awaits end-to-end empirical validation as future
-work.}
+against an analytically known ground truth (\cref{sec:gate-false-positives,sec:gate-sa,sec:gate-retrieval});
+a dash indicates the component is argued from design and contributes to the
+end-to-end comparison in \cref{sec:end-to-end} as part of the treatment
+configuration's enhancement bundle.}
 \label{tab:enhancements}
-\small
-\begin{tabular}{@{}lllp{5.0cm}c@{}}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}p{2.4cm}p{1.7cm}p{4.5cm}p{6.0cm}c@{}}
 \toprule
 \textbf{Name} & \textbf{Track} & \textbf{Mechanism} & \textbf{Benefit} & \textbf{Val} \\
 \midrule
@@ -172,7 +174,7 @@ Dual-Agent Mutation & Search & Thompson Sampling over Beta-Binomial arms & Adapt
 Two-Phase Mutation & Search & Diagnosis step before mutation & Focuses mutations on weakest criteria and root cause & --- \\
 Simulated Annealing & Search & $\exp(\Delta/T)$ acceptance with adaptive reheat & Escapes local optima; reheat prevents premature convergence & $\checkmark$ \\
 Island Population & Search & $N$ independent populations with migration & Maintains diversity; best individuals propagate across islands & --- \\
-Episodic Memory (TF-IDF retrieval) & Knowledge & Structured Lesson extraction + TF-IDF / sentence-embedding similarity retrieval & Avoids repeating failed approaches; transfers successful patterns; retrieval precision validated in \cref{sec:gate-retrieval} & $\checkmark$ \\
+Episodic Memory (TF-IDF) & Knowledge & Structured Lesson extraction + TF-IDF / sentence-embedding retrieval & Avoids repeating failed approaches; transfers successful patterns; retrieval precision validated in \cref{sec:gate-retrieval} & $\checkmark$ \\
 Lineage Context & Knowledge & Causal chain of accepted mutations & Agent understands how current artifact state was reached & --- \\
 Research Operator & Knowledge & External knowledge injection on plateau & Breaks out of exploration dead ends & --- \\
 Cross-Domain Transfer & Knowledge & Learning pool with decay and domain penalties & Transfers insights across targets and projects & --- \\

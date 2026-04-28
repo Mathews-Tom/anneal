@@ -45,11 +45,13 @@ LLM outputs are nondeterministic: the same prompt produces different mutations a
 We control for this by pairing runs by random seed across configurations and using nonparametric statistical tests that do not assume distributional form.
 API pricing variability (model version updates, rate limit throttling) introduces noise into cost measurements; we mitigate this by recording per-token usage and applying fixed pricing tables rather than relying on billing-reported costs.
 
-\paragraph{Empirical scope.}
-The three gate benchmarks in \cref{sec:results} validate the statistical acceptance, adaptive search, and retrieval mechanisms on synthetic tasks with analytically known ground truth, not on end-to-end optimization runs of the full framework against its baselines across the five-target benchmark suite described in \cref{sec:benchmark-suite}.
-A full multi-seed empirical comparison would require a computational and API budget outside the scope of this submission and is left to future work.
-This limits the strength of any claim that the specific magnitude of improvement observed on each mechanism-level gate translates into the same magnitude at the system level, though the gates are designed to isolate the exact effect that each subsystem contributes to the full loop.
-In particular, the domain-agnostic design claim in \cref{sec:introduction} rests on the architecture of the artifact--evaluation--agent triplet (\cref{sec:triplet}) rather than on empirical evidence across domains: the three gate benchmarks establish that the statistical, search, and retrieval subsystems behave as specified, but not that the framework composes into end-to-end optimization improvements across heterogeneous domains.
+\paragraph{Empirical scope and statistical power.}
+The end-to-end comparison in \cref{sec:end-to-end} runs at $n = 5$ paired seeds per target across five targets.
+At this seed count the Wilcoxon signed-rank test has a two-sided $p$-value floor of $0.0625$, so no comparison can reach the conventional $\alpha = 0.05$ threshold per-target without ties or unusual sign patterns, and after Holm--Bonferroni correction across five targets the bar rises further still.
+The directional pattern across targets (treatment beats control on 5/5 targets, treatment beats greedy on 5/5 targets) and the Cohen's-large effect sizes on the two near-significant greedy-versus-treatment comparisons (B3, $d = -1.09$; B5, $d = 1.35$) together indicate that the seed count, not the magnitude of the underlying effect, is the binding constraint on whether systemic claims clear the corrected threshold.
+A higher-powered replication---larger $n$ per target, or a study restricted to one or two targets that does not pay the five-target multiplicity tax---would resolve whether the directional advantage of the full treatment configuration translates into a statistically defensible claim.
+We have intentionally not run such a replication at this stage because the seed-counted result with its honest non-significance is more informative than a cherry-picked single-target study would be: it illustrates exactly the conservatism the framework's statistical-acceptance layer is designed to enforce.
+The domain-agnostic design claim in \cref{sec:introduction} continues to rest primarily on the architecture of the artifact--evaluation--agent triplet (\cref{sec:triplet}); the suite spans prompts, code, and documentation, but five targets cannot establish that the framework composes into improvements across the broader space of text-artifact optimization problems.
 
 \paragraph{External validity.}
 The five benchmark targets that ship with the framework are themselves a simplification of real-world optimization problems.
@@ -63,8 +65,21 @@ Vague criteria (e.g., ``is the output high quality?'') produce noisy scores that
 The benchmark targets ship with criteria that are phrased as concrete yes/no questions with explicit acceptance conditions, and the position-bias cancellation and Bradley--Terry scoring described in \cref{sec:eval-pipeline} further reduce judge-level artefacts.
 This investment in criterion design is itself a limitation: in practice, users may not invest equivalent effort, leading to lower optimization effectiveness than the benchmark design suggests.
 
+\paragraph{Proxy gaming and rubric-facing optimization.}
+The architectural separation in \cref{sec:triplet}---immutable eval definitions, an agent that never sees the eval command, scope enforcement that blocks edits to scoring code---prevents the agent from modifying the evaluation function itself.
+It does not prevent the agent from optimizing the evaluation function as it is written.
+On stochastic-eval targets, an agent can learn to produce artifacts that score well on the rubric criteria as phrased even when the produced artifact does not match the rubric's intent: rubric-facing language that satisfies a binary keyword check, formatting choices that satisfy a structural criterion without addressing the underlying quality the criterion is meant to proxy, or coverage of all listed cases without depth on any of them.
+On deterministic-eval targets, an agent can overfit to the test fixtures: passing the specific inputs the harness exercises while degrading on inputs the harness does not exercise.
+The framework's defense against these failure modes is external to the optimization loop---held-out divergence detection (\cref{sec:eval-pipeline}) flags artifacts whose held-out and primary-set scores diverge---but the user remains responsible for designing rubrics and harnesses where the proxy is closely aligned with the intent.
+Where alignment is weak, the framework will optimize the proxy, not the intent.
+
 \subsection{Future Work}
 \label{sec:future-work}
+
+\paragraph{Higher-powered empirical replication.}
+The seed-counted end-to-end study in \cref{sec:end-to-end} establishes a consistent directional advantage of the treatment configuration over both control and greedy across the suite, but does not clear the multiplicity-corrected significance threshold at $n = 5$.
+The two strongest greedy-versus-treatment comparisons (B3, B5) sit at the Wilcoxon two-sided $p$-value floor for $n = 5$, indicating that the binding constraint is statistical power rather than effect magnitude.
+A replication at higher seed counts on a smaller subset of targets would resolve whether the directional advantage translates into a statistically defensible claim.
 
 \paragraph{Multi-artifact optimization.}
 Extending the mutation scope to coordinated changes across multiple files---e.g., modifying a function signature and all its call sites simultaneously---would enable structural refactoring that single-file mutations cannot achieve.

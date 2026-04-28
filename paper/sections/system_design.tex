@@ -25,7 +25,7 @@ This design makes the engine domain-agnostic: adding a new optimization target r
 
 A central design requirement is that the optimization loop never touches the user's working tree. \textsc{anneal} achieves this through git worktrees (ADR-001). Each registered target receives a dedicated worktree at \texttt{.anneal/worktrees/<target-id>} on a branch named \texttt{anneal/<target-id>}. The \texttt{GitEnvironment} class (\texttt{anneal/engine/environment.py}) manages all worktree lifecycle operations: creation with stale-reference pruning, commit, reset, diff capture, and removal.
 
-The experiment cycle within the worktree proceeds as follows:
+The experiment cycle within the worktree proceeds as follows; \cref{alg:experiment-loop} gives the full pseudocode.
 
 \begin{enumerate}
     \item Record the HEAD SHA before the agent runs (\texttt{pre\_sha}).
@@ -35,6 +35,38 @@ The experiment cycle within the worktree proceeds as follows:
     \item On \textsc{kept}: the commit persists on the \texttt{anneal/<target-id>} branch.
     \item On \textsc{discarded}/\textsc{blocked}: \texttt{git reset -{}-hard <pre\_sha>} restores the worktree to its pre-experiment state.
 \end{enumerate}
+
+\begin{algorithm}[t]
+\caption{Core Experiment Loop (\texttt{ExperimentRunner.run\_one})}\label{alg:experiment-loop}
+\begin{algorithmic}[1]
+\Require Target $\mathcal{T} = (\text{artifact}, \text{eval}, \text{agent})$, worktree $W$, search strategy $\mathcal{S}$
+\State $\textit{sha}_{\text{pre}} \gets \Call{RevParse}{W, \text{HEAD}}$
+\State \Call{VerifyScopeHash}{$\mathcal{T}$.\textit{scope\_path}, $\mathcal{T}$.\textit{scope\_hash}}
+\State $\textit{prompt} \gets \Call{BuildContext}{\mathcal{T}, W, \textit{history}}$ \Comment{knowledge + lineage + research hints}
+\If{$\mathcal{T}$.\textit{two\_phase\_mutation}}
+    \State $\textit{diagnosis} \gets \Call{Diagnose}{\textit{artifact}, \textit{last\_eval}, \textit{history}}$
+    \State $\textit{prompt} \gets \textit{diagnosis} \mathbin\Vert \textit{prompt}$
+\EndIf
+\State $\textit{mutation} \gets \Call{InvokeAgent}{\mathcal{T}.\textit{agent}, \textit{prompt}, W}$
+\State $\textit{violations} \gets \Call{EnforceScope}{W, \mathcal{T}.\textit{scope}}$
+\If{$\textit{violations}.\textit{all\_blocked}$}
+    \State \Call{ResetHard}{$W, \textit{sha}_{\text{pre}}$}
+    \State \Return \textsc{blocked}
+\EndIf
+\State $\textit{sha}_{\text{post}} \gets \Call{Commit}{W, \textit{valid\_paths}}$
+\If{$\mathcal{T}$.\textit{verifiers} $\neq \emptyset$}
+    \State \textbf{if} $\lnot$\Call{RunVerifiers}{$W, \mathcal{T}.\textit{verifiers}$} \textbf{then} \Call{ResetHard}{$W, \textit{sha}_{\text{pre}}$}; \Return \textsc{blocked}
+\EndIf
+\State $\textit{result} \gets \Call{Evaluate}{W, \mathcal{T}.\textit{eval}}$
+\If{$\mathcal{S}$.\Call{ShouldKeep}{\textit{result}, $\mathcal{T}$.\textit{baseline}}}
+    \State Update $\mathcal{T}$.\textit{baseline} $\gets$ \textit{result}.\textit{score}
+    \State \Return \textsc{kept}
+\Else
+    \State \Call{ResetHard}{$W, \textit{sha}_{\text{pre}}$}
+    \State \Return \textsc{discarded}
+\EndIf
+\end{algorithmic}
+\end{algorithm}
 
 The system never uses \texttt{git stash}. The only snapshot and restore mechanism is commit and hard reset. Every accepted mutation is a real git commit, making the full optimization history inspectable with standard git tooling. Garbage collection is configured to retain unreachable commits (\texttt{gc.reflogExpire=never}), preserving the complete experiment lineage.
 
@@ -102,37 +134,3 @@ Held-out divergence detection runs stochastic evaluation against a separate set 
     \label{fig:architecture}
 \end{figure}
 
-% ------------------------------------------------------------------
-% Core experiment loop pseudocode
-% ------------------------------------------------------------------
-\begin{algorithm}[t]
-\caption{Core Experiment Loop (\texttt{ExperimentRunner.run\_one})}\label{alg:experiment-loop}
-\begin{algorithmic}[1]
-\Require Target $\mathcal{T} = (\text{artifact}, \text{eval}, \text{agent})$, worktree $W$, search strategy $\mathcal{S}$
-\State $\textit{sha}_{\text{pre}} \gets \Call{RevParse}{W, \text{HEAD}}$
-\State \Call{VerifyScopeHash}{$\mathcal{T}$.\textit{scope\_path}, $\mathcal{T}$.\textit{scope\_hash}}
-\State $\textit{prompt} \gets \Call{BuildContext}{\mathcal{T}, W, \textit{history}}$ \Comment{knowledge + lineage + research hints}
-\If{$\mathcal{T}$.\textit{two\_phase\_mutation}}
-    \State $\textit{diagnosis} \gets \Call{Diagnose}{\textit{artifact}, \textit{last\_eval}, \textit{history}}$
-    \State $\textit{prompt} \gets \textit{diagnosis} \mathbin\Vert \textit{prompt}$
-\EndIf
-\State $\textit{mutation} \gets \Call{InvokeAgent}{\mathcal{T}.\textit{agent}, \textit{prompt}, W}$
-\State $\textit{violations} \gets \Call{EnforceScope}{W, \mathcal{T}.\textit{scope}}$
-\If{$\textit{violations}.\textit{all\_blocked}$}
-    \State \Call{ResetHard}{$W, \textit{sha}_{\text{pre}}$}
-    \State \Return \textsc{blocked}
-\EndIf
-\State $\textit{sha}_{\text{post}} \gets \Call{Commit}{W, \textit{valid\_paths}}$
-\If{$\mathcal{T}$.\textit{verifiers} $\neq \emptyset$}
-    \State \textbf{if} $\lnot$\Call{RunVerifiers}{$W, \mathcal{T}.\textit{verifiers}$} \textbf{then} \Call{ResetHard}{$W, \textit{sha}_{\text{pre}}$}; \Return \textsc{blocked}
-\EndIf
-\State $\textit{result} \gets \Call{Evaluate}{W, \mathcal{T}.\textit{eval}}$
-\If{$\mathcal{S}$.\Call{ShouldKeep}{\textit{result}, $\mathcal{T}$.\textit{baseline}}}
-    \State Update $\mathcal{T}$.\textit{baseline} $\gets$ \textit{result}.\textit{score}
-    \State \Return \textsc{kept}
-\Else
-    \State \Call{ResetHard}{$W, \textit{sha}_{\text{pre}}$}
-    \State \Return \textsc{discarded}
-\EndIf
-\end{algorithmic}
-\end{algorithm}

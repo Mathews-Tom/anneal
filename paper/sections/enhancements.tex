@@ -155,14 +155,16 @@ Maximum cache size is configurable (default 200 entries) with LRU eviction.
 \begin{table*}[t]
 \centering
 \caption{Summary of enhancements by track, mechanism, and benefit. The
-\emph{Val} column marks mechanism-level validation in \cref{sec:results}:
+\emph{Val} column marks isolated mechanism validation in \cref{sec:results}:
 $\checkmark$ indicates the component is one of the three mechanisms tested
-against an analytically known ground truth; a dash indicates the component
-is argued from design and awaits end-to-end empirical validation as future
-work.}
+against an analytically known ground truth (\cref{sec:gate-false-positives,sec:gate-sa,sec:gate-retrieval});
+a dash indicates the component is argued from design and contributes to the
+end-to-end comparison in \cref{sec:end-to-end} as part of the treatment
+configuration's enhancement bundle.}
 \label{tab:enhancements}
-\small
-\begin{tabular}{@{}lllp{5.0cm}c@{}}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}p{2.4cm}p{1.7cm}p{4.5cm}p{6.0cm}c@{}}
 \toprule
 \textbf{Name} & \textbf{Track} & \textbf{Mechanism} & \textbf{Benefit} & \textbf{Val} \\
 \midrule
@@ -172,13 +174,56 @@ Dual-Agent Mutation & Search & Thompson Sampling over Beta-Binomial arms & Adapt
 Two-Phase Mutation & Search & Diagnosis step before mutation & Focuses mutations on weakest criteria and root cause & --- \\
 Simulated Annealing & Search & $\exp(\Delta/T)$ acceptance with adaptive reheat & Escapes local optima; reheat prevents premature convergence & $\checkmark$ \\
 Island Population & Search & $N$ independent populations with migration & Maintains diversity; best individuals propagate across islands & --- \\
-Episodic Memory & Knowledge & Structured Lesson extraction + similarity retrieval & Avoids repeating failed approaches; transfers successful patterns & $\checkmark$ \\
+Episodic Memory (TF-IDF) & Knowledge & Structured Lesson extraction + TF-IDF / sentence-embedding retrieval & Avoids repeating failed approaches; transfers successful patterns; retrieval precision validated in \cref{sec:gate-retrieval} & $\checkmark$ \\
 Lineage Context & Knowledge & Causal chain of accepted mutations & Agent understands how current artifact state was reached & --- \\
 Research Operator & Knowledge & External knowledge injection on plateau & Breaks out of exploration dead ends & --- \\
 Cross-Domain Transfer & Knowledge & Learning pool with decay and domain penalties & Transfers insights across targets and projects & --- \\
 Adaptive Sampling & Evaluation & Cohen's $d$ early-stop / extend & Reduces cost on clear experiments; increases power on marginal ones & --- \\
 Drift Detection & Evaluation & Sliding-window variance comparison & Detects evaluator degradation before it corrupts optimization & --- \\
 Eval Caching & Evaluation & Content-addressed LRU cache & Eliminates redundant evaluation of identical artifacts & --- \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+% ==================================================================
+\subsection{Default Hyperparameters}\label{sec:hyperparameters}
+
+\Cref{tab:hyperparameters} consolidates the default values for every configurable hyperparameter introduced in \cref{sec:system-design,sec:enhancements}, together with the component each parameter belongs to and a one-line rationale.
+Values are the defaults shipped with the engine; every entry is overridable per-target via the corresponding configuration class (e.g.\ \texttt{SearchConfig}, \texttt{LearningPoolConfig}, \texttt{StochasticEval}).
+
+\begin{table*}[t]
+\centering
+\caption{Default hyperparameters across components. Values listed are the engine-shipped defaults; the corresponding configuration class for each component allows per-target override.}
+\label{tab:hyperparameters}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Parameter} & \textbf{Component} & \textbf{Default} & \textbf{Rationale} \\
+\midrule
+$\alpha$ (significance level)         & Statistical Comparison (\cref{sec:stat-comparison}) & $0.05$ & Standard threshold for paired Wilcoxon test \\
+\texttt{window\_size}                 & Holm--Bonferroni window (\cref{sec:stat-comparison}) & $50$ experiments & Matches consolidation cadence (\cref{sec:episodic-memory}) \\
+Divergence warning threshold          & Held-out divergence (\cref{sec:stat-comparison}) & $10\%$ & Mild overfitting alert \\
+Divergence critical threshold         & Held-out divergence (\cref{sec:stat-comparison}) & $25\%$ & Hard overfitting alert \\
+\texttt{cooling\_rate}                & Simulated Annealing (\cref{sec:simulated-annealing}) & $0.95$ & Geometric temperature decay per experiment \\
+\texttt{min\_temperature}             & Simulated Annealing (\cref{sec:simulated-annealing}) & $0.01$ & Floor to keep $\exp(\Delta/T)$ well-defined \\
+\texttt{acceptance\_target}           & Adaptive Reheat (\cref{sec:simulated-annealing}) & $0.3$ & Reheat fires when ratio drops below half this value \\
+\texttt{reheat\_factor}               & Adaptive Reheat (\cref{sec:simulated-annealing}) & $2.0$ & Temperature multiplier on stall, capped at $T_0$ \\
+Greedy phase length                   & Hybrid Search (\cref{sec:simulated-annealing}) & $10$ experiments & Establish baseline before annealing \\
+\texttt{migration\_interval}          & Island Population (\cref{sec:island-search}) & $10$ experiments & Round-robin best-individual migration cadence \\
+Lineage depth $d$                     & Lineage Context (\cref{sec:lineage}) & $5$ & Last $d$ accepted ancestors injected into prompt \\
+\texttt{max\_budget\_usd}             & Research Operator (\cref{sec:research-operator}) & \$$0.50$ & Per-call budget cap on plateau-recovery LLM call \\
+\texttt{max\_suggestions}             & Research Operator (\cref{sec:research-operator}) & $3$ & Novel mutation directions returned per invocation \\
+\texttt{disable\_after\_failures}     & Research Operator (\cref{sec:research-operator}) & $3$ & Auto-disable after consecutive unhelpful suggestions \\
+$\lambda$ (decay rate)                & Learning Pool (\cref{sec:learning-pool}) & $0.05$ / day & Exponential time decay on learning impact \\
+\texttt{domain\_penalty}              & Learning Pool (\cref{sec:learning-pool}) & $0.5$ & Cross-domain weight; same-domain transfer prioritized \\
+\texttt{max\_size}                    & Learning Pool (\cref{sec:learning-pool}) & $1000$ & Lowest-impact eviction when exceeded \\
+\texttt{early\_stop\_effect\_size}    & Adaptive Sampling (\cref{sec:adaptive-sampling}) & $1.0$ & Cohen's $d$ above which evaluation terminates early \\
+\texttt{extend\_effect\_size}         & Adaptive Sampling (\cref{sec:adaptive-sampling}) & $0.3$ & Cohen's $d$ below which sampling extends \\
+Sample ceiling                        & Adaptive Sampling (\cref{sec:adaptive-sampling}) & $1.5 \times$ \texttt{sample\_count} & Hard cap on extension \\
+Drift variance threshold              & Drift Detection (\cref{sec:drift-detection}) & $0.1$ & Per-criterion variance flag \\
+Drift variance ratio                  & Drift Detection (\cref{sec:drift-detection}) & $2\times$ & Half-window variance increase flag \\
+\texttt{EvalCache} max entries        & Eval Caching (\cref{sec:eval-cache}) & $200$ & LRU bound \\
+Score-history std flag                & Eval Caching (\cref{sec:eval-cache}) & $0.1$ & Cross-run consistency outlier flag \\
 \bottomrule
 \end{tabular}
 \end{table*}

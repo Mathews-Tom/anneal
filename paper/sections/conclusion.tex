@@ -25,15 +25,26 @@ $1.55\times$ the precision of Jaccard similarity on a controlled corpus
 These mechanism-level results are supported by two architectural
 contributions---git-native isolation with scope enforcement, and a
 domain-agnostic artifact--evaluation interface---that realize the framework
-as a production-grade system rather than a research prototype.
+as an integrated, reproducible research artifact.
 
-A full end-to-end empirical comparison of the four configurations across
-the five-target benchmark suite is left to future work.
-The benchmark harness, targets, and analysis pipeline ship as part of the
-open-source distribution to enable independent replication, and the trimmed
-mechanism-level validation presented here is intended as a controlled
-substitute for that comparison until it can be run at the scale the
-experimental design (\cref{sec:stat-design}) specifies.
+The end-to-end study of \cref{sec:end-to-end} runs four nested configurations
+(raw, greedy, control, treatment) on the five-target benchmark suite at
+$n = 5$ paired seeds.
+The full treatment configuration produces a directional improvement on
+final-score over the same engine without enhancement tracks on every target,
+ranging from $+3.5\%$ to $+44.5\%$, at cost largely comparable to control.
+After Holm--Bonferroni correction across the five-target family, no
+treatment-versus-control or treatment-versus-greedy comparison reaches
+significance at the seed count run; the two strongest greedy-versus-treatment
+effects (B3 and B5) sit at the Wilcoxon two-sided floor of $p = 0.0625$ before
+correction, indicating where a higher-powered replication would push the
+result.
+The benchmark harness, targets, analysis pipeline, and raw per-seed result
+files ship as part of the open-source distribution to enable independent
+replication and extension.
+The highest-priority extensions are higher-powered replications resolving
+the open near-significant comparisons and multi-artifact coordinated
+mutations that lift the current single-file scope (\cref{sec:future-work}).
 
 \textsc{anneal} is available under the Apache-2.0 license at
 \url{https://github.com/Mathews-Tom/anneal} and as the \texttt{anneal-cli}

@@ -14,7 +14,12 @@ import re
 import signal
 from pathlib import Path
 
-from anneal.engine.client import compute_cost, make_client, strip_provider_prefix
+from anneal.engine.client import (
+    compute_cost,
+    effective_temperature,
+    make_client,
+    strip_provider_prefix,
+)
 from anneal.engine.environment import GitEnvironment
 from anneal.engine.types import (
     AgentConfig,
@@ -53,6 +58,30 @@ def _extract_hypothesis(text: str) -> str | None:
         content = match.group(1).strip()
         return content if content else None
     return None
+
+
+def extract_code_block(text: str) -> str | None:
+    """Extract the content of the longest fenced code block in ``text``.
+
+    API-mode mutations (see ``runner.run_one``) have no file-editing tool,
+    so the agent is prompted to emit the complete replacement artifact
+    inside a single fenced code block. This helper parses that block.
+
+    Accepts both triple-backtick and triple-tilde fences with an optional
+    language hint on the opening line. When multiple blocks are present,
+    returns the longest (agents sometimes include small illustrative
+    blocks before the full replacement). Returns None when no fenced
+    block is found; the caller should treat that as "agent produced no
+    applyable mutation" and let scope enforcement emit a BLOCKED record.
+    """
+    pattern = re.compile(
+        r"^(?P<fence>```|~~~)[^\n]*\n(?P<body>.*?)^(?P=fence)\s*$",
+        re.DOTALL | re.MULTILINE,
+    )
+    matches = [m.group("body") for m in pattern.finditer(text)]
+    if not matches:
+        return None
+    return max(matches, key=len)
 
 
 def _extract_tags(text: str) -> list[str]:
@@ -248,7 +277,7 @@ class AgentInvoker:
             response = await asyncio.wait_for(
                 client.chat.completions.create(
                     model=api_model,
-                    temperature=config.temperature,
+                    temperature=effective_temperature(config.model, config.temperature),
                     messages=[{"role": "user", "content": prompt}],
                 ),
                 timeout=time_budget_seconds,
@@ -334,7 +363,7 @@ class AgentInvoker:
             response = await asyncio.wait_for(
                 client.chat.completions.create(
                     model=api_model,
-                    temperature=0.3,
+                    temperature=effective_temperature(diagnosis_model, 0.3),
                     response_format={"type": "json_object"},
                     messages=[
                         {"role": "system", "content": DIAGNOSIS_SYSTEM_PROMPT},
@@ -371,7 +400,7 @@ class AgentInvoker:
         try:
             response = await client.chat.completions.create(
                 model=api_model,
-                temperature=0.7,
+                temperature=effective_temperature(config.model, 0.7),
                 messages=[{"role": "user", "content": prompt}],
             )
         except Exception as exc:

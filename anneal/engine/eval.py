@@ -12,7 +12,12 @@ import numpy as np
 import openai
 
 from anneal.engine.agent import AgentInvoker
-from anneal.engine.client import compute_cost, make_client, strip_provider_prefix
+from anneal.engine.client import (
+    compute_cost,
+    effective_temperature,
+    make_client,
+    strip_provider_prefix,
+)
 from anneal.engine.eval_cache import EvalCache
 from anneal.engine.types import (
     AgentConfig,
@@ -563,7 +568,7 @@ class StochasticEvaluator:
             async with _API_SEMAPHORE:
                 response = await client.chat.completions.create(
                     model=model,
-                    temperature=config.temperature,
+                    temperature=effective_temperature(config.model, config.temperature),
                     messages=[
                         {
                             "role": "system",

@@ -37,13 +37,18 @@ def _load_pricing() -> dict[str, tuple[float, float]]:
     defaults: dict[str, tuple[float, float]] = {
         "gemini-2.5-flash": (0.15, 0.60),
         "gemini-2.5-pro": (1.25, 10.0),
+        "gemini-3.1-pro-preview": (1.25, 10.0),
+        "gemini-3-flash-preview": (0.15, 0.60),
         "gpt-4.1": (2.0, 8.0),
         "gpt-4.1-mini": (0.4, 1.6),
         "gpt-5": (5.0, 20.0),
         "gpt-5-mini": (1.0, 4.0),
+        "gpt-5.4": (5.0, 20.0),
         "gpt-5.4-mini": (1.0, 4.0),
+        "gpt-5.4-nano": (0.2, 0.8),
         "claude-sonnet-4-6": (3.0, 15.0),
         "claude-opus-4-6": (15.0, 75.0),
+        "claude-opus-4-7": (15.0, 75.0),
         "claude-haiku-4-5": (0.8, 4.0),
     }
     if _PRICING_CONFIG_PATH.exists():
@@ -164,6 +169,41 @@ def strip_provider_prefix(model: str) -> str:
 def is_local_model(model: str) -> bool:
     """Check if a model is routed to a local server."""
     return model.startswith(("ollama/", "lmstudio/", "local/"))
+
+
+# ---------------------------------------------------------------------------
+# Model capability awareness
+# ---------------------------------------------------------------------------
+#
+# Some providers reject chat-completions parameters that other providers
+# accept silently. The gpt-5 family rejects non-1 temperature; some
+# reasoning models require ``max_completion_tokens`` instead of
+# ``max_tokens``; others require an explicit ``reasoning_effort``.
+#
+# Rather than scatter ``if model.startswith(...)`` checks across call sites
+# in agent.py and eval.py, we centralize capability decisions here. Each
+# helper takes the model id and a requested value, returns the value (or
+# absence of it) the model will actually accept. When a new quirk is
+# discovered, add a helper here and call it from the affected call site;
+# do not duplicate the prefix check in agent/eval code.
+#
+# Currently handled: temperature (gpt-5 family coerces to 1.0).
+# ---------------------------------------------------------------------------
+
+
+def effective_temperature(model: str, requested: float) -> float:
+    """Return the temperature the model will accept.
+
+    The gpt-5 family (``gpt-5``, ``gpt-5-mini``, ``gpt-5-nano``, ``gpt-5.4``,
+    ``gpt-5.4-mini``, ``gpt-5.4-nano``) rejects any value other than 1 with
+    ``BadRequestError: Unsupported value: 'temperature' does not support X
+    with this model. Only the default (1) value is supported``. This helper
+    coerces the requested temperature to 1.0 for those models, preserving
+    the caller's request for every other provider and model family.
+    """
+    if model.startswith("gpt-5"):
+        return 1.0
+    return requested
 
 
 def compute_cost(model: str, input_tokens: int, output_tokens: int) -> float:

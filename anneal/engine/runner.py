@@ -20,7 +20,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from anneal.engine.agent import AgentInvocationError, AgentInvoker, AgentTimeoutError
+from anneal.engine.agent import (
+    AgentInvocationError,
+    AgentInvoker,
+    AgentTimeoutError,
+    extract_code_block,
+)
 from anneal.engine.context import build_restart_context, build_target_context
 from anneal.engine.environment import FileBackupEnvironment, GitEnvironment, GitError
 from anneal.engine.eval import EvalEngine, EvalError, run_verifiers
@@ -563,6 +568,24 @@ class ExperimentRunner:
             hypothesis = agent_result.hypothesis or "No hypothesis provided"
             hypothesis_source = agent_result.hypothesis_source
             tags = list(agent_result.tags)
+
+            # API-mode file application: the agent has no Edit/Write tool, so
+            # it returned the new artifact content as a fenced code block in
+            # its response text. Extract the block and write it to the single
+            # editable artifact path. Scope enforcement will then detect the
+            # filesystem change and commit it. Multi-artifact api targets
+            # skip this path (the response-format slot is also suppressed for
+            # them in context.py) and fall through to scope enforcement, which
+            # produces the standard "Agent made no file changes" BLOCKED
+            # record.
+            if (
+                target.agent_config.mode == "api"
+                and len(target.artifact_paths) == 1
+            ):
+                new_content = extract_code_block(agent_result.raw_output)
+                if new_content is not None:
+                    artifact_abs = worktree / target.artifact_paths[0]
+                    artifact_abs.write_text(new_content, encoding="utf-8")
 
         cost_usd += diagnosis_cost
 

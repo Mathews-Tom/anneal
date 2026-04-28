@@ -27,6 +27,7 @@ from anneal.engine.agent import (
     AgentTimeoutError,
     _extract_hypothesis,
     _extract_tags,
+    extract_code_block,
 )
 from anneal.engine.types import (
     AgentConfig,
@@ -228,6 +229,43 @@ class TestExtractTags:
 
         # Assert
         assert result == ["foo", "bar"]
+
+
+# ---------------------------------------------------------------------------
+# extract_code_block — api-mode mutation parser
+# ---------------------------------------------------------------------------
+
+
+class TestExtractCodeBlock:
+    def test_single_backtick_block_returns_body(self) -> None:
+        text = "## Hypothesis\nShorten.\n\n## Code\n```python\ndef f():\n    return 1\n```\n"
+        assert extract_code_block(text) == "def f():\n    return 1\n"
+
+    def test_tilde_fence_also_matches(self) -> None:
+        text = "~~~\nhello\nworld\n~~~\n"
+        assert extract_code_block(text) == "hello\nworld\n"
+
+    def test_no_fence_returns_none(self) -> None:
+        assert extract_code_block("just prose, no code") is None
+
+    def test_empty_string_returns_none(self) -> None:
+        assert extract_code_block("") is None
+
+    def test_returns_longest_when_multiple(self) -> None:
+        text = (
+            "intro\n"
+            "```\nshort\n```\n"
+            "```python\n"
+            "def bigger():\n    return 'much longer body'\n"
+            "```\n"
+        )
+        result = extract_code_block(text)
+        assert result is not None
+        assert "bigger" in result
+
+    def test_language_hint_is_stripped_from_fence(self) -> None:
+        text = "```python\nx = 1\n```\n"
+        assert extract_code_block(text) == "x = 1\n"
 
 
 # ---------------------------------------------------------------------------

@@ -47,27 +47,38 @@ _SPOT_CHECKS: list[tuple[str, str, int]] = [
 
 
 def _verify_spot_checks(artifact_path: Path) -> bool:
-    """Import the artifact module and verify spot-check pairs exist in output."""
+    """Import the artifact module and verify spot-check pairs exist in output.
+
+    Mutated artifacts may break the canonical _find_close_pairs(a, b, threshold)
+    contract — wrong arity, wrong input types, module-level crashes. Any such
+    breach is a failed spot-check (returns False → PENALTY in main()), never a
+    propagated exception that would corrupt the JSONL with a stack trace.
+    """
     spec = importlib.util.spec_from_file_location("b3_artifact", artifact_path)
     if spec is None or spec.loader is None:
         return False
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    try:
+        spec.loader.exec_module(mod)
+    except Exception:
+        return False
 
     run_fn = getattr(mod, "run_benchmark", None)
     if run_fn is None:
         return False
 
-    # The function should also expose _find_close_pairs or produce full results.
-    # We call run_benchmark and check by re-importing the internal function.
     find_fn = getattr(mod, "_find_close_pairs", None)
     names_a = getattr(mod, "_NAMES_A", None)
     names_b = getattr(mod, "_NAMES_B", None)
     if find_fn is None or names_a is None or names_b is None:
         return False
 
-    pairs = find_fn(names_a, names_b, 2)
-    pair_set = {(a, b, d) for a, b, d in pairs}
+    try:
+        pairs = find_fn(names_a, names_b, 2)
+        pair_set = {(a, b, d) for a, b, d in pairs}
+    except Exception:
+        return False
+
     for a, b, expected_d in _SPOT_CHECKS:
         if (a, b, expected_d) not in pair_set:
             return False

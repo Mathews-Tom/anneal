@@ -208,18 +208,44 @@ class Registry:
         return staged
 
     async def deregister_target(self, target_id: str) -> None:
-        """Remove target: remove worktree, remove from config, preserve experiment history.
+        """Remove target: remove from config, remove worktree, preserve experiment history.
 
-        Raises RegistryError if target doesn't exist.
+        Idempotent against missing worktrees: if the worktree directory has
+        been externally removed (e.g., a manual ``rm -rf`` or a prior
+        crashed cleanup), the registry entry is still cleaned up and a
+        warning is logged. This keeps ``config.toml`` as the authoritative
+        source of truth — a failed worktree removal cannot leave the
+        registry pointing at a target whose backing state is gone, which
+        would otherwise block a subsequent ``register`` with the same id.
+
+        Raises RegistryError if the target is not registered.
         """
         if target_id not in self._targets:
             raise RegistryError(f"Target not found: {target_id}")
 
-        # Remove worktree (experiment history in .anneal/targets/<id>/ is preserved)
-        await self._git.remove_worktree(self._repo_root, target_id)
-
+        # Remove from registry first — config.toml is the source of truth,
+        # the worktree is derivable cache. An externally-removed worktree
+        # must not prevent the registry from being cleaned up.
         del self._targets[target_id]
         self.save()
+
+        # Best-effort worktree removal. Missing worktree is a no-op; other
+        # git failures are logged but do not fail the operation.
+        worktree_path = self._repo_root / ".anneal" / "worktrees" / target_id
+        if worktree_path.exists():
+            try:
+                await self._git.remove_worktree(self._repo_root, target_id)
+            except Exception as exc:
+                logger.warning(
+                    "Worktree cleanup failed for %s "
+                    "(registry entry already removed): %s",
+                    target_id, exc,
+                )
+        else:
+            logger.info(
+                "Worktree already absent for %s; registry entry removed",
+                target_id,
+            )
 
         logger.info("Deregistered target %s", target_id)
 

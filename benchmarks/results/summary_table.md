@@ -6,29 +6,29 @@
 |--------|------------|--------|--------|---------|---------------|--------------------|-------------|
 | B1 | control vs treatment | 2.8600 | 2.9600 | 0.625 | 1.000 | 0.18 [-1.25, 2.26] | No |
 | B2 | control vs treatment | 2.5400 | 2.8000 | 0.250 | 1.000 | 0.41 [-1.25, 1.96] | No |
-| B3 | control vs treatment | 72.8060 | 40.3840 | 0.625 | 1.000 | -0.53 [-2.28, 0.82] | No |
+| B3 | control vs treatment | 49.6450 | 40.8800 | 1.000 | 1.000 | -0.17 [-1.08, 0.78] | No |
 | B4 | control vs treatment | 0.7010 | 0.7832 | 0.250 | 1.000 | 0.51 [-0.75, 2.25] | No |
-| B5 | control vs treatment | 1.3000 | 1.5400 | 0.625 | 1.000 | 0.36 [-1.25, 1.72] | No |
-| B1 | greedy vs treatment | 2.8000 | 2.9600 | 0.250 | 0.750 | 0.26 [-1.09, 2.13] | No |
+| B5 | control vs treatment | 1.2400 | 1.5500 | 0.230 | 1.000 | 0.57 [-0.29, 1.55] | No |
+| B1 | greedy vs treatment | 2.8000 | 2.9600 | 0.250 | 1.000 | 0.26 [-1.09, 2.13] | No |
 | B2 | greedy vs treatment | 2.6800 | 2.8000 | 0.750 | 1.000 | 0.21 [-1.24, 1.76] | No |
-| B3 | greedy vs treatment | 103.6760 | 40.3840 | 0.062 | 0.312 | -1.09 [-3.86, 0.03] | No |
+| B3 | greedy vs treatment | 55.8030 | 40.8800 | 0.432 | 1.000 | -0.26 [-1.15, 0.69] | No |
 | B4 | greedy vs treatment | 0.7370 | 0.7832 | 0.625 | 1.000 | 0.30 [-1.09, 1.74] | No |
-| B5 | greedy vs treatment | 0.8200 | 1.5400 | 0.062 | 0.312 | 1.35 [0.46, 3.41] | No |
-| B1 | raw vs treatment | 0.0000 | 2.9600 | 0.062 | 0.312 | 6.59 [5.40, 24.96] | No |
-| B2 | raw vs treatment | 0.0000 | 2.8000 | 0.062 | 0.312 | 8.00 [6.18, 21.98] | No |
-| B3 | raw vs treatment | 185.6800 | 40.3840 | 0.812 | 0.812 | -0.79 [-2.35, 1.65] | No |
-| B4 | raw vs treatment | 0.1740 | 0.7832 | 0.062 | 0.312 | 3.20 [2.64, 13.33] | No |
-| B5 | raw vs treatment | 0.0000 | 1.5400 | 0.062 | 0.312 | 3.06 [2.12, 9.30] | No |
-| B1 | raw vs control | 0.0000 | 2.8600 | 0.062 | 0.312 | 9.21 [7.18, 20.60] | No |
-| B2 | raw vs control | 0.0000 | 2.5400 | 0.062 | 0.312 | 4.83 [3.74, 26.85] | No |
-| B3 | raw vs control | 185.6800 | 72.8060 | 0.812 | 0.812 | -0.61 [-2.12, 2.10] | No |
-| B4 | raw vs control | 0.1740 | 0.7010 | 0.062 | 0.312 | 2.43 [1.59, 7.24] | No |
-| B5 | raw vs control | 0.0000 | 1.3000 | 0.062 | 0.312 | 2.89 [1.55, 10.19] | No |
+| B5 | greedy vs treatment | 1.0300 | 1.5500 | 0.023 | 0.117 | 1.13 [0.36, 2.21] | No |
+| B1 | raw vs treatment | 0.0000 | 2.9600 | 0.062 | 0.250 | 6.59 [5.40, 24.96] | No |
+| B2 | raw vs treatment | 0.0000 | 2.8000 | 0.062 | 0.250 | 8.00 [6.18, 21.98] | No |
+| B3 | raw vs treatment | 187.2320 | 40.8800 | 0.557 | 0.557 | -0.84 [-1.83, -0.06] | No |
+| B4 | raw vs treatment | 0.1740 | 0.7832 | 0.062 | 0.250 | 3.20 [2.64, 13.33] | No |
+| B5 | raw vs treatment | 0.0000 | 1.5500 | 0.002 | 0.010 | 3.93 [2.97, 7.55] | Yes |
+| B1 | raw vs control | 0.0000 | 2.8600 | 0.062 | 0.250 | 9.21 [7.18, 20.60] | No |
+| B2 | raw vs control | 0.0000 | 2.5400 | 0.062 | 0.250 | 4.83 [3.74, 26.85] | No |
+| B3 | raw vs control | 187.2320 | 49.6450 | 0.557 | 0.557 | -0.78 [-1.78, 0.02] | No |
+| B4 | raw vs control | 0.1740 | 0.7010 | 0.062 | 0.250 | 2.43 [1.59, 7.24] | No |
+| B5 | raw vs control | 0.0000 | 1.2400 | 0.002 | 0.010 | 3.30 [2.30, 5.86] | Yes |
 | B1 | greedy vs control | 2.8000 | 2.8600 | 0.750 | 1.000 | 0.12 [-1.38, 1.76] | No |
 | B2 | greedy vs control | 2.6800 | 2.5400 | 0.875 | 1.000 | -0.20 [-1.68, 1.36] | No |
-| B3 | greedy vs control | 103.6760 | 72.8060 | 0.062 | 0.312 | -0.46 [-2.52, 0.76] | No |
+| B3 | greedy vs control | 55.8030 | 49.6450 | 0.322 | 1.000 | -0.10 [-1.03, 0.86] | No |
 | B4 | greedy vs control | 0.7370 | 0.7010 | 0.625 | 1.000 | -0.19 [-1.90, 1.12] | No |
-| B5 | greedy vs control | 0.8200 | 1.3000 | 0.312 | 1.000 | 0.99 [-0.16, 4.00] | No |
+| B5 | greedy vs control | 1.0300 | 1.2400 | 0.477 | 1.000 | 0.47 [-0.39, 1.48] | No |
 
 
 ## Descriptive Statistics
@@ -67,22 +67,22 @@
 | B2 | treatment | convergence_experiment | 5 | 16.2000 | 2.0000 | 20.3519 | 30.0000 | 1.0000 | 44.0000 |
 | B2 | treatment | final_score | 5 | 2.8000 | 2.8000 | 0.4950 | 0.5000 | 2.2000 | 3.5000 |
 | B2 | treatment | total_cost_usd | 5 | 2.8586 | 0.7876 | 4.7515 | 0.1642 | 0.6531 | 11.3573 |
-| B3 | control | acceptance_rate | 5 | 0.6923 | 0.7073 | 0.2370 | 0.2540 | 0.3800 | 1.0000 |
-| B3 | control | convergence_experiment | 5 | 10.2000 | 4.0000 | 16.7541 | 4.0000 | 1.0000 | 40.0000 |
-| B3 | control | final_score | 5 | 72.8060 | 87.3000 | 70.0452 | 84.4500 | 3.9300 | 173.0700 |
-| B3 | control | total_cost_usd | 5 | 3.1222 | 3.9401 | 1.7196 | 2.1501 | 0.6905 | 4.8338 |
-| B3 | greedy | acceptance_rate | 5 | 0.2964 | 0.1600 | 0.4017 | 0.1222 | 0.0000 | 1.0000 |
-| B3 | greedy | convergence_experiment | 5 | 1.4000 | 1.0000 | 0.5477 | 1.0000 | 1.0000 | 2.0000 |
-| B3 | greedy | final_score | 5 | 103.6760 | 108.0800 | 65.1230 | 77.0200 | 10.4400 | 175.3600 |
-| B3 | greedy | total_cost_usd | 5 | 2.2810 | 1.7264 | 1.9641 | 3.4938 | 0.3023 | 4.5313 |
-| B3 | raw | acceptance_rate | 5 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
-| B3 | raw | convergence_experiment | 5 | 1.0000 | 1.0000 | 0.0000 | 0.0000 | 1.0000 | 1.0000 |
-| B3 | raw | final_score | 5 | 185.6800 | 0.0000 | 254.2944 | 457.7000 | 0.0000 | 470.7000 |
-| B3 | raw | total_cost_usd | 5 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
-| B3 | treatment | acceptance_rate | 5 | 0.5918 | 0.6735 | 0.2295 | 0.3500 | 0.3023 | 0.8333 |
-| B3 | treatment | convergence_experiment | 5 | 10.6000 | 2.0000 | 19.8066 | 2.0000 | 1.0000 | 46.0000 |
-| B3 | treatment | final_score | 5 | 40.3840 | 5.7000 | 49.5343 | 83.5900 | 3.1500 | 100.9400 |
-| B3 | treatment | total_cost_usd | 5 | 3.4554 | 3.6407 | 0.9354 | 1.6263 | 2.3595 | 4.4249 |
+| B3 | control | acceptance_rate | 10 | 0.6656 | 0.6751 | 0.2199 | 0.3249 | 0.3778 | 1.0000 |
+| B3 | control | convergence_experiment | 10 | 6.5000 | 1.5000 | 12.0577 | 3.7500 | 1.0000 | 40.0000 |
+| B3 | control | final_score | 10 | 49.6450 | 31.7100 | 56.0553 | 74.2900 | 2.4600 | 173.0700 |
+| B3 | control | total_cost_usd | 10 | 2.7080 | 2.3818 | 1.2810 | 1.7028 | 0.6905 | 4.8338 |
+| B3 | greedy | acceptance_rate | 10 | 0.2570 | 0.1611 | 0.2946 | 0.1815 | 0.0000 | 1.0000 |
+| B3 | greedy | convergence_experiment | 10 | 5.1000 | 2.0000 | 9.2069 | 2.7500 | 1.0000 | 31.0000 |
+| B3 | greedy | final_score | 10 | 55.8030 | 15.5250 | 66.7596 | 94.5825 | 2.8600 | 175.3600 |
+| B3 | greedy | total_cost_usd | 10 | 2.1803 | 1.8732 | 1.4064 | 1.6575 | 0.3023 | 4.5313 |
+| B3 | raw | acceptance_rate | 10 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
+| B3 | raw | convergence_experiment | 10 | 1.0000 | 1.0000 | 0.0000 | 0.0000 | 1.0000 | 1.0000 |
+| B3 | raw | final_score | 10 | 187.2320 | 0.0000 | 241.8180 | 459.1850 | 0.0000 | 484.2400 |
+| B3 | raw | total_cost_usd | 10 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
+| B3 | treatment | acceptance_rate | 10 | 0.6172 | 0.6492 | 0.1703 | 0.1899 | 0.3023 | 0.8333 |
+| B3 | treatment | convergence_experiment | 10 | 10.8000 | 2.5000 | 17.2421 | 7.2500 | 1.0000 | 46.0000 |
+| B3 | treatment | final_score | 10 | 40.8800 | 9.6800 | 48.3067 | 75.6075 | 2.7700 | 127.3900 |
+| B3 | treatment | total_cost_usd | 10 | 2.8448 | 2.6245 | 0.9933 | 1.2657 | 1.3371 | 4.4249 |
 | B4 | control | acceptance_rate | 5 | 0.8131 | 0.8250 | 0.0377 | 0.0272 | 0.7500 | 0.8444 |
 | B4 | control | convergence_experiment | 5 | 3.2000 | 2.0000 | 3.3466 | 2.0000 | 1.0000 | 9.0000 |
 | B4 | control | final_score | 5 | 0.7010 | 0.7000 | 0.1930 | 0.1250 | 0.4800 | 1.0000 |
@@ -99,22 +99,22 @@
 | B4 | treatment | convergence_experiment | 5 | 14.0000 | 1.0000 | 18.7883 | 24.0000 | 1.0000 | 42.0000 |
 | B4 | treatment | final_score | 5 | 0.7832 | 0.7500 | 0.1247 | 0.0660 | 0.7000 | 1.0000 |
 | B4 | treatment | total_cost_usd | 5 | 1.4976 | 1.6211 | 0.5196 | 0.3400 | 0.7740 | 2.1897 |
-| B5 | control | acceptance_rate | 5 | 0.4282 | 0.4762 | 0.1262 | 0.1425 | 0.2308 | 0.5349 |
-| B5 | control | convergence_experiment | 5 | 13.2000 | 8.0000 | 16.3615 | 1.0000 | 1.0000 | 42.0000 |
-| B5 | control | final_score | 5 | 1.3000 | 1.3000 | 0.6364 | 0.6000 | 0.3000 | 1.9000 |
-| B5 | control | total_cost_usd | 5 | 7.5323 | 1.3538 | 11.7837 | 5.0450 | 0.3877 | 28.1867 |
-| B5 | greedy | acceptance_rate | 5 | 0.0408 | 0.0417 | 0.0101 | 0.0026 | 0.0256 | 0.0541 |
-| B5 | greedy | convergence_experiment | 5 | 14.2000 | 11.0000 | 13.4425 | 13.0000 | 3.0000 | 36.0000 |
-| B5 | greedy | final_score | 5 | 0.8200 | 1.0000 | 0.2490 | 0.4000 | 0.5000 | 1.0000 |
-| B5 | greedy | total_cost_usd | 5 | 7.5564 | 1.3476 | 10.4336 | 7.6383 | 1.0948 | 25.2571 |
-| B5 | raw | acceptance_rate | 5 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
-| B5 | raw | convergence_experiment | 5 | 1.0000 | 1.0000 | 0.0000 | 0.0000 | 1.0000 | 1.0000 |
-| B5 | raw | final_score | 5 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
-| B5 | raw | total_cost_usd | 5 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
-| B5 | treatment | acceptance_rate | 5 | 0.2922 | 0.2727 | 0.1602 | 0.0635 | 0.1250 | 0.5556 |
-| B5 | treatment | convergence_experiment | 5 | 11.0000 | 7.0000 | 6.7454 | 6.0000 | 6.0000 | 22.0000 |
-| B5 | treatment | final_score | 5 | 1.5400 | 1.4000 | 0.7127 | 0.6000 | 0.7000 | 2.6000 |
-| B5 | treatment | total_cost_usd | 5 | 6.7076 | 0.6362 | 13.5739 | 0.7498 | 0.3820 | 30.9831 |
+| B5 | control | acceptance_rate | 10 | 0.4242 | 0.4381 | 0.1014 | 0.1278 | 0.2308 | 0.5349 |
+| B5 | control | convergence_experiment | 10 | 12.0000 | 8.0000 | 12.1472 | 11.5000 | 1.0000 | 42.0000 |
+| B5 | control | final_score | 10 | 1.2400 | 1.1500 | 0.5317 | 0.6750 | 0.3000 | 2.0000 |
+| B5 | control | total_cost_usd | 10 | 4.2203 | 1.2668 | 8.6001 | 0.6684 | 0.3877 | 28.1867 |
+| B5 | greedy | acceptance_rate | 10 | 0.0452 | 0.0421 | 0.0166 | 0.0112 | 0.0222 | 0.0741 |
+| B5 | greedy | convergence_experiment | 10 | 11.7000 | 8.5000 | 10.7295 | 13.2500 | 2.0000 | 36.0000 |
+| B5 | greedy | final_score | 10 | 1.0300 | 1.0000 | 0.3368 | 0.3000 | 0.5000 | 1.6000 |
+| B5 | greedy | total_cost_usd | 10 | 4.3636 | 1.2720 | 7.7280 | 0.2155 | 0.9103 | 25.2571 |
+| B5 | raw | acceptance_rate | 10 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
+| B5 | raw | convergence_experiment | 10 | 1.0000 | 1.0000 | 0.0000 | 0.0000 | 1.0000 | 1.0000 |
+| B5 | raw | final_score | 10 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
+| B5 | raw | total_cost_usd | 10 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
+| B5 | treatment | acceptance_rate | 10 | 0.3678 | 0.3466 | 0.1552 | 0.2564 | 0.1250 | 0.5556 |
+| B5 | treatment | convergence_experiment | 10 | 9.6000 | 7.5000 | 5.7194 | 5.5000 | 3.0000 | 22.0000 |
+| B5 | treatment | final_score | 10 | 1.5500 | 1.5000 | 0.5583 | 0.5750 | 0.7000 | 2.6000 |
+| B5 | treatment | total_cost_usd | 10 | 3.8003 | 0.7615 | 9.5562 | 0.4280 | 0.3820 | 30.9831 |
 
 
 ## Enhancement Attribution
@@ -123,26 +123,26 @@
 |-------------|--------|--------|-----------|--------------|----------------|---------------------|
 | Strategy Manifest | B1 | final_score | maximize | 2.8600 | 2.9600 | +3.50% |
 | Strategy Manifest | B2 | final_score | maximize | 2.5400 | 2.8000 | +10.24% |
-| Strategy Manifest | B3 | final_score | minimize | 72.8060 | 40.3840 | +44.53% |
+| Strategy Manifest | B3 | final_score | minimize | 49.6450 | 40.8800 | +17.66% |
 | Strategy Manifest | B4 | final_score | maximize | 0.7010 | 0.7832 | +11.73% |
-| Strategy Manifest | B5 | final_score | maximize | 1.3000 | 1.5400 | +18.46% |
+| Strategy Manifest | B5 | final_score | maximize | 1.2400 | 1.5500 | +25.00% |
 | Dual-Agent Mutation | B1 | total_cost_usd | maximize | 2.1879 | 2.7222 | +24.42% |
 | Dual-Agent Mutation | B2 | total_cost_usd | maximize | 3.1210 | 2.8586 | -8.41% |
-| Dual-Agent Mutation | B3 | total_cost_usd | minimize | 3.1222 | 3.4554 | -10.67% |
+| Dual-Agent Mutation | B3 | total_cost_usd | minimize | 2.7080 | 2.8448 | -5.05% |
 | Dual-Agent Mutation | B4 | total_cost_usd | maximize | 1.5655 | 1.4976 | -4.34% |
-| Dual-Agent Mutation | B5 | total_cost_usd | maximize | 7.5323 | 6.7076 | -10.95% |
+| Dual-Agent Mutation | B5 | total_cost_usd | maximize | 4.2203 | 3.8003 | -9.95% |
 | Two-Phase Mutation | B1 | acceptance_rate | maximize | 0.6601 | 0.6181 | -6.36% |
 | Two-Phase Mutation | B2 | acceptance_rate | maximize | 0.5207 | 0.4880 | -6.27% |
-| Two-Phase Mutation | B3 | acceptance_rate | minimize | 0.6923 | 0.5918 | +14.51% |
+| Two-Phase Mutation | B3 | acceptance_rate | minimize | 0.6656 | 0.6172 | +7.26% |
 | Two-Phase Mutation | B4 | acceptance_rate | maximize | 0.8131 | 0.7940 | -2.35% |
-| Two-Phase Mutation | B5 | acceptance_rate | maximize | 0.4282 | 0.2922 | -31.75% |
+| Two-Phase Mutation | B5 | acceptance_rate | maximize | 0.4242 | 0.3678 | -13.31% |
 | Lineage Context | B1 | convergence_experiment | maximize | 3.6000 | 4.0000 | +11.11% |
 | Lineage Context | B2 | convergence_experiment | maximize | 4.4000 | 16.2000 | +268.18% |
-| Lineage Context | B3 | convergence_experiment | minimize | 10.2000 | 10.6000 | -3.92% |
+| Lineage Context | B3 | convergence_experiment | minimize | 6.5000 | 10.8000 | -66.15% |
 | Lineage Context | B4 | convergence_experiment | maximize | 3.2000 | 14.0000 | +337.50% |
-| Lineage Context | B5 | convergence_experiment | maximize | 13.2000 | 11.0000 | -16.67% |
+| Lineage Context | B5 | convergence_experiment | maximize | 12.0000 | 9.6000 | -20.00% |
 | Episodic Memory | B1 | final_score | maximize | 2.8600 | 2.9600 | +3.50% |
 | Episodic Memory | B2 | final_score | maximize | 2.5400 | 2.8000 | +10.24% |
-| Episodic Memory | B3 | final_score | minimize | 72.8060 | 40.3840 | +44.53% |
+| Episodic Memory | B3 | final_score | minimize | 49.6450 | 40.8800 | +17.66% |
 | Episodic Memory | B4 | final_score | maximize | 0.7010 | 0.7832 | +11.73% |
-| Episodic Memory | B5 | final_score | maximize | 1.3000 | 1.5400 | +18.46% |
+| Episodic Memory | B5 | final_score | maximize | 1.2400 | 1.5500 | +25.00% |

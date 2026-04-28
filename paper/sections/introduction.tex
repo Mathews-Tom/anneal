@@ -76,7 +76,8 @@ We present \textsc{anneal}, an open-source framework for autonomous artifact
 optimization that addresses the four gaps above.
 The framework makes three technical contributions---each validated as an
 independent mechanism in \cref{sec:results}---supported by two architectural
-contributions that realize the framework as a production-ready system.
+contributions that realize the framework as an integrated, reproducible
+research artifact.
 
 \paragraph{Technical contributions (validated in \cref{sec:results}).}
 
@@ -141,20 +142,25 @@ contributions that realize the framework as a production-ready system.
 
 \subsection{Validation Approach}
 
-We validate the three central mechanisms of \textsc{anneal}---statistical
+We validate \textsc{anneal} along two complementary axes.
+First, we isolate each of the three central mechanisms---statistical
 acceptance, adaptive metaheuristic search, and structured knowledge
-retrieval---on synthetic benchmarks with analytically known ground truth.
-These benchmarks isolate each mechanism from the variance of a full
-LLM-guided optimization run and allow direct quantitative comparison against
-well-defined baselines: uncorrected sequential testing under a null
-distribution, fixed-schedule simulated annealing on a nonconvex testbed, and
-Jaccard set similarity on a controlled retrieval corpus.
-\Cref{sec:results} reports the results and shows that each mechanism meets
-the gate threshold specified in the benchmark harness before the experiment
-was run.
-A full end-to-end evaluation of the complete framework against its baselines
-across the five-target benchmark suite is left to future work, for the
-reasons discussed in \cref{sec:empirical-scope,sec:threats}.
+retrieval---on synthetic benchmarks with analytically known ground truth and
+compare against well-defined baselines: uncorrected sequential testing under
+a null distribution, fixed-schedule simulated annealing on a nonconvex
+testbed, and Jaccard set similarity on a controlled retrieval corpus.
+Second, we run an end-to-end comparison of four nested configurations (raw,
+greedy, control, treatment) on the five-target benchmark suite under the
+paired-seed protocol of \cref{sec:stat-design}.
+\Cref{sec:results} reports both: the mechanism gates pass their pre-registered
+thresholds, and the end-to-end study finds a consistent directional advantage
+of the full treatment configuration over the same engine without enhancement
+tracks on every target, with the framework's own multiplicity-corrected
+significance test declining to mark these gaps as significant at $n = 5$
+paired seeds.
+We discuss the implications of this seed count and the construct-validity
+considerations specific to LLM-judge evaluation in
+\cref{sec:empirical-scope,sec:threats}.
 
 \subsection{Paper Organization}
 
@@ -166,7 +172,7 @@ the experiment loop, evaluation engine, search strategies, and knowledge system.
 knowledge, and evaluation---that build on the core loop.
 \Cref{sec:evaluation} describes the benchmark suite and experimental design for
 end-to-end configuration comparison.
-\Cref{sec:results} presents mechanism-level validation results on synthetic
-benchmarks.
+\Cref{sec:results} presents both the mechanism-level gate validations and
+the end-to-end empirical comparison across the benchmark suite.
 \Cref{sec:discussion} discusses limitations and future work.
 \Cref{sec:conclusion} concludes.

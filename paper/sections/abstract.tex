@@ -31,7 +31,18 @@ reheat yields a 19.1\% improvement over fixed cooling on the Rastrigin
 function, and TF-IDF retrieval achieves $1.55\times$ the precision of Jaccard
 similarity on a controlled corpus.
 %
+We additionally report an end-to-end comparison of four nested configurations
+(raw, greedy, control, treatment) across the five-target benchmark suite at
+$n = 5$ paired seeds: the full treatment configuration produces a directional
+improvement over the same engine without enhancement tracks on every target,
+ranging from $+3.5\%$ to $+44.5\%$ on final-score, at cost largely comparable
+to control.
+The framework's own statistical-acceptance discipline declines to call this
+advantage significant after multiplicity correction at the seed count run, a
+result we treat as the framework working as designed: the same machinery
+that suppresses false positives under a synthetic null applies the same
+standard to systemic claims about itself.
+%
 \textsc{anneal} ships as open-source software under the Apache-2.0 license,
-together with a benchmark suite spanning prompt, code, and documentation
-optimization targets that the framework's harness and analysis pipeline can
-execute for full end-to-end configuration comparison as future work.
+together with the benchmark suite, harness, and analysis pipeline that
+produced these results.

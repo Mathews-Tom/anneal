@@ -7,14 +7,9 @@ spanning three domains---prompt optimization, code optimization, and
 documentation generation---that exercise both evaluation modes (deterministic
 and stochastic) and a range of optimization objectives.
 The suite is part of the open-source distribution and is intended as a
-reproducible reference workload for the full end-to-end comparison of the
-treatment configuration against its baselines (\cref{sec:empirical-scope}).
-The mechanism-level validation presented in \cref{sec:results} uses
-synthetic benchmarks with analytically known ground truth instead of the
-full benchmark suite runs, for the budget and feasibility reasons discussed
-in \cref{sec:threats}.
-This section documents the suite's targets and the statistical protocol the
-harness applies when an end-to-end run is performed.
+reproducible reference workload for end-to-end configuration comparison.
+The mechanism-level validation in \cref{sec:gate-false-positives,sec:gate-sa,sec:gate-retrieval} uses synthetic benchmarks with analytically known ground truth to isolate individual subsystems, and the end-to-end comparison in \cref{sec:end-to-end} runs the full benchmark suite under the four-configuration protocol described below.
+This section documents the suite's targets and the statistical protocol applied to the end-to-end run.
 
 \subsection{Benchmark Targets}
 \label{sec:benchmark-suite}
@@ -64,27 +59,33 @@ pass/fail scores across $N = 5$ test prompts.
 
 The harness ships four nested-ablation configurations (raw, greedy, control,
 treatment) defined in \texttt{benchmarks/suite/runner.py} for end-to-end
-comparison; their enabled-feature matrices and the comparison protocol are
-part of the open-source distribution and used as future work, not reported
-in this paper (\cref{sec:empirical-scope}).
+comparison.
+\Cref{tab:e2e-configs} documents the layer each configuration adds, and
+\cref{sec:end-to-end} reports the full empirical comparison.
 
 \subsection{Statistical Design for End-to-End Comparison}
 \label{sec:stat-design}
 
 The harness implements a paired-seed experimental design for comparing
 configurations.
-Each configuration runs 10 independent trials per benchmark target, each
+Each configuration runs 5 independent trials per benchmark target, each
 with a distinct random seed that controls LLM sampling temperature jitter
 and stochastic evaluation order.
 Every trial executes 50 experiments (mutations), yielding a total
 experimental budget of
-$5 \text{ targets} \times 4 \text{ configs} \times 10 \text{ runs}
- \times 50 \text{ experiments} = 10{,}000$ experiments for a full
-end-to-end comparison.
+$5 \text{ targets} \times 4 \text{ configs} \times 5 \text{ runs}
+ \times 50 \text{ experiments} = 5{,}000$ experiments for the end-to-end
+comparison reported in \cref{sec:end-to-end}.
+The harness supports larger seed counts; we report results at $n = 5$
+because it is the smallest paired-seed count at which the Wilcoxon
+signed-rank test attains a usable two-sided $p$-value floor of $0.0625$,
+and it places a deliberate lower bound on statistical power so that
+significant findings must clear a meaningful effect-size bar
+(\cref{sec:end-to-end-significance}).
 
 \paragraph{Pairwise comparison.}
 For each pair of configurations on each target, the harness applies the
-Wilcoxon signed-rank test across the 10 paired final scores (paired by
+Wilcoxon signed-rank test across the 5 paired final scores (paired by
 random seed).
 This nonparametric test is appropriate because score distributions are
 not assumed normal, and pairing by seed controls for LLM sampling

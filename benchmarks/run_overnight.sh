@@ -20,6 +20,12 @@
 #   tmux new -s anneal
 #   bash benchmarks/run_overnight.sh
 #   # Ctrl-B D to detach; `tmux attach -t anneal` to reattach
+#
+# Symmetric expansion (all 5 targets at 10 seeds — fills B1/B2/B4 seeds 6-10):
+#   SYMMETRIC=1 bash benchmarks/run_overnight.sh
+#
+# Custom extended-target set:
+#   EXTENDED_TARGETS="B1 B4" bash benchmarks/run_overnight.sh
 
 set -u  # undefined variables are errors; do NOT use -e (continue on per-run failure)
 
@@ -28,15 +34,31 @@ set -u  # undefined variables are errors; do NOT use -e (continue on per-run fai
 # --------------------------------------------------------------------------
 
 # Iteration order: seed → target → config.
-# Seeds 2-5 run for every target (the original publication matrix).
-# Seeds 6-10 run only for the targets listed in EXTENDED_TARGETS — B3 and B5
-# are the two targets where additional power would change the publication
-# story (strongest effect sizes, most partial runs in the 2-5 sweep).
+#
+# Seeds below EXTENDED_SEED_MIN run for every target.
+# Seeds at or above EXTENDED_SEED_MIN run only for targets in EXTENDED_TARGETS.
+#
+# Default asymmetric design: B3/B5 expanded to 10 seeds for statistical power
+# (Wilcoxon at N=5 cannot survive Holm-Bonferroni correction; N=10 can).
+# B1/B2/B4 stay at 5 seeds because B1/B2 are eval-noise-limited and B4
+# saturates quickly — additional seeds yield diminishing returns there.
+#
+# Env overrides:
+#   SYMMETRIC=1            → run all 5 targets at all seeds (200-run grid)
+#   EXTENDED_TARGETS="..." → space-separated target IDs; overrides default
 TARGETS=(B3 B4 B1 B2 B5)
 CONFIGS=(raw greedy control treatment)
 SEEDS=(2 3 4 5 6 7 8 9 10)
-EXTENDED_TARGETS=(B3 B5)
 EXTENDED_SEED_MIN=6
+
+if [[ "${SYMMETRIC:-0}" == "1" ]]; then
+  EXTENDED_TARGETS=("${TARGETS[@]}")
+elif [[ -n "${EXTENDED_TARGETS:-}" ]]; then
+  # shellcheck disable=SC2206  # word-split env string into array intentionally
+  EXTENDED_TARGETS=( ${EXTENDED_TARGETS} )
+else
+  EXTENDED_TARGETS=(B3 B5)
+fi
 
 # --------------------------------------------------------------------------
 # Preflight

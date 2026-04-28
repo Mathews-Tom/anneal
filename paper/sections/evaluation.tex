@@ -62,16 +62,11 @@ correctness, input validation, error handling, and security); B1, B2, and
 B5 invoke an LLM judge with fixed rubric criteria and aggregate binary
 pass/fail scores across $N = 5$ test prompts.
 
-The harness defines four configurations for end-to-end comparison---a raw
-baseline (no optimization), a greedy baseline (iterative loop only), a
-control (hybrid search with basic history), and a treatment (all
-enhancements from \cref{sec:enhancements}).
-The progression from raw to treatment forms a nested ablation in which
-each configuration adds a layer of capability, so pairwise comparisons
-isolate the marginal contribution of each layer.
-The specific enabled-feature matrix for each configuration is part of the
-harness (\texttt{benchmarks/suite/runner.py}) and is not reproduced here
-since no empirical comparison using it is reported in this paper.
+The harness ships four nested-ablation configurations (raw, greedy, control,
+treatment) defined in \texttt{benchmarks/suite/runner.py} for end-to-end
+comparison; their enabled-feature matrices and the comparison protocol are
+part of the open-source distribution and used as future work, not reported
+in this paper (\cref{sec:empirical-scope}).
 
 \subsection{Statistical Design for End-to-End Comparison}
 \label{sec:stat-design}

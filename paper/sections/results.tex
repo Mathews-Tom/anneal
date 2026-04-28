@@ -3,6 +3,7 @@
 \label{sec:results}
 
 A full end-to-end empirical comparison of the four configurations across all five benchmark targets is outside the scope of this paper: each configuration requires a multi-seed run on every target, and the associated compute and API budget is substantial.
+The mechanism-level results in this section therefore do not exercise the raw, greedy, control, and treatment vocabulary of \cref{sec:benchmark-suite}; baselines here are method-specific (uncorrected sequential testing, fixed-schedule simulated annealing, Jaccard set similarity).
 Instead, we validate the three central mechanisms---statistical acceptance, adaptive metaheuristic search, and structured knowledge retrieval---in isolation on synthetic tasks where the ground truth is known analytically.
 Each mechanism is evaluated against a specific quantitative gate defined before the experiment was run.
 The gate benchmarks are implemented in \texttt{benchmarks/\allowbreak{}bench\_\allowbreak{}false\_\allowbreak{}positives.py}, \texttt{benchmarks/\allowbreak{}bench\_\allowbreak{}sa\_\allowbreak{}convergence.py}, and \texttt{benchmarks/\allowbreak{}bench\_\allowbreak{}retrieval\_\allowbreak{}precision.py}.

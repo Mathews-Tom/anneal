@@ -3,15 +3,18 @@
 
 The design space of LLM-guided artifact optimization admits a spectrum of
 framework philosophies.
-At one end are minimalist scaffolds that delegate almost all decision-making
-to the coding agent itself: the framework provides an edit--evaluate--commit
-loop, a single deterministic metric, and a human-maintained log of prior
-attempts, and the agent's intrinsic reasoning supplies acceptance judgment,
-search strategy, and memory of past experiments.
+At one end are minimalist scaffolds, exemplified by Karpathy's
+\texttt{autoresearch}~\cite{karpathy2025autoresearch}, that delegate almost all
+decision-making to the coding agent itself: the framework provides an
+edit--evaluate--commit loop, a single deterministic metric, and a
+human-maintained log of prior attempts, and the agent's intrinsic reasoning
+supplies acceptance judgment, search strategy, and memory of past experiments.
 This design bet is that as frontier LLMs improve, elaborate scaffolding
 becomes overhead rather than value, and that a thin framework plus a capable
 agent is sufficient for optimization on problems with clean deterministic
-metrics.
+metrics such as the held-out training loss of a single-GPU nanochat run.
+\textsc{anneal} draws its core experiment-loop structure---isolated mutation,
+externally-evaluated acceptance, persisted history---from this lineage.
 
 \textsc{anneal} occupies a different corner of this design space, one in
 which the framework assumes responsibility for three decisions the agent
@@ -54,6 +57,7 @@ a subset.
     \toprule
     System & Accept & Search & Memory & Eval modes & Scope \\
     \midrule
+    autoresearch~\cite{karpathy2025autoresearch} & P & G & --- & D & C \\
     AlphaEvolve~\cite{novikov2025alphaevolve} & B & E & D & D     & C \\
     FunSearch~\cite{romera2024funsearch}      & B & E & D & D     & C \\
     DSPy~\cite{khattab2024dspy}               & P & G & --- & D,L   & P \\

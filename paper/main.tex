@@ -18,18 +18,13 @@
 %%
 %% Packages
 %%
-\usepackage{booktabs}       % Professional quality tables
-\usepackage{microtype}      % Better justification
-\usepackage{cleveref}       % Smart cross-references (\cref)
-\usepackage{xcolor}         % Color support for \todo
-\usepackage{todonotes}      % \todo{} macro for placeholders
-\usepackage{multirow}       % Multi-row table cells
-\usepackage{subcaption}     % Subfigures
-\usepackage{listings}       % Code listings
-\usepackage{amsmath}        % Math environments
+%% acmart already loads booktabs, microtype, amsmath, xcolor, graphicx,
+%% hyperref, and natbib — re-loading is redundant, so we only declare
+%% packages acmart does not provide.
+%%
+\usepackage{cleveref}       % Smart cross-references (\cref, \Cref)
 \usepackage{algorithm}      % Algorithm float
 \usepackage{algpseudocode}  % Pseudocode
-\usepackage{enumitem}       % List customization (nosep, etc.)
 \usepackage{fancyhdr}       % Custom running header and footer
 
 

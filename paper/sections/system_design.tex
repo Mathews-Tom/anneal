@@ -157,6 +157,7 @@ A divergence exceeding 10\% triggers a warning; 25\% triggers a critical alert, 
 \begin{figure}[t]
     \centering
     \includegraphics[width=\columnwidth]{figures/architecture.png}
+    \Description{A diagram showing the anneal system architecture. A user registers a target as an Artifact-Eval-Agent triplet. The engine uses a git worktree, a mutation agent, and scope constraints to evaluate and commit accepted mutations or reset rejected ones.}
     \caption{\textsc{anneal} system architecture. The user registers a target as an Artifact--Eval--Agent triplet. The engine creates an isolated git worktree, invokes the mutation agent, enforces scope constraints, evaluates the mutated artifact, and applies a statistical acceptance test. Accepted mutations are committed; rejected mutations are reset.}
     \label{fig:architecture}
 \end{figure}

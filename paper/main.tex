@@ -40,6 +40,10 @@
 %% 3. Redefine \_ to include \allowbreak, enabling line breaks
 %%    after underscores in identifiers like foo\_bar\_baz
 %%
+\usepackage{silence}
+\WarningFilter{latexfont}{Font shape `T1/zi4}
+\WarningFilter{latexfont}{Some font shapes were not available}
+
 \usepackage[htt]{hyphenat}
 \emergencystretch=2em
 

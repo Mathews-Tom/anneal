@@ -1,3 +1,4 @@
+% !TEX root = ../main.tex
 \section{System Design}\label{sec:system-design}
 
 \textsc{anneal}'s architecture is organized around three invariants: the optimization target is always a text file in a git repository, the evaluation signal is always an external process the agent cannot influence, and mutations are always isolated in a dedicated worktree that the user's working tree never observes.

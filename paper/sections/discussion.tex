@@ -6,16 +6,8 @@
 \label{sec:limitations}
 
 \paragraph{Single-agent mutation.}
-Each experiment cycle invokes exactly one mutation agent that edits the
-artifact in isolation, so mutations that require coordinated changes across
-interacting files cannot be generated atomically: an edit to a function
-signature and its call sites must either be proposed as a single multi-file
-patch by one agent or deferred across multiple experiment cycles.
-The current architecture does not support multi-agent coordination with
-conflict resolution or merge semantics, so optimization targets whose
-improvements fundamentally require parallel specialization (one agent
-refactoring structure while another refines documentation) fall outside the
-framework's reach.
+Each experiment cycle invokes exactly one mutation agent that edits the artifact in isolation, so mutations that require coordinated changes across interacting files cannot be generated atomically: an edit to a function signature and its call sites must either be proposed as a single multi-file patch by one agent or deferred across multiple experiment cycles.
+The current architecture does not support multi-agent coordination with conflict resolution or merge semantics, so optimization targets whose improvements fundamentally require parallel specialization (one agent refactoring structure while another refines documentation) fall outside the framework's reach.
 
 \paragraph{Text artifacts only.}
 The engine operates on file-based text artifacts versioned in git.

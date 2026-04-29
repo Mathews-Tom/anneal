@@ -24,7 +24,8 @@ Migration from \texttt{program.md} is automatic: \texttt{migrate\_program\_md} c
 
 \subsubsection{Token-Efficient Context}\label{sec:context-compression}
 
-Agent context grows with experiment history. The \texttt{context\_compression} field on \texttt{AgentConfig} supports three modes:
+Agent context grows with experiment history.
+The \texttt{context\_compression} field on \texttt{AgentConfig} supports three modes:
 \begin{itemize}
     \item \texttt{none}: full context (experiment records, artifact content, knowledge).
     \item \texttt{moderate}: recent experiment records are truncated to hypothesis and outcome; full artifact content is retained.

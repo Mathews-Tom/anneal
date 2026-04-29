@@ -3,8 +3,8 @@
 \label{sec:evaluation}
 
 \textsc{anneal} ships with a benchmark suite of five optimization targets
-spanning three domains---prompt optimization, code optimization, and
-documentation generation---that exercise both evaluation modes (deterministic
+spanning three domains (prompt optimization, code optimization, and
+documentation generation) that exercise both evaluation modes (deterministic
 and stochastic) and a range of optimization objectives.
 The suite is part of the open-source distribution and is intended as a
 reproducible reference workload for end-to-end configuration comparison.
@@ -39,11 +39,11 @@ outside the agent's mutation scope.
 
 The targets were selected to satisfy three coverage criteria.
 First, they span both evaluation modes: B3 and B4 use deterministic
-evaluation (a single scalar from a shell command---wall-clock time and a
+evaluation (a single scalar from a shell command: wall-clock time and a
 composite quality score, respectively), while B1, B2, and B5 use the
 $N \times K$ stochastic evaluation framework with binary criteria.
-Second, they cover three distinct optimization domains---prompt engineering,
-code transformation, and technical writing---so that results are not
+Second, they cover three distinct optimization domains (prompt engineering,
+code transformation, and technical writing) so that results are not
 tied to a single domain.
 Third, they exercise different optimization directions: maximization
 (B1, B2, B4, B5) and minimization (B3), testing the engine's directional

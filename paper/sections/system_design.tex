@@ -12,7 +12,7 @@ Every optimization target in \textsc{anneal} is registered as a triplet of decla
 \begin{enumerate}
     \item \textbf{Artifact} (\texttt{artifact\_paths}). One or more text files the agent is permitted to mutate: system prompts, source code, configuration files, or any other UTF-8 content tracked by git. The set of editable paths is declared in \texttt{scope.yaml} and validated at registration time by the \texttt{Registry} class. The engine imposes no constraints on file format or domain semantics.
 
-    \item \textbf{Eval} (\texttt{EvalConfig}). A scoring function that maps an artifact state to a scalar signal. Two modes are supported: \emph{deterministic}, where a shell command produces a numeric score (e.g., \texttt{pytest --tb=no | parse\_score.sh}), and \emph{stochastic}, where an LLM judge scores generated samples against binary criteria (\cref{sec:eval-pipeline}). The eval definition is immutable once registered---\texttt{scope.yaml}, \texttt{metrics.yaml}, and \texttt{eval\_criteria.toml} are required entries in the \texttt{immutable} list, preventing the agent from influencing its own scoring.
+    \item \textbf{Eval} (\texttt{EvalConfig}). A scoring function that maps an artifact state to a scalar signal. Two modes are supported: \emph{deterministic}, where a shell command produces a numeric score (e.g., \texttt{pytest --tb=no | parse\_score.sh}), and \emph{stochastic}, where an LLM judge scores generated samples against binary criteria (\cref{sec:eval-pipeline}). The eval definition is immutable once registered: \texttt{scope.yaml}, \texttt{metrics.yaml}, and \texttt{eval\_criteria.toml} are required entries in the \texttt{immutable} list, preventing the agent from influencing its own scoring.
 
     \item \textbf{Agent} (\texttt{AgentConfig} + \texttt{program.md}). An LLM that proposes mutations, restricted to file-edit tools operating within the editable scope. The agent receives the current artifact content, experiment history, and mutation instructions (\texttt{program.md}), but never sees the eval command, criteria definitions, or scoring logic. \texttt{AgentInvoker} dispatches to either a Claude Code subprocess (which writes files directly to disk) or a direct API call depending on \texttt{AgentConfig.mode}.
 \end{enumerate}
@@ -109,7 +109,7 @@ The aggregate score across all samples is accompanied by bootstrap confidence in
 % ------------------------------------------------------------------
 \subsection{Statistical Comparison}\label{sec:stat-comparison}
 
-Accept/reject decisions for stochastic evaluations use the Wilcoxon signed-rank test (ADR-002), implemented in \texttt{Greedy\allowbreak{}Search.\allowbreak{}\_stochastic\allowbreak{}\_compare} (\texttt{anneal/\allowbreak{}engine/\allowbreak{}search.py}). The test is non-parametric and valid for binary and small-sample paired data---the common case in prompt optimization where sample counts range from 6 to 20.
+Accept/reject decisions for stochastic evaluations use the Wilcoxon signed-rank test (ADR-002), implemented in \texttt{Greedy\allowbreak{}Search.\allowbreak{}\_stochastic\allowbreak{}\_compare} (\texttt{anneal/\allowbreak{}engine/\allowbreak{}search.py}). The test is non-parametric and valid for binary and small-sample paired data, the common case in prompt optimization where sample counts range from 6 to 20.
 
 The comparison procedure is:
 \begin{enumerate}

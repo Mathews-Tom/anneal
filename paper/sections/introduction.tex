@@ -5,7 +5,7 @@ Large language models have demonstrated a striking capacity to act as
 optimization oracles: given a text artifact and a description of what ``better''
 means, an LLM can propose targeted mutations that improve performance on
 measurable objectives~\cite{novikov2025alphaevolve, romera2024funsearch}.
-This capability extends far beyond code---prompts, configuration files, system
+This capability extends far beyond code: prompts, configuration files, system
 instructions, and any other text-based artifact amenable to automated evaluation
 are candidates for LLM-guided search.
 Yet the gap between ``an LLM can suggest edits'' and ``an LLM reliably improves
@@ -14,8 +14,8 @@ Bridging it requires solving four interrelated problems that current tools
 address only partially, if at all.
 
 \paragraph{Statistical rigor.}
-When evaluation is stochastic---an LLM judge scoring prompt outputs, a noisy
-benchmark, a test suite with non-deterministic ordering---raw score comparisons
+When evaluation is stochastic (an LLM judge scoring prompt outputs, a noisy
+benchmark, a test suite with non-deterministic ordering), raw score comparisons
 are unreliable.
 A candidate that scores 0.82 versus a baseline of 0.80 may reflect genuine
 improvement or sampling noise.
@@ -32,8 +32,8 @@ Most LLM-guided optimization systems use greedy hill-climbing: accept an edit if
 the score improves, reject otherwise.
 Greedy search is prone to local optima, particularly in the combinatorial space
 of text mutations where small edits can interact non-linearly.
-Metaheuristic search---simulated annealing, population-based methods, bandit
-algorithms---offers well-understood mechanisms for escaping local optima and
+Metaheuristic search (simulated annealing, population-based methods, bandit
+algorithms) offers well-understood mechanisms for escaping local optima and
 balancing exploration with exploitation, yet these strategies have seen limited
 adoption in LLM-guided settings.
 AlphaEvolve~\cite{novikov2025alphaevolve} uses an island-based evolutionary
@@ -46,8 +46,8 @@ Each experiment in an optimization run generates information: what changed, what
 improved, what regressed, and why.
 Current systems discard this information after the accept/reject decision,
 forcing the optimizer to rediscover lessons from prior experiments.
-Effective optimization requires episodic memory---structured records of past
-experiments that inform future mutations---and cross-target knowledge transfer
+Effective optimization requires episodic memory (structured records of past
+experiments that inform future mutations) and cross-target knowledge transfer
 that lets insights from one optimization task accelerate another.
 
 \paragraph{Safety and reproducibility.}
@@ -74,8 +74,8 @@ restricted to function-level code search with best-shot selection.
 
 We present \textsc{anneal}, an open-source framework for autonomous artifact
 optimization that addresses the four gaps above.
-The framework makes three technical contributions---each validated as an
-independent mechanism in \cref{sec:results}---supported by two architectural
+The framework makes three technical contributions (each validated as an
+independent mechanism in \cref{sec:results}) supported by two architectural
 contributions that realize the framework as an integrated, reproducible
 research artifact.
 
@@ -134,7 +134,7 @@ research artifact.
     The framework optimizes any text artifact evaluable by a shell command
     (deterministic mode) or an LLM judge against binary criteria (stochastic
     mode), with no domain-specific assumptions.
-    Verification gates---binary pass/fail commands run before evaluation---let
+    Verification gates (binary pass/fail commands run before evaluation) let
     users enforce structural invariants (compilation, type-checking, format
     compliance) without spending evaluation budget on structurally invalid
     mutations.
@@ -143,9 +143,9 @@ research artifact.
 \subsection{Validation Approach}
 
 We validate \textsc{anneal} along two complementary axes.
-First, we isolate each of the three central mechanisms---statistical
+First, we isolate each of the three central mechanisms (statistical
 acceptance, adaptive metaheuristic search, and structured knowledge
-retrieval---on synthetic benchmarks with analytically known ground truth and
+retrieval) on synthetic benchmarks with analytically known ground truth and
 compare against well-defined baselines: uncorrected sequential testing under
 a null distribution, fixed-schedule simulated annealing on a nonconvex
 testbed, and Jaccard set similarity on a controlled retrieval corpus.
@@ -168,8 +168,8 @@ considerations specific to LLM-judge evaluation in
 prompt engineering, metaheuristic search, and statistical evaluation.
 \Cref{sec:system-design} describes the \textsc{anneal} architecture, including
 the experiment loop, evaluation engine, search strategies, and knowledge system.
-\Cref{sec:enhancements} details the enhancement tracks---representation, search,
-knowledge, and evaluation---that build on the core loop.
+\Cref{sec:enhancements} details the enhancement tracks (representation, search,
+knowledge, and evaluation) that build on the core loop.
 \Cref{sec:evaluation} describes the benchmark suite and experimental design for
 end-to-end configuration comparison.
 \Cref{sec:results} presents both the mechanism-level gate validations and

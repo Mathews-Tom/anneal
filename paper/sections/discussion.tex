@@ -13,8 +13,8 @@ signature and its call sites must either be proposed as a single multi-file
 patch by one agent or deferred across multiple experiment cycles.
 The current architecture does not support multi-agent coordination with
 conflict resolution or merge semantics, so optimization targets whose
-improvements fundamentally require parallel specialization---one agent
-refactoring structure while another refines documentation---fall outside the
+improvements fundamentally require parallel specialization (one agent
+refactoring structure while another refines documentation) fall outside the
 framework's reach.
 
 \paragraph{Text artifacts only.}
@@ -26,7 +26,7 @@ Optimization targets requiring deployment to external systems (email campaigns, 
 Stochastic evaluation relies on an LLM judge scoring against binary criteria.
 The quality of optimization is bounded by the quality of the judge: a judge that rewards superficial keyword matching will drive the optimizer toward keyword-stuffed artifacts.
 Position debiasing (\cref{sec:eval-pipeline}) and held-out validation mitigate systematic judge bias, but they do not eliminate it.
-Practitioners must invest in evaluation design---clear, unambiguous criteria with concrete acceptance thresholds---to obtain meaningful optimization trajectories.
+Practitioners must invest in evaluation design (clear, unambiguous criteria with concrete acceptance thresholds) to obtain meaningful optimization trajectories.
 
 \paragraph{Cost.}
 A full optimization run of 50 experiments incurs substantial LLM API cost, with the exact figure depending on the evaluation mode, the number of stochastic samples per experiment, and the selected models for the mutation, diagnosis, and judgment roles.
@@ -49,7 +49,7 @@ API pricing variability (model version updates, rate limit throttling) introduce
 The end-to-end comparison in \cref{sec:end-to-end} runs at $n = 5$ paired seeds per target across five targets.
 At this seed count the Wilcoxon signed-rank test has a two-sided $p$-value floor of $0.0625$, so no comparison can reach the conventional $\alpha = 0.05$ threshold per-target without ties or unusual sign patterns, and after Holm--Bonferroni correction across five targets the bar rises further still.
 The directional pattern across targets (treatment beats control on 5/5 targets, treatment beats greedy on 5/5 targets) and the Cohen's-large effect sizes on the two near-significant greedy-versus-treatment comparisons (B3, $d = -1.09$; B5, $d = 1.35$) together indicate that the seed count, not the magnitude of the underlying effect, is the binding constraint on whether systemic claims clear the corrected threshold.
-A higher-powered replication---larger $n$ per target, or a study restricted to one or two targets that does not pay the five-target multiplicity tax---would resolve whether the directional advantage of the full treatment configuration translates into a statistically defensible claim.
+A higher-powered replication (larger $n$ per target, or a study restricted to one or two targets that does not pay the five-target multiplicity tax) would resolve whether the directional advantage of the full treatment configuration translates into a statistically defensible claim.
 We have intentionally not run such a replication at this stage because the seed-counted result with its honest non-significance is more informative than a cherry-picked single-target study would be: it illustrates exactly the conservatism the framework's statistical-acceptance layer is designed to enforce.
 The domain-agnostic design claim in \cref{sec:introduction} continues to rest primarily on the architecture of the artifact--evaluation--agent triplet (\cref{sec:triplet}); the suite spans prompts, code, and documentation, but five targets cannot establish that the framework composes into improvements across the broader space of text-artifact optimization problems.
 
@@ -66,7 +66,7 @@ The benchmark targets ship with criteria that are phrased as concrete yes/no que
 This investment in criterion design is itself a limitation: in practice, users may not invest equivalent effort, leading to lower optimization effectiveness than the benchmark design suggests.
 
 \paragraph{Proxy gaming and rubric-facing optimization.}
-The architectural separation in \cref{sec:triplet}---immutable eval definitions, an agent that never sees the eval command, scope enforcement that blocks edits to scoring code---prevents the agent from modifying the evaluation function itself.
+The architectural separation in \cref{sec:triplet} (immutable eval definitions, an agent that never sees the eval command, scope enforcement that blocks edits to scoring code) prevents the agent from modifying the evaluation function itself.
 It does not prevent the agent from optimizing the evaluation function as it is written.
 On stochastic-eval targets, an agent can learn to produce artifacts that score well on the rubric criteria as phrased even when the produced artifact does not match the rubric's intent: rubric-facing language that satisfies a binary keyword check, formatting choices that satisfy a structural criterion without addressing the underlying quality the criterion is meant to proxy, or coverage of all listed cases without depth on any of them.
 On deterministic-eval targets, an agent can overfit to the test fixtures: passing the specific inputs the harness exercises while degrading on inputs the harness does not exercise.
@@ -82,7 +82,7 @@ The two strongest greedy-versus-treatment comparisons (B3, B5) sit at the Wilcox
 A replication at higher seed counts on a smaller subset of targets would resolve whether the directional advantage translates into a statistically defensible claim.
 
 \paragraph{Multi-artifact optimization.}
-Extending the mutation scope to coordinated changes across multiple files---e.g., modifying a function signature and all its call sites simultaneously---would enable structural refactoring that single-file mutations cannot achieve.
+Extending the mutation scope to coordinated changes across multiple files (e.g., modifying a function signature and all its call sites simultaneously) would enable structural refactoring that single-file mutations cannot achieve.
 This requires dependency-aware scoping and atomic multi-file commits with rollback semantics, both of which the git environment backend supports in principle.
 
 \paragraph{Typed evaluator protocol.}
@@ -99,4 +99,4 @@ The scheduler and daemon management components are implemented; the remaining wo
 
 \paragraph{IDE integration.}
 Embedding the optimization loop into editor extensions (VS Code, JetBrains) would reduce the barrier to adoption by allowing developers to trigger optimization on selected files without leaving their editor.
-The engine's file-based architecture (JSONL logs, file-based SSE dashboard) is compatible with extension integration, but the UX design---progress visualization, result acceptance, inline diff preview---remains open.
+The engine's file-based architecture (JSONL logs, file-based SSE dashboard) is compatible with extension integration, but the UX design (progress visualization, result acceptance, inline diff preview) remains open.

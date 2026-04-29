@@ -13,8 +13,8 @@ This design bet is that as frontier LLMs improve, elaborate scaffolding
 becomes overhead rather than value, and that a thin framework plus a capable
 agent is sufficient for optimization on problems with clean deterministic
 metrics such as the held-out training loss of a single-GPU nanochat run.
-\textsc{anneal} draws its core experiment-loop structure---isolated mutation,
-externally-evaluated acceptance, persisted history---from this lineage.
+\textsc{anneal} draws its core experiment-loop structure (isolated mutation,
+externally-evaluated acceptance, persisted history) from this lineage.
 
 \textsc{anneal} occupies a different corner of this design space, one in
 which the framework assumes responsibility for three decisions the agent
@@ -43,13 +43,13 @@ a subset.
 \begin{table*}[t]
   \centering
   \caption{Comparison of \textsc{anneal} with the closest prior systems along
-  five axes. \textbf{Accept:} how accept/reject decisions are made---point-score
+  five axes. \textbf{Accept:} how accept/reject decisions are made: point-score
   (P), best-shot selection (B), statistical test (S). \textbf{Search:} search
-  strategy layer---greedy (G), evolutionary (E), bandit meta-strategy (M),
+  strategy layer: greedy (G), evolutionary (E), bandit meta-strategy (M),
   reasoning-time search (R). \textbf{Memory:} knowledge accumulation
-  mechanism---none (---), program database (D), verbal self-reflection (V),
+  mechanism: none (---), program database (D), verbal self-reflection (V),
   structured retrieval (S). \textbf{Eval modes:} deterministic (D),
-  stochastic / LLM-judge (L). \textbf{Scope:} artifact type---code functions
+  stochastic / LLM-judge (L). \textbf{Scope:} artifact type: code functions
   (C), prompts (P), reasoning traces (R), any text artifact (A).}
   \label{tab:related-comparison}
   \small
@@ -97,8 +97,8 @@ AlphaEvolve operates on code functions, using an island-based population model
 with a database of programs ranked by fitness.
 The system achieved state-of-the-art results on problems ranging from matrix
 multiplication to bin packing.
-\textsc{anneal} shares the evolutionary search intuition---population-based
-strategies and island migration are available search modes---but differs in three
+\textsc{anneal} shares the evolutionary search intuition (population-based
+strategies and island migration are available search modes) but differs in three
 respects.
 First, \textsc{anneal} is domain-agnostic: it optimizes any text artifact, not
 only code functions, by decoupling mutation from evaluation through a shell
@@ -119,8 +119,8 @@ candidates, and the evaluator retains only the top-scoring outputs.
 This approach is effective when evaluation is cheap and deterministic but does
 not extend to stochastic evaluation, where a single score comparison is
 insufficient to distinguish signal from noise.
-\textsc{anneal} supports the same deterministic pipeline---generate, evaluate,
-keep the best---but adds paired statistical testing for stochastic settings,
+\textsc{anneal} supports the same deterministic pipeline (generate, evaluate,
+keep the best) but adds paired statistical testing for stochastic settings,
 structured search strategies beyond best-shot, and a knowledge system that
 retains lessons from failed experiments rather than discarding them.
 
@@ -131,8 +131,8 @@ the generated Python reward code against a deterministic task-success signal.
 Eureka demonstrates that LLMs can propose targeted edits to executable
 objective functions and that an outer loop over reward candidates improves
 downstream RL agent performance.
-The underlying loop---generate candidate code, evaluate via a deterministic
-metric, keep the best---is structurally similar to the deterministic branch
+The underlying loop (generate candidate code, evaluate via a deterministic
+metric, keep the best) is structurally similar to the deterministic branch
 of \textsc{anneal}'s evaluation pipeline; the difference is that Eureka
 is tightly scoped to reward-function synthesis for RL, while \textsc{anneal}
 is an artifact-agnostic framework whose evaluation function is user-defined.
@@ -166,8 +166,8 @@ instructions using teleprompter abstractions.
 DSPy focuses on prompt pipeline compilation rather than general artifact
 optimization, and its optimizers compare candidates by aggregate score without
 hypothesis testing.
-\textsc{anneal} addresses a broader scope---any text artifact with any evaluation
-function---and uses the Wilcoxon test to control false-positive acceptance when
+\textsc{anneal} addresses a broader scope (any text artifact with any evaluation
+function) and uses the Wilcoxon test to control false-positive acceptance when
 scores are noisy.
 
 \paragraph{EvoPrompt.}
@@ -188,7 +188,7 @@ OPRO relies on the LLM's in-context learning to identify improving directions
 from the optimization trajectory.
 \textsc{anneal} similarly provides experiment history as context but structures
 this history through episodic memory with per-criterion feedback, failure
-taxonomy classification, and lineage tracking---rather than presenting raw
+taxonomy classification, and lineage tracking, rather than presenting raw
 (prompt, score) tuples.
 
 \paragraph{APE.}
@@ -200,9 +200,9 @@ resampling.
 feedback from prior experiments and statistical testing for candidate comparison.
 
 \paragraph{ProTeGi.}
-Pryzant et al.~\cite{pryzant2023protegi} use textual gradients---natural
+Pryzant et al.~\cite{pryzant2023protegi} use textual gradients (natural
 language descriptions of how to improve a prompt, generated by an LLM given
-input-output error pairs---to guide prompt optimization.
+input-output error pairs) to guide prompt optimization.
 The gradient metaphor provides directional feedback absent in random mutation.
 \textsc{anneal}'s two-phase mutation pipeline serves a similar function: a
 diagnosis step identifies the weakest evaluation criteria and their root causes
@@ -244,8 +244,8 @@ deliberate search over a tree of intermediate reasoning states, using
 breadth-first or depth-first traversal with LLM-scored node evaluation.
 Tree of Thoughts operates at reasoning time within a single model call,
 producing a search over thought trajectories.
-\textsc{anneal} operates at the outer loop instead---search over artifact
-states across many model calls---but shares the intuition that structured
+\textsc{anneal} operates at the outer loop instead (search over artifact
+states across many model calls) but shares the intuition that structured
 search over a model's proposals outperforms greedy single-shot generation
 once the solution space has meaningful local optima.
 
@@ -319,8 +319,8 @@ critique of its own failure, which is appended to the context window for
 subsequent trials.
 Reflexion shows substantial gains on decision-making and reasoning
 benchmarks from this lightweight memory mechanism.
-\textsc{anneal}'s episodic memory carries a similar intuition---past
-experiment outcomes inform future mutations---but extends it along two
+\textsc{anneal}'s episodic memory carries a similar intuition (past
+experiment outcomes inform future mutations) but extends it along two
 axes: lessons are structured (\texttt{what\_changed},
 \texttt{transferable\_insight}, \texttt{domain\_tags}) rather than
 free-form critiques, and retrieval is similarity-based (TF-IDF or sentence
@@ -344,8 +344,8 @@ targets, with decay-adjusted impact and domain-aware relevance filtering.
 Packer et al.~\cite{packer2023memgpt} introduce a hierarchical memory
 architecture that treats the LLM's context window as managed working
 memory with explicit paging to and from long-term storage.
-MemGPT establishes that deliberate memory hierarchy---what to keep in
-context, what to swap out, how to retrieve---is itself a system-design
+MemGPT establishes that deliberate memory hierarchy (what to keep in
+context, what to swap out, how to retrieve) is itself a system-design
 problem rather than a property of the model.
 \textsc{anneal} adopts a similar stance for experiment history: the
 context-assembly layer decides which past experiments to inject into the

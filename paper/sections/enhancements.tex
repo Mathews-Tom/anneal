@@ -37,7 +37,7 @@ Compression reduces input token cost and keeps the agent within its context wind
 
 \subsubsection{Dual-Agent Mutation via Thompson Sampling}\label{sec:dual-agent}
 
-The \texttt{Agent\allowbreak{}Selector} class (\texttt{anneal/\allowbreak{}engine/\allowbreak{}strategy\allowbreak{}\_selector.py}) maintains two Beta-Binomial arms---\texttt{primary} and \texttt{exploration}---and selects between them using Thompson Sampling.
+The \texttt{Agent\allowbreak{}Selector} class (\texttt{anneal/\allowbreak{}engine/\allowbreak{}strategy\allowbreak{}\_selector.py}) maintains two Beta-Binomial arms (\texttt{primary} and \texttt{exploration}) and selects between them using Thompson Sampling.
 The primary agent uses the model and temperature specified in \texttt{Agent\allowbreak{}Config}; the exploration agent uses a separate model (\texttt{exploration\allowbreak{}\_model}) at higher temperature, biased toward novel mutations.
 
 Selection is modulated by experiment progress: early in the run (\texttt{experiment\_ratio} $< 0.2$), exploration receives a $1.4\times$ boost; late in the run ($> 0.8$), exploration is dampened to $0.4\times$ its posterior sample.
@@ -132,7 +132,7 @@ This mechanism reduces cost on clear-cut experiments while increasing statistica
 
 \subsubsection{Eval Consistency Monitoring}\label{sec:drift-detection}
 
-Evaluator drift---where the same artifact receives different scores over time---undermines the optimization signal.
+Evaluator drift (where the same artifact receives different scores over time) undermines the optimization signal.
 The \texttt{KnowledgeStore.get\_drift\_report} method detects drift using a sliding-window comparison: within the most recent consolidation window, it splits records into first and second halves and flags any criterion whose variance increased by more than $2\times$ between halves, or whose total variance exceeds a threshold (default $0.1$).
 Flagged criteria are reported as \texttt{DriftEntry} objects containing the criterion name, variance, mean score, and window size.
 
@@ -145,7 +145,7 @@ When the agent produces a mutation identical to a previously evaluated artifact,
 The \texttt{EvalCache} (\texttt{anneal/engine/eval\_cache.py}) is a content-addressed LRU cache keyed on the SHA-256 hash of the artifact content concatenated with the sorted criterion names.
 On a cache hit, the stored \texttt{CacheEntry} (score, raw scores, criterion names) is returned immediately.
 
-The cache also tracks \texttt{score\_history}---the sequence of scores observed for the same content hash across multiple evaluations.
+The cache also tracks \texttt{score\_history}: the sequence of scores observed for the same content hash across multiple evaluations.
 The \texttt{consistency\_report} method flags entries where the standard deviation across evaluations exceeds $0.1$, surfacing potential evaluator inconsistency independent of the drift detection in the knowledge store.
 Maximum cache size is configurable (default 200 entries) with LRU eviction.
 

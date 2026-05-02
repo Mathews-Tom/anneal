@@ -12,7 +12,7 @@ The current architecture does not support multi-agent coordination with conflict
 \paragraph{Text artifacts only.}
 The engine operates on file-based text artifacts versioned in git.
 Binary files (images, compiled assets, database schemas), structured data stores, and deployed services are outside the mutation scope.
-Optimization targets requiring deployment to external systems (email campaigns, ad platforms) are architecturally supported through a domain-tier abstraction with approval gates, but this pathway is not yet implemented.
+Optimization targets requiring deployment to external systems (email campaigns, ad platforms) are supported only as read-only proposal generation with approval gates; this pathway is implemented but not evaluated here, and it is not integrated with external deployment systems.
 
 \paragraph{LLM-as-judge evaluation quality.}
 Stochastic evaluation relies on an LLM judge scoring against binary criteria.
@@ -22,7 +22,7 @@ Practitioners must invest in evaluation design (clear, unambiguous criteria with
 
 \paragraph{Cost.}
 A full optimization run of 50 experiments incurs substantial LLM API cost, with the exact figure depending on the evaluation mode, the number of stochastic samples per experiment, and the selected models for the mutation, diagnosis, and judgment roles.
-Two-phase mutation and multi-draft generation increase per-experiment cost relative to single-phase greedy mutation because of the additional LLM calls for diagnosis and draft generation.
+Two-phase mutation and multi-draft generation can increase per-experiment cost relative to single-phase greedy mutation because of the additional LLM calls for diagnosis and draft generation.
 For cost-sensitive applications, the engine supports cheaper diagnosis models (e.g., a smaller model for diagnosis and a larger one for mutation) and adaptive sample sizing that reduces evaluation cost for clear winners and losers.
 
 \paragraph{Cold start.}
@@ -35,13 +35,15 @@ The TF-IDF retrieval index requires a minimum corpus size before similarity quer
 \paragraph{Internal validity.}
 LLM outputs are nondeterministic: the same prompt produces different mutations across runs.
 We control for this by pairing runs by random seed across configurations and using nonparametric statistical tests that do not assume distributional form.
-API pricing variability (model version updates, rate limit throttling) introduces noise into cost measurements; we mitigate this by recording per-token usage and applying fixed pricing tables rather than relying on billing-reported costs.
+API pricing variability, model availability changes, backend switching, rate limits, and transient retry behavior introduce noise into cost measurements.
+The archived end-to-end records include mixed model routing (\cref{tab:result-provenance}), so the cost tables should be interpreted as telemetry for that result bundle rather than as provider-independent cost estimates.
+The analysis mitigates billing opacity by reading recorded per-experiment cost fields instead of relying on billing-console totals.
 
 \paragraph{Empirical scope and statistical power.}
 The end-to-end comparison in \cref{sec:end-to-end} runs at $n = 5$ paired seeds per target across five targets.
 At this seed count the Wilcoxon signed-rank test has a two-sided $p$-value floor of $0.0625$, so no comparison can reach the conventional $\alpha = 0.05$ threshold per-target without ties or unusual sign patterns, and after Holm--Bonferroni correction across five targets the bar rises further still.
-The directional pattern across targets (treatment beats control on 5/5 targets, treatment beats greedy on 5/5 targets) and the Cohen's-large effect sizes on the two near-significant greedy-versus-treatment comparisons (B3, $d = -1.09$; B5, $d = 1.35$) together indicate that the seed count, not the magnitude of the underlying effect, is the binding constraint on whether systemic claims clear the corrected threshold.
-A higher-powered replication (larger $n$ per target, or a study restricted to one or two targets that does not pay the five-target multiplicity tax) would resolve whether the directional advantage of the full treatment configuration translates into a statistically defensible claim.
+The directional pattern across targets (treatment beats control on 5/5 targets, treatment beats greedy on 5/5 targets) and the Cohen's-large effect sizes on the two strongest greedy-versus-treatment comparisons (B3, $d = -1.09$; B5, $d = 1.35$) indicate that seed count is one binding constraint on whether systemic claims clear the corrected threshold.
+A higher-powered replication (larger $n$ per target, or a study restricted to one or two targets that does not pay the five-target multiplicity tax) would test whether the directional advantage of the treatment configuration translates into a statistically defensible claim.
 We have intentionally not run such a replication at this stage because the seed-counted result with its honest non-significance is more informative than a cherry-picked single-target study would be: it illustrates exactly the conservatism the framework's statistical-acceptance layer is designed to enforce.
 The domain-agnostic design claim in \cref{sec:introduction} continues to rest primarily on the architecture of the artifact--evaluation--agent triplet (\cref{sec:triplet}); the suite spans prompts, code, and documentation, but five targets cannot establish that the framework composes into improvements across the broader space of text-artifact optimization problems.
 
@@ -49,7 +51,7 @@ The domain-agnostic design claim in \cref{sec:introduction} continues to rest pr
 The five benchmark targets that ship with the framework are themselves a simplification of real-world optimization problems.
 Production artifacts are larger, have more complex dependency structures, and operate under constraints (backward compatibility, style guides, regulatory requirements) that the benchmark targets do not capture.
 The benchmark suite is intended as a reproducible reference workload for comparing configurations under controlled conditions, not as a representative sample of the distribution of problems a practitioner would encounter in practice.
-Relative ordering of configurations observed on the suite is expected to be more stable across deployment contexts than absolute performance numbers.
+The suite is useful for controlled comparison and failure analysis, but it does not establish that relative ordering of configurations will transfer unchanged to production-scale artifacts.
 
 \paragraph{Construct validity.}
 Stochastic evaluation quality depends on the specificity and completeness of the scoring criteria.
@@ -70,7 +72,7 @@ Where alignment is weak, the framework will optimize the proxy, not the intent.
 
 \paragraph{Higher-powered empirical replication.}
 The seed-counted end-to-end study in \cref{sec:end-to-end} establishes a consistent directional advantage of the treatment configuration over both control and greedy across the suite, but does not clear the multiplicity-corrected significance threshold at $n = 5$.
-The two strongest greedy-versus-treatment comparisons (B3, B5) sit at the Wilcoxon two-sided $p$-value floor for $n = 5$, indicating that the binding constraint is statistical power rather than effect magnitude.
+The two strongest greedy-versus-treatment comparisons (B3, B5) sit at the Wilcoxon two-sided $p$-value floor for $n = 5$, indicating that statistical power is one unresolved constraint on the systemic claim.
 A replication at higher seed counts on a smaller subset of targets would resolve whether the directional advantage translates into a statistically defensible claim.
 
 \paragraph{Multi-artifact optimization.}

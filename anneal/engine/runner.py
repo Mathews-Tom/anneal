@@ -23,13 +23,14 @@ from typing import Literal
 from anneal.engine.agent import (
     AgentInvocationError,
     AgentInvoker,
+    AgentStructuralError,
     AgentTimeoutError,
+    AgentTransientError,
     extract_code_block,
 )
 from anneal.engine.context import build_restart_context, build_target_context
 from anneal.engine.environment import FileBackupEnvironment, GitEnvironment, GitError
 from anneal.engine.eval import EvalEngine, EvalError, run_verifiers
-from anneal.engine.eval_cache import EvalCache
 from anneal.engine.knowledge import KnowledgeStore, extract_lesson
 from anneal.engine.learning_pool import LearningPool, extract_learning
 from anneal.engine.notifications import NotificationManager
@@ -367,14 +368,15 @@ class ExperimentRunner:
                 effective_restart_p,
             )
 
+        history: list[ExperimentRecord] = []
+        knowledge_context = ""
+
         if is_restart:
             prompt, _context_tokens = build_restart_context(
                 target=target,
                 worktree_path=worktree,
                 repo_root=self._repo_root or worktree,
             )
-            history = []
-            knowledge_context = ""
         else:
             # Auto-enable knowledge injection after sufficient KEPT experiments
             inject_knowledge = target.inject_knowledge_context
@@ -392,8 +394,6 @@ class ExperimentRunner:
                         kept_total,
                     )
 
-            history = []
-            knowledge_context = ""
             if self._knowledge and inject_knowledge:
                 history = self._knowledge.load_records(limit=10)
                 knowledge_context = self._knowledge.get_context()
@@ -578,10 +578,7 @@ class ExperimentRunner:
             # them in context.py) and fall through to scope enforcement, which
             # produces the standard "Agent made no file changes" BLOCKED
             # record.
-            if (
-                target.agent_config.mode == "api"
-                and len(target.artifact_paths) == 1
-            ):
+            if target.agent_config.mode == "api" and len(target.artifact_paths) == 1:
                 new_content = extract_code_block(agent_result.raw_output)
                 if new_content is not None:
                     artifact_abs = worktree / target.artifact_paths[0]
@@ -720,6 +717,69 @@ class ExperimentRunner:
     # Pipeline stages
     # ------------------------------------------------------------------
 
+    async def _invoke_with_transient_retries(
+        self,
+        target: OptimizationTarget,
+        prompt: str,
+        worktree: Path,
+        *,
+        deployment: bool,
+    ) -> AgentInvocationResult:
+        """Drive ``self._agent.invoke[_deployment]`` with within-experiment
+        retry on :class:`AgentTransientError`.
+
+        Retry semantics: ``max_transient_retries`` extra attempts on top of
+        the initial call. Backoff is exponential —
+        ``transient_retry_base_seconds * 2**attempt`` capped at
+        ``transient_retry_cap_seconds``. Wall-clock and stall timeouts
+        propagate to the outer handler unchanged. Once the budget is
+        exhausted the final exception is repackaged as
+        :class:`AgentStructuralError` so the runner's existing
+        ``Outcome.CRASHED`` arm handles it.
+        """
+        config = target.agent_config
+        max_retries = config.max_transient_retries
+        last_exc: AgentTransientError | None = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                if deployment:
+                    return await self._agent.invoke_deployment(
+                        config,
+                        prompt,
+                        worktree,
+                        target.time_budget_seconds,
+                    )
+                return await self._agent.invoke(
+                    config,
+                    prompt,
+                    worktree,
+                    target.time_budget_seconds,
+                )
+            except AgentTransientError as exc:
+                last_exc = exc
+                if attempt >= max_retries:
+                    break
+                backoff = min(
+                    config.transient_retry_base_seconds * (2**attempt),
+                    config.transient_retry_cap_seconds,
+                )
+                logger.warning(
+                    "Transient agent failure on target=%s attempt=%d/%d, "
+                    "backing off %.1fs: %s",
+                    target.id,
+                    attempt + 1,
+                    max_retries + 1,
+                    backoff,
+                    exc,
+                )
+                await asyncio.sleep(backoff)
+
+        assert last_exc is not None
+        raise AgentStructuralError(
+            f"Transient retries exhausted ({max_retries}): {last_exc}"
+        ) from last_exc
+
     async def _invoke_agent(
         self,
         target: OptimizationTarget,
@@ -733,11 +793,11 @@ class ExperimentRunner:
         or ExperimentRecord on early exit (timeout, crash, approval rejection)."""
         try:
             if target.domain_tier is DomainTier.DEPLOYMENT:
-                agent_result = await self._agent.invoke_deployment(
-                    target.agent_config,
+                agent_result = await self._invoke_with_transient_retries(
+                    target,
                     prompt,
                     worktree,
-                    target.time_budget_seconds,
+                    deployment=True,
                 )
                 if target.approval_callback is None:
                     raise ValueError(
@@ -759,11 +819,11 @@ class ExperimentRunner:
                         cost_usd=agent_result.cost_usd,
                     )
             else:
-                agent_result = await self._agent.invoke(
-                    target.agent_config,
+                agent_result = await self._invoke_with_transient_retries(
+                    target,
                     prompt,
                     worktree,
-                    target.time_budget_seconds,
+                    deployment=False,
                 )
         except AgentTimeoutError as exc:
             await self._handle_killed(worktree, pre_sha)

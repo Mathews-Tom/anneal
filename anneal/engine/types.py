@@ -83,6 +83,10 @@ class AgentConfig(BaseModel):
     exploration_ratio: Literal["adaptive", "fixed"] | float = "adaptive"
     two_phase_mutation: bool = False
     diagnosis_model: str = ""
+    stall_timeout_seconds: int = Field(default=300, ge=0)
+    max_transient_retries: int = Field(default=3, ge=0)
+    transient_retry_base_seconds: float = Field(default=10.0, ge=0)
+    transient_retry_cap_seconds: float = Field(default=300.0, ge=0)
 
 
 class DeterministicEval(BaseModel):

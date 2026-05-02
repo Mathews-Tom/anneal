@@ -11,6 +11,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
+from typing import Literal
 
 from rich.console import Console
 from rich.panel import Panel
@@ -243,7 +244,9 @@ def _handle_register(args: argparse.Namespace) -> None:
             "agent", {}
         ).get("model", None)
         if judge_mode or judge_model:
-            effective_judge_mode = judge_mode or "api"
+            effective_judge_mode: Literal["claude_code", "api"] = (
+                "claude_code" if judge_mode == "claude_code" else "api"
+            )
             judge_budget = 0.50 if effective_judge_mode == "claude_code" else 0.02
             judgment_agent_config = AgentConfig(
                 mode=effective_judge_mode,
@@ -435,7 +438,12 @@ def _handle_register(args: argparse.Namespace) -> None:
                 f"  Worktree:     {target.worktree_path}\n"
                 f"  Branch:       {target.git_branch}\n"
                 f"  Time budget:  {target.time_budget_seconds}s\n"
-                f"  Budget cap:   ${target.budget_cap.max_usd_per_day:.2f}/day"
+                f"  Budget cap:   "
+                + (
+                    f"${target.budget_cap.max_usd_per_day:.2f}/day"
+                    if target.budget_cap is not None
+                    else "unset"
+                )
                 + (
                     f"\n  Criteria:     {len(stochastic_eval.criteria)} binary, "
                     f"{len(stochastic_eval.test_prompts)} test prompts, "
@@ -701,7 +709,10 @@ def _handle_run(args: argparse.Namespace) -> None:
         # Select search strategy
         # 10.1 — Simple mode default: HybridSearch (greedy x10 then annealing)
         # when no explicit --search flag is given.
+        from anneal.engine.search import SearchStrategy
+
         search_choice = getattr(args, "search", None)
+        search_strategy: SearchStrategy
         if search_choice == "greedy":
             search_strategy = GreedySearch()
         elif search_choice == "annealing":
@@ -720,10 +731,11 @@ def _handle_run(args: argparse.Namespace) -> None:
             if tree_path.exists():
                 search_strategy = UCBTreeSearch.load(tree_path)
             else:
-                search_strategy = UCBTreeSearch()
+                ucb_search = UCBTreeSearch()
                 records = knowledge.load_records()
                 if records:
-                    search_strategy.bootstrap_from_history(records)
+                    ucb_search.bootstrap_from_history(records)
+                search_strategy = ucb_search
         else:
             # Default: greedy phase (10 experiments) then simulated annealing
             from anneal.engine.search import HybridSearch  # noqa: F811
@@ -735,8 +747,8 @@ def _handle_run(args: argparse.Namespace) -> None:
             target.domain_tier is DomainTier.DEPLOYMENT
             and target.approval_callback is None
         ):
-            target.approval_callback = (
-                lambda diff: input("Apply changes? [y/N] ").lower() == "y"
+            target.approval_callback = lambda diff: (
+                input("Apply changes? [y/N] ").lower() == "y"
             )
 
         # Initialize failure taxonomy (with custom categories if registered)
@@ -1558,11 +1570,12 @@ def _handle_validate(args: argparse.Namespace) -> None:
 
         # Identify the weakest criterion
         if result.per_criterion_scores:
+            criterion_scores = result.per_criterion_scores
             weakest_name = min(
-                result.per_criterion_scores,
-                key=lambda k: result.per_criterion_scores[k],
-            )  # type: ignore[arg-type]
-            weakest_val = result.per_criterion_scores[weakest_name]
+                criterion_scores,
+                key=lambda k: criterion_scores[k],
+            )
+            weakest_val = criterion_scores[weakest_name]
             if weakest_val < 0.5:
                 console.print(
                     f"\n  Weakest criterion: [yellow]{weakest_name}[/yellow] "

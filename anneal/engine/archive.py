@@ -4,6 +4,7 @@ Maintains a grid of best solutions indexed by behavioral descriptors
 (e.g., per-criterion scores). Each cell holds the highest-fitness
 solution that maps to that behavioral region.
 """
+
 from __future__ import annotations
 
 import json
@@ -117,7 +118,7 @@ class MapElitesArchive:
             return 0
         sample = next(iter(self._archive.values()))
         n_dims = len(sample.behavior)
-        return self._n_bins ** n_dims
+        return int(self._n_bins**n_dims)
 
     def _save(self) -> None:
         """Persist archive to JSONL file."""

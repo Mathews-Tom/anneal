@@ -11,6 +11,7 @@ import json
 import logging
 import time
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -80,7 +81,7 @@ class NotificationManager:
 
         return await self._deliver(payload)
 
-    async def _deliver(self, payload: dict) -> bool:
+    async def _deliver(self, payload: dict[str, Any]) -> bool:
         """Deliver payload to primary webhook, falling back to secondary on failure."""
         primary = self._config.webhook_url
         if primary is None:
@@ -100,7 +101,7 @@ class NotificationManager:
         )
         return False
 
-    async def _fire_webhook(self, url: str, payload: dict) -> bool:
+    async def _fire_webhook(self, url: str, payload: dict[str, Any]) -> bool:
         """POST JSON to url with retry (config.webhook_retry_count attempts, exponential backoff)."""
         retry_count = self._config.webhook_retry_count
         base_delay = self._config.webhook_retry_delay_seconds
@@ -117,7 +118,7 @@ class NotificationManager:
                     return True
             except Exception as exc:
                 if attempt < retry_count - 1:
-                    delay = base_delay * (2 ** attempt)
+                    delay = base_delay * (2**attempt)
                     logger.warning(
                         "Webhook POST to %s failed (attempt %d/%d): %s — retrying in %.1fs",
                         url,

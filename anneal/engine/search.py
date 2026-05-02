@@ -131,9 +131,9 @@ class GreedySearch:
                 sum((d - mean_diff) ** 2 for d in differences) / max(n - 1, 1)
             ) ** 0.5
             if std_diff == 0:
-                return mean_diff != 0  # All identical differences
+                return bool(mean_diff != 0)  # All identical differences
             effect_size = abs(mean_diff) / std_diff
-            return effect_size > 0.5  # Medium effect (Cohen's d)
+            return bool(effect_size > 0.5)  # Medium effect (Cohen's d)
 
         alternative = "greater" if direction is Direction.HIGHER_IS_BETTER else "less"
 

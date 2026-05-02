@@ -4,22 +4,27 @@ Uses Gaussian Process regression (scikit-learn) to predict mutation
 scores from experiment history features. Falls back gracefully when
 scikit-learn is not installed.
 """
+
 from __future__ import annotations
 
 import logging
 import numpy as np
 from dataclasses import dataclass, field
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 _SKLEARN_AVAILABLE = False
 try:
-    from sklearn.gaussian_process import GaussianProcessRegressor
-    from sklearn.gaussian_process.kernels import Matern
+    from sklearn.gaussian_process import GaussianProcessRegressor as _GPR
+    from sklearn.gaussian_process.kernels import Matern as _Matern
+
+    GaussianProcessRegressor: Any = _GPR
+    Matern: Any = _Matern
     _SKLEARN_AVAILABLE = True
 except ImportError:
-    GaussianProcessRegressor = None  # type: ignore[misc,assignment]
-    Matern = None  # type: ignore[misc,assignment]
+    GaussianProcessRegressor = None
+    Matern = None
 
 
 @dataclass
@@ -33,7 +38,7 @@ class SurrogateModel:
 
     _observations_X: list[list[float]] = field(default_factory=list)
     _observations_y: list[float] = field(default_factory=list)
-    _model: object | None = None  # GaussianProcessRegressor when available
+    _model: Any = None  # GaussianProcessRegressor when available
     _fitted: bool = False
     min_observations: int = 10  # Don't predict until we have enough data
 

@@ -9,11 +9,18 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from anneal.engine.types import ArtifactError, ExperimentRecord, Outcome, OptimizationTarget
+import tiktoken
+
+from anneal.engine.types import (
+    ArtifactError,
+    ExperimentRecord,
+    Outcome,
+    OptimizationTarget,
+)
 
 
 def _api_response_format_instruction(target: OptimizationTarget) -> str | None:
@@ -56,6 +63,7 @@ def _api_response_format_instruction(target: OptimizationTarget) -> str | None:
         "- Do not add explanations before, between, or after the sections."
     )
 
+
 if TYPE_CHECKING:
     from anneal.engine.knowledge import KnowledgeStore
     from anneal.engine.research import ResearchResult
@@ -66,8 +74,6 @@ logger = logging.getLogger(__name__)
 # Token estimation
 # ---------------------------------------------------------------------------
 
-
-import tiktoken
 
 _encoder = tiktoken.get_encoding("cl100k_base")
 
@@ -415,9 +421,13 @@ def _build_verifier_warning(history: list[ExperimentRecord]) -> str:
     if not warnings:
         return ""
 
-    return "# Verifier Failure Warnings\n\n" + "\n".join(warnings) + (
-        "\n\nFocus on producing mutations that pass these verification gates. "
-        "Review the verifier requirements before making changes."
+    return (
+        "# Verifier Failure Warnings\n\n"
+        + "\n".join(warnings)
+        + (
+            "\n\nFocus on producing mutations that pass these verification gates. "
+            "Review the verifier requirements before making changes."
+        )
     )
 
 
@@ -440,7 +450,11 @@ def _build_failure_distribution_summary(history: list[ExperimentRecord]) -> str:
     sorted_dist = sorted(dist.items(), key=lambda x: x[1], reverse=True)
     for cat, count in sorted_dist:
         pct = count / total_failures * 100
-        suffix = " ← most common" if cat == sorted_dist[0][0] and len(sorted_dist) > 1 else ""
+        suffix = (
+            " ← most common"
+            if cat == sorted_dist[0][0] and len(sorted_dist) > 1
+            else ""
+        )
         lines.append(f"- {cat}: {count} ({pct:.0f}%){suffix}")
 
     # Blind spot check
@@ -448,7 +462,9 @@ def _build_failure_distribution_summary(history: list[ExperimentRecord]) -> str:
     blind_spots = taxonomy.blind_spot_check(history)
     if blind_spots:
         for bs in blind_spots:
-            lines.append(f"- [blind spot] {bs}: 0 attributions across {total_failures} failures")
+            lines.append(
+                f"- [blind spot] {bs}: 0 attributions across {total_failures} failures"
+            )
 
     if sorted_dist:
         top_cat = sorted_dist[0][0]
@@ -485,12 +501,13 @@ def build_target_context(
 
     knowledge_dir = repo_root / target.knowledge_path
     strategy = load_strategy(knowledge_dir)
+    program_content: str
     if strategy is not None:
         program_content = render_manifest_as_prompt(strategy)
     else:
         program_path = knowledge_dir / "program.md"
-        program_content = _read_file_safe(program_path)
-        if program_content is None:
+        loaded = _read_file_safe(program_path)
+        if loaded is None:
             program_content = (
                 f"# Optimization Target: {target.id}\n\n"
                 f"You are optimizing artifacts to improve the metric "
@@ -504,6 +521,8 @@ def build_target_context(
             logger.info(
                 "No program.md found at %s, using generated default", program_path
             )
+        else:
+            program_content = loaded
 
     budget.add_slot("system_prompt", program_content, priority=1, required=True)
 
@@ -512,7 +531,8 @@ def build_target_context(
         budget.add_slot(
             "policy_instructions",
             f"# Mutation Strategy\n\n{policy_instructions}",
-            priority=2, required=True,
+            priority=2,
+            required=True,
         )
 
     # Slot 2/3: Artifact (current best version of editable files)
@@ -521,9 +541,7 @@ def build_target_context(
         artifact_path = worktree_path / artifact_rel
         content = _read_file_safe(artifact_path)
         if content is not None:
-            artifact_parts.append(
-                f"### {artifact_rel}\n```\n{content}\n```"
-            )
+            artifact_parts.append(f"### {artifact_rel}\n```\n{content}\n```")
         else:
             logger.warning("Artifact file not found: %s", artifact_path)
 
@@ -557,7 +575,10 @@ def build_target_context(
     api_instruction = _api_response_format_instruction(target)
     if api_instruction is not None:
         budget.add_slot(
-            "api_response_format", api_instruction, priority=1, required=True,
+            "api_response_format",
+            api_instruction,
+            priority=1,
+            required=True,
         )
 
     # Slot 4: Recent history (last 5 experiment records)
@@ -572,7 +593,9 @@ def build_target_context(
             lineage = knowledge.get_lineage(kept_records[-1].git_sha, depth=5)
             if lineage:
                 lineage_content = _format_lineage(lineage)
-                budget.add_slot("lineage_trace", lineage_content, priority=5, required=False)
+                budget.add_slot(
+                    "lineage_trace", lineage_content, priority=5, required=False
+                )
 
     # Slot 5b: Research suggestions (injected after plateau-triggered research)
     if research_hints is not None and research_hints.suggestions:
@@ -588,7 +611,9 @@ def build_target_context(
             "These are suggestions from external research. "
             "Use them as inspiration if relevant. Ignore if not applicable."
         )
-        budget.add_slot("research_hints", "\n".join(parts_hints), priority=5, required=False)
+        budget.add_slot(
+            "research_hints", "\n".join(parts_hints), priority=5, required=False
+        )
 
     # Slot 6: Knowledge context (retrieved history + consolidated learnings)
     if knowledge_context:
@@ -674,8 +699,10 @@ def build_restart_context(
     )
 
     budget.add_slot(
-        "system_prompt", program_content + restart_instruction,
-        priority=1, required=True,
+        "system_prompt",
+        program_content + restart_instruction,
+        priority=1,
+        required=True,
     )
 
     # API-mode response-format directive (restart context has no existing
@@ -684,7 +711,10 @@ def build_restart_context(
     api_instruction = _api_response_format_instruction(target)
     if api_instruction is not None:
         budget.add_slot(
-            "api_response_format", api_instruction, priority=1, required=True,
+            "api_response_format",
+            api_instruction,
+            priority=1,
+            required=True,
         )
 
     # Slot 2: Scope definition (what files to create/modify)
@@ -694,11 +724,13 @@ def build_restart_context(
         budget.add_slot(
             "scope_definition",
             f"# Scope Definition\n\n```yaml\n{scope_content}\n```",
-            priority=2, required=True,
+            priority=2,
+            required=True,
         )
 
     # Slot 3: Watch file contents (reference material, read-only context)
     from anneal.engine.scope import ScopeError, load_scope
+
     try:
         scope = load_scope(scope_path)
         watch_parts: list[str] = []
@@ -711,7 +743,8 @@ def build_restart_context(
             budget.add_slot(
                 "watch_files",
                 "# Reference Files (read-only)\n\n" + "\n\n".join(watch_parts),
-                priority=3, required=False,
+                priority=3,
+                required=False,
             )
     except ScopeError:
         logger.debug("Scope loading failed for restart context, skipping watch files")

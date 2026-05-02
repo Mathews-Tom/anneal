@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from anneal.engine.agent import AgentInvoker, AgentInvocationError
+from anneal.engine.agent import AgentInvoker
 from anneal.engine.types import AgentConfig
 
 
@@ -18,6 +18,26 @@ def _make_config(mode: str = "claude_code") -> AgentConfig:
         evaluator_model="gpt-4.1-mini",
         max_budget_usd=0.10,
     )
+
+
+def _make_streaming_proc(stdout: bytes) -> MagicMock:
+    """Build a subprocess mock for AgentInvoker's streaming read contract."""
+
+    def _reader(payload: bytes) -> AsyncMock:
+        chunks = iter([payload, b""])
+        reader = AsyncMock()
+        reader.read = AsyncMock(side_effect=lambda _n=4096: next(chunks, b""))
+        return reader
+
+    proc = MagicMock()
+    proc.returncode = 0
+    proc.pid = 12345
+    proc.stdin = MagicMock()
+    proc.stdin.drain = AsyncMock(return_value=None)
+    proc.stdout = _reader(stdout)
+    proc.stderr = _reader(b"")
+    proc.wait = AsyncMock(return_value=0)
+    return proc
 
 
 class TestInvokeMeta:
@@ -35,13 +55,9 @@ class TestInvokeMeta:
             "anneal.engine.agent.asyncio.create_subprocess_exec",
             new_callable=AsyncMock,
         ) as mock_exec:
-            mock_proc = AsyncMock()
-            mock_proc.communicate.return_value = (
+            mock_proc = _make_streaming_proc(
                 b'{"result": "modified", "total_cost_usd": 0.01, "usage": {"input_tokens": 100, "output_tokens": 50}}',
-                b"",
             )
-            mock_proc.returncode = 0
-            mock_proc.pid = 12345
             mock_exec.return_value = mock_proc
 
             await invoker.invoke_meta(
@@ -69,13 +85,9 @@ class TestInvokeMeta:
             "anneal.engine.agent.asyncio.create_subprocess_exec",
             new_callable=AsyncMock,
         ) as mock_exec:
-            mock_proc = AsyncMock()
-            mock_proc.communicate.return_value = (
+            mock_proc = _make_streaming_proc(
                 b'{"result": "", "total_cost_usd": 0.0, "usage": {}}',
-                b"",
             )
-            mock_proc.returncode = 0
-            mock_proc.pid = 12345
             mock_exec.return_value = mock_proc
 
             await invoker.invoke_meta(
@@ -87,8 +99,7 @@ class TestInvokeMeta:
             )
 
             # The prompt sent to stdin should contain the program.md content
-            call_args = mock_proc.communicate.call_args
-            stdin_bytes = call_args[1]["input"] if "input" in call_args[1] else call_args[0][0]
+            stdin_bytes = mock_proc.stdin.write.call_args[0][0]
             stdin_text = stdin_bytes.decode()
             assert "UNIQUE_PROGRAM_CONTENT_XYZ" in stdin_text
 
@@ -104,13 +115,9 @@ class TestInvokeMeta:
             "anneal.engine.agent.asyncio.create_subprocess_exec",
             new_callable=AsyncMock,
         ) as mock_exec:
-            mock_proc = AsyncMock()
-            mock_proc.communicate.return_value = (
+            mock_proc = _make_streaming_proc(
                 b'{"result": "", "total_cost_usd": 0.0, "usage": {}}',
-                b"",
             )
-            mock_proc.returncode = 0
-            mock_proc.pid = 12345
             mock_exec.return_value = mock_proc
 
             await invoker.invoke_meta(
@@ -121,13 +128,14 @@ class TestInvokeMeta:
                 program_md_path=program_md,
             )
 
-            call_args = mock_proc.communicate.call_args
-            stdin_bytes = call_args[1]["input"] if "input" in call_args[1] else call_args[0][0]
+            stdin_bytes = mock_proc.stdin.write.call_args[0][0]
             stdin_text = stdin_bytes.decode()
             assert "SPECIFIC_META_INSTRUCTION" in stdin_text
 
     @pytest.mark.asyncio
-    async def test_meta_prompt_contains_meta_optimization_marker(self, tmp_path: Path) -> None:
+    async def test_meta_prompt_contains_meta_optimization_marker(
+        self, tmp_path: Path
+    ) -> None:
         invoker = AgentInvoker()
         config = _make_config(mode="claude_code")
 
@@ -138,13 +146,9 @@ class TestInvokeMeta:
             "anneal.engine.agent.asyncio.create_subprocess_exec",
             new_callable=AsyncMock,
         ) as mock_exec:
-            mock_proc = AsyncMock()
-            mock_proc.communicate.return_value = (
+            mock_proc = _make_streaming_proc(
                 b'{"result": "", "total_cost_usd": 0.0, "usage": {}}',
-                b"",
             )
-            mock_proc.returncode = 0
-            mock_proc.pid = 12345
             mock_exec.return_value = mock_proc
 
             await invoker.invoke_meta(
@@ -155,15 +159,16 @@ class TestInvokeMeta:
                 program_md_path=program_md,
             )
 
-            call_args = mock_proc.communicate.call_args
-            stdin_bytes = call_args[1]["input"] if "input" in call_args[1] else call_args[0][0]
+            stdin_bytes = mock_proc.stdin.write.call_args[0][0]
             stdin_text = stdin_bytes.decode()
             assert "meta-optimizing" in stdin_text
 
     def test_meta_unknown_mode_raises(self) -> None:
         from pydantic import ValidationError
 
-        with pytest.raises(ValidationError, match="Input should be 'claude_code' or 'api'"):
+        with pytest.raises(
+            ValidationError, match="Input should be 'claude_code' or 'api'"
+        ):
             _make_config(mode="unknown")
 
     @pytest.mark.asyncio
@@ -178,13 +183,9 @@ class TestInvokeMeta:
             "anneal.engine.agent.asyncio.create_subprocess_exec",
             new_callable=AsyncMock,
         ) as mock_exec:
-            mock_proc = AsyncMock()
-            mock_proc.communicate.return_value = (
+            mock_proc = _make_streaming_proc(
                 b'{"result": "", "total_cost_usd": 0.0, "usage": {}}',
-                b"",
             )
-            mock_proc.returncode = 0
-            mock_proc.pid = 12345
             mock_exec.return_value = mock_proc
 
             await invoker.invoke_meta(

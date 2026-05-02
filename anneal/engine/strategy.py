@@ -101,9 +101,13 @@ def _summarize_criterion_performance(records: list[ExperimentRecord]) -> str:
         return "No per-criterion data available."
 
     lines: list[str] = []
-    for name, stats in sorted(criterion_stats.items(), key=lambda kv: kv[1]["fail"], reverse=True):
+    for name, stats in sorted(
+        criterion_stats.items(), key=lambda kv: kv[1]["fail"], reverse=True
+    ):
         total = stats["pass"] + stats["fail"]
-        lines.append(f"- {name}: {stats['pass']}/{total} passed ({stats['fail']} failures)")
+        lines.append(
+            f"- {name}: {stats['pass']}/{total} passed ({stats['fail']} failures)"
+        )
     return "\n".join(lines)
 
 
@@ -118,8 +122,7 @@ def evolve_weakest_component(
     target = manifest.weakest_component()
 
     relevant_records = [
-        r for r in records
-        if r.outcome in (Outcome.KEPT, Outcome.DISCARDED)
+        r for r in records if r.outcome in (Outcome.KEPT, Outcome.DISCARDED)
     ]
 
     kept_count = sum(1 for r in relevant_records if r.outcome is Outcome.KEPT)
@@ -138,7 +141,7 @@ def evolve_weakest_component(
         prompt += "- Score range: N/A\n\n"
 
     prompt += (
-        f"### Per-criterion feedback from relevant experiments\n"
+        "### Per-criterion feedback from relevant experiments\n"
         + _summarize_criterion_performance(relevant_records)
         + "\n\n"
         f"Revise ONLY the '{target.name}' component. "

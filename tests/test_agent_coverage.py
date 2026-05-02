@@ -87,7 +87,40 @@ def _mock_openai_response(
     return response
 
 
-def _make_experiment_record(*, hypothesis: str = "test", score: float = 0.5) -> ExperimentRecord:
+def _make_streaming_proc(
+    stdout: bytes = b'{"result":"ok","total_cost_usd":0.01,"usage":{"input_tokens":10,"output_tokens":5}}',
+    returncode: int = 0,
+    stderr: bytes = b"",
+) -> MagicMock:
+    """Build a MagicMock subprocess that satisfies the streaming contract
+    used by ``AgentInvoker._run_with_stall_detection``: stdin is a
+    writable+drainable pipe, stdout/stderr yield their bytes on the first
+    read and EOF (empty bytes) thereafter, and ``wait()`` returns the
+    pre-set returncode immediately.
+    """
+
+    def _reader(payload: bytes) -> AsyncMock:
+        chunks = iter([payload, b""])
+        reader = AsyncMock()
+        reader.read = AsyncMock(side_effect=lambda _n=4096: next(chunks, b""))
+        return reader
+
+    proc = MagicMock()
+    proc.pid = 12345
+    proc.returncode = returncode
+    proc.stdin = MagicMock()
+    proc.stdin.drain = AsyncMock(return_value=None)
+    proc.stdout = _reader(stdout)
+    proc.stderr = _reader(stderr)
+    proc.wait = AsyncMock(return_value=returncode)
+    # Legacy callers (older tests) may still reference communicate.
+    proc.communicate = AsyncMock(return_value=(stdout, stderr))
+    return proc
+
+
+def _make_experiment_record(
+    *, hypothesis: str = "test", score: float = 0.5
+) -> ExperimentRecord:
     import datetime
 
     return ExperimentRecord(
@@ -130,7 +163,9 @@ class TestExtractHypothesis:
         # Assert
         assert result == "This is the hypothesis."
 
-    def test_extract_hypothesis_blank_line_before_next_header_captures_next_section(self) -> None:
+    def test_extract_hypothesis_blank_line_before_next_header_captures_next_section(
+        self,
+    ) -> None:
         # Arrange — the \s* in the regex consumes blank lines after the header,
         # so the capture group starts at the next ## section when hypothesis body is blank.
         # This verifies the actual (not idealized) regex behavior.
@@ -189,7 +224,9 @@ class TestExtractTags:
         # Assert
         assert result == ["foo", "bar", "baz"]
 
-    def test_extract_tags_blank_line_before_next_header_captures_next_section(self) -> None:
+    def test_extract_tags_blank_line_before_next_header_captures_next_section(
+        self,
+    ) -> None:
         # Arrange — same regex behavior: \s* in the pattern eats the blank line,
         # capture group starts at the next ## header text.
         text = "## Tags\n\n## Next"
@@ -280,11 +317,19 @@ class TestInvokeDispatch:
         invoker = AgentInvoker()
         config = _api_config()
         expected = AgentInvocationResult(
-            success=True, cost_usd=0.01, input_tokens=10, output_tokens=5,
-            hypothesis=None, hypothesis_source="synthesized", tags=[], raw_output="x",
+            success=True,
+            cost_usd=0.01,
+            input_tokens=10,
+            output_tokens=5,
+            hypothesis=None,
+            hypothesis_source="synthesized",
+            tags=[],
+            raw_output="x",
         )
 
-        with patch.object(invoker, "_invoke_api", new=AsyncMock(return_value=expected)) as mock_api:
+        with patch.object(
+            invoker, "_invoke_api", new=AsyncMock(return_value=expected)
+        ) as mock_api:
             # Act
             result = await invoker.invoke(config, "prompt", tmp_path, 60)
 
@@ -322,16 +367,26 @@ class TestInvokeDispatch:
             await invoker.invoke_meta(config, "meta prompt", tmp_path, 60, program_md)
 
     @pytest.mark.asyncio
-    async def test_invoke_claude_code_mode_calls_invoke_claude_code(self, tmp_path: Path) -> None:
+    async def test_invoke_claude_code_mode_calls_invoke_claude_code(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         invoker = AgentInvoker()
         config = _cc_config()
         expected = AgentInvocationResult(
-            success=True, cost_usd=0.01, input_tokens=10, output_tokens=5,
-            hypothesis=None, hypothesis_source="synthesized", tags=[], raw_output="x",
+            success=True,
+            cost_usd=0.01,
+            input_tokens=10,
+            output_tokens=5,
+            hypothesis=None,
+            hypothesis_source="synthesized",
+            tags=[],
+            raw_output="x",
         )
 
-        with patch.object(invoker, "_invoke_claude_code", new=AsyncMock(return_value=expected)) as mock_cc:
+        with patch.object(
+            invoker, "_invoke_claude_code", new=AsyncMock(return_value=expected)
+        ) as mock_cc:
             # Act
             result = await invoker.invoke(config, "prompt", tmp_path, 60)
 
@@ -340,16 +395,26 @@ class TestInvokeDispatch:
         assert result is expected
 
     @pytest.mark.asyncio
-    async def test_invoke_deployment_delegates_to_invoke_with_deployment_mode(self, tmp_path: Path) -> None:
+    async def test_invoke_deployment_delegates_to_invoke_with_deployment_mode(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         invoker = AgentInvoker()
         config = _cc_config()
         expected = AgentInvocationResult(
-            success=True, cost_usd=0.01, input_tokens=10, output_tokens=5,
-            hypothesis=None, hypothesis_source="synthesized", tags=[], raw_output="x",
+            success=True,
+            cost_usd=0.01,
+            input_tokens=10,
+            output_tokens=5,
+            hypothesis=None,
+            hypothesis_source="synthesized",
+            tags=[],
+            raw_output="x",
         )
 
-        with patch.object(invoker, "_invoke_claude_code", new=AsyncMock(return_value=expected)) as mock_cc:
+        with patch.object(
+            invoker, "_invoke_claude_code", new=AsyncMock(return_value=expected)
+        ) as mock_cc:
             # Act
             result = await invoker.invoke_deployment(config, "prompt", tmp_path, 60)
 
@@ -359,20 +424,32 @@ class TestInvokeDispatch:
         assert result is expected
 
     @pytest.mark.asyncio
-    async def test_invoke_meta_claude_code_mode_calls_invoke_claude_code(self, tmp_path: Path) -> None:
+    async def test_invoke_meta_claude_code_mode_calls_invoke_claude_code(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         invoker = AgentInvoker()
         config = _cc_config()
         program_md = tmp_path / "program.md"
         program_md.write_text("strategy text")
         expected = AgentInvocationResult(
-            success=True, cost_usd=0.01, input_tokens=10, output_tokens=5,
-            hypothesis=None, hypothesis_source="synthesized", tags=[], raw_output="x",
+            success=True,
+            cost_usd=0.01,
+            input_tokens=10,
+            output_tokens=5,
+            hypothesis=None,
+            hypothesis_source="synthesized",
+            tags=[],
+            raw_output="x",
         )
 
-        with patch.object(invoker, "_invoke_claude_code", new=AsyncMock(return_value=expected)) as mock_cc:
+        with patch.object(
+            invoker, "_invoke_claude_code", new=AsyncMock(return_value=expected)
+        ) as mock_cc:
             # Act
-            result = await invoker.invoke_meta(config, "meta prompt", tmp_path, 60, program_md)
+            result = await invoker.invoke_meta(
+                config, "meta prompt", tmp_path, 60, program_md
+            )
 
         # Assert: meta_mode=True must be passed through
         _, kwargs = mock_cc.call_args
@@ -387,13 +464,23 @@ class TestInvokeDispatch:
         program_md = tmp_path / "program.md"
         program_md.write_text("strategy text")
         expected = AgentInvocationResult(
-            success=True, cost_usd=0.01, input_tokens=10, output_tokens=5,
-            hypothesis=None, hypothesis_source="synthesized", tags=[], raw_output="x",
+            success=True,
+            cost_usd=0.01,
+            input_tokens=10,
+            output_tokens=5,
+            hypothesis=None,
+            hypothesis_source="synthesized",
+            tags=[],
+            raw_output="x",
         )
 
-        with patch.object(invoker, "_invoke_api", new=AsyncMock(return_value=expected)) as mock_api:
+        with patch.object(
+            invoker, "_invoke_api", new=AsyncMock(return_value=expected)
+        ) as mock_api:
             # Act
-            result = await invoker.invoke_meta(config, "meta prompt", tmp_path, 60, program_md)
+            result = await invoker.invoke_meta(
+                config, "meta prompt", tmp_path, 60, program_md
+            )
 
         # Assert
         mock_api.assert_awaited_once()
@@ -412,11 +499,7 @@ class TestInvokeClaudeCodeAllowedTools:
         returncode: int = 0,
         stderr: bytes = b"",
     ) -> MagicMock:
-        proc = MagicMock()
-        proc.pid = 12345
-        proc.returncode = returncode
-        proc.communicate = AsyncMock(return_value=(stdout, stderr))
-        return proc
+        return _make_streaming_proc(stdout=stdout, returncode=returncode, stderr=stderr)
 
     @pytest.mark.asyncio
     async def test_meta_mode_uses_edit_tool(self, tmp_path: Path) -> None:
@@ -425,7 +508,9 @@ class TestInvokeClaudeCodeAllowedTools:
         config = _cc_config()
         proc = self._make_proc()
 
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)) as mock_exec:
+        with patch(
+            "asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)
+        ) as mock_exec:
             # Act
             await invoker._invoke_claude_code(
                 config, "prompt", tmp_path, 60, meta_mode=True
@@ -443,7 +528,9 @@ class TestInvokeClaudeCodeAllowedTools:
         config = _cc_config()
         proc = self._make_proc()
 
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)) as mock_exec:
+        with patch(
+            "asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)
+        ) as mock_exec:
             # Act
             await invoker._invoke_claude_code(
                 config, "prompt", tmp_path, 60, deployment_mode=True
@@ -461,7 +548,9 @@ class TestInvokeClaudeCodeAllowedTools:
         config = _cc_config()
         proc = self._make_proc()
 
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)) as mock_exec:
+        with patch(
+            "asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)
+        ) as mock_exec:
             # Act
             await invoker._invoke_claude_code(config, "prompt", tmp_path, 60)
 
@@ -472,23 +561,37 @@ class TestInvokeClaudeCodeAllowedTools:
 
     @pytest.mark.asyncio
     async def test_timeout_raises_agent_timeout_error(self, tmp_path: Path) -> None:
+        """Wall-clock exhaustion now surfaces from
+        :meth:`AgentInvoker._run_with_stall_detection`. Patch that helper
+        so the test stays focused on error propagation rather than the
+        streaming machinery (which is covered in
+        ``test_agent_stall_detection.py``).
+        """
         # Arrange
         invoker = AgentInvoker()
         config = _cc_config()
-        proc = MagicMock()
-        proc.pid = 99999
-        proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
+        proc = _make_streaming_proc()
 
         with (
             patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)),
-            patch("os.killpg", side_effect=ProcessLookupError),
+            patch.object(
+                invoker,
+                "_run_with_stall_detection",
+                new=AsyncMock(
+                    side_effect=AgentTimeoutError(
+                        "Agent exceeded wall-clock budget of 1s"
+                    )
+                ),
+            ),
         ):
             # Act / Assert
-            with pytest.raises(AgentTimeoutError, match="exceeded time budget"):
+            with pytest.raises(AgentTimeoutError, match="wall-clock budget"):
                 await invoker._invoke_claude_code(config, "prompt", tmp_path, 1)
 
     @pytest.mark.asyncio
-    async def test_nonzero_returncode_raises_invocation_error(self, tmp_path: Path) -> None:
+    async def test_nonzero_returncode_raises_invocation_error(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         invoker = AgentInvoker()
         config = _cc_config()
@@ -520,11 +623,13 @@ class TestInvokeClaudeCodeAllowedTools:
         # Arrange
         invoker = AgentInvoker()
         config = _cc_config()
-        payload = json.dumps({
-            "is_error": False,
-            "subtype": "error_overloaded",
-            "total_cost_usd": 0.002,
-        }).encode()
+        payload = json.dumps(
+            {
+                "is_error": False,
+                "subtype": "error_overloaded",
+                "total_cost_usd": 0.002,
+            }
+        ).encode()
         proc = self._make_proc(stdout=payload)
 
         with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)):
@@ -537,28 +642,36 @@ class TestInvokeClaudeCodeAllowedTools:
         # Arrange
         invoker = AgentInvoker()
         config = _cc_config()
-        payload = json.dumps({
-            "is_error": True,
-            "subtype": "",
-            "total_cost_usd": 0.0,
-        }).encode()
+        payload = json.dumps(
+            {
+                "is_error": True,
+                "subtype": "",
+                "total_cost_usd": 0.0,
+            }
+        ).encode()
         proc = self._make_proc(stdout=payload)
 
         with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)):
             # Act / Assert
-            with pytest.raises(AgentInvocationError, match="Claude Code returned error"):
+            with pytest.raises(
+                AgentInvocationError, match="Claude Code returned error"
+            ):
                 await invoker._invoke_claude_code(config, "prompt", tmp_path, 60)
 
     @pytest.mark.asyncio
-    async def test_success_response_returns_invocation_result(self, tmp_path: Path) -> None:
+    async def test_success_response_returns_invocation_result(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         invoker = AgentInvoker()
         config = _cc_config()
-        payload = json.dumps({
-            "result": "## Hypothesis\nFix the thing.\n## Tags\nfix, quality",
-            "total_cost_usd": 0.015,
-            "usage": {"input_tokens": 200, "output_tokens": 80},
-        }).encode()
+        payload = json.dumps(
+            {
+                "result": "## Hypothesis\nFix the thing.\n## Tags\nfix, quality",
+                "total_cost_usd": 0.015,
+                "usage": {"input_tokens": 200, "output_tokens": 80},
+            }
+        ).encode()
         proc = self._make_proc(stdout=payload)
 
         with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)):
@@ -612,11 +725,15 @@ class TestInvokeApi:
         assert result.output_tokens == 60
 
     @pytest.mark.asyncio
-    async def test_invoke_api_no_hypothesis_synthesized_source(self, tmp_path: Path) -> None:
+    async def test_invoke_api_no_hypothesis_synthesized_source(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         invoker = AgentInvoker()
         config = _api_config()
-        mock_response = _mock_openai_response("Plain text with no headers.", prompt_tokens=50, completion_tokens=20)
+        mock_response = _mock_openai_response(
+            "Plain text with no headers.", prompt_tokens=50, completion_tokens=20
+        )
         mock_client = AsyncMock()
         mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
@@ -634,23 +751,31 @@ class TestInvokeApi:
         assert result.tags == []
 
     @pytest.mark.asyncio
-    async def test_invoke_api_timeout_raises_agent_timeout_error(self, tmp_path: Path) -> None:
+    async def test_invoke_api_timeout_raises_agent_timeout_error(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         invoker = AgentInvoker()
         config = _api_config()
         mock_client = AsyncMock()
-        mock_client.chat.completions.create = AsyncMock(side_effect=asyncio.TimeoutError())
+        mock_client.chat.completions.create = AsyncMock(
+            side_effect=asyncio.TimeoutError()
+        )
 
         with (
             patch("anneal.engine.agent.make_client", return_value=mock_client),
             patch("anneal.engine.agent.strip_provider_prefix", return_value="gpt-4.1"),
         ):
             # Act / Assert
-            with pytest.raises(AgentTimeoutError, match="API agent exceeded time budget"):
+            with pytest.raises(
+                AgentTimeoutError, match="API agent exceeded time budget"
+            ):
                 await invoker._invoke_api(config, "prompt", tmp_path, 1)
 
     @pytest.mark.asyncio
-    async def test_invoke_api_null_usage_defaults_to_zero_tokens(self, tmp_path: Path) -> None:
+    async def test_invoke_api_null_usage_defaults_to_zero_tokens(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         invoker = AgentInvoker()
         config = _api_config()
@@ -673,7 +798,9 @@ class TestInvokeApi:
         mock_cost.assert_called_once_with(config.model, 0, 0)
 
     @pytest.mark.asyncio
-    async def test_invoke_api_null_content_returns_empty_raw_output(self, tmp_path: Path) -> None:
+    async def test_invoke_api_null_content_returns_empty_raw_output(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         invoker = AgentInvoker()
         config = _api_config()
@@ -804,24 +931,32 @@ class TestBuildDiagnosisPrompt:
 
 class TestDiagnoseApiErrorHandling:
     @pytest.mark.asyncio
-    async def test_diagnose_timeout_raises_agent_timeout_error(self, tmp_path: Path) -> None:
+    async def test_diagnose_timeout_raises_agent_timeout_error(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         invoker = AgentInvoker()
         config = _api_config()
         eval_result = EvalResult(score=0.5)
         mock_client = AsyncMock()
-        mock_client.chat.completions.create = AsyncMock(side_effect=asyncio.TimeoutError())
+        mock_client.chat.completions.create = AsyncMock(
+            side_effect=asyncio.TimeoutError()
+        )
 
         with (
             patch("anneal.engine.agent.make_client", return_value=mock_client),
             patch("anneal.engine.agent.strip_provider_prefix", return_value="gpt-4.1"),
         ):
             # Act / Assert
-            with pytest.raises(AgentTimeoutError, match="Diagnosis agent exceeded 60s timeout"):
+            with pytest.raises(
+                AgentTimeoutError, match="Diagnosis agent exceeded 60s timeout"
+            ):
                 await invoker.diagnose(config, "artifact", eval_result, [], tmp_path)
 
     @pytest.mark.asyncio
-    async def test_diagnose_generic_exception_raises_invocation_error(self, tmp_path: Path) -> None:
+    async def test_diagnose_generic_exception_raises_invocation_error(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         invoker = AgentInvoker()
         config = _api_config()
@@ -861,7 +996,9 @@ class TestDiagnoseApiErrorHandling:
         mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
         with (
-            patch("anneal.engine.agent.make_client", return_value=mock_client) as mock_make,
+            patch(
+                "anneal.engine.agent.make_client", return_value=mock_client
+            ) as mock_make,
             patch("anneal.engine.agent.compute_cost", return_value=0.0),
             patch("anneal.engine.agent.strip_provider_prefix", side_effect=lambda m: m),
         ):
@@ -968,15 +1105,25 @@ class TestGenerateDraftsApiMode:
         invoker = AgentInvoker()
         config = _api_config(temperature=0.7, max_budget_usd=0.30)
         mock_result = AgentInvocationResult(
-            success=True, cost_usd=0.01, input_tokens=10, output_tokens=5,
-            hypothesis="h", hypothesis_source="agent", tags=[], raw_output="draft output",
+            success=True,
+            cost_usd=0.01,
+            input_tokens=10,
+            output_tokens=5,
+            hypothesis="h",
+            hypothesis_source="agent",
+            tags=[],
+            raw_output="draft output",
         )
         git = AsyncMock()
         git.rev_parse = AsyncMock(return_value="sha123")
 
-        with patch.object(invoker, "_invoke_api", new=AsyncMock(return_value=mock_result)):
+        with patch.object(
+            invoker, "_invoke_api", new=AsyncMock(return_value=mock_result)
+        ):
             # Act
-            drafts = await invoker.generate_drafts(config, "prompt", tmp_path, 60, n_drafts=3, git=git)
+            drafts = await invoker.generate_drafts(
+                config, "prompt", tmp_path, 60, n_drafts=3, git=git
+            )
 
         # Assert
         assert len(drafts) == 3
@@ -985,20 +1132,30 @@ class TestGenerateDraftsApiMode:
             assert diff == "draft output"
 
     @pytest.mark.asyncio
-    async def test_generate_drafts_api_skips_failed_drafts(self, tmp_path: Path) -> None:
+    async def test_generate_drafts_api_skips_failed_drafts(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         invoker = AgentInvoker()
         config = _api_config(temperature=0.7, max_budget_usd=0.30)
         good_result = AgentInvocationResult(
-            success=True, cost_usd=0.01, input_tokens=10, output_tokens=5,
-            hypothesis="h", hypothesis_source="agent", tags=[], raw_output="good",
+            success=True,
+            cost_usd=0.01,
+            input_tokens=10,
+            output_tokens=5,
+            hypothesis="h",
+            hypothesis_source="agent",
+            tags=[],
+            raw_output="good",
         )
         git = AsyncMock()
         git.rev_parse = AsyncMock(return_value="sha123")
 
         call_count = 0
 
-        async def _sometimes_fail(config: AgentConfig, *args: object, **kwargs: object) -> AgentInvocationResult:
+        async def _sometimes_fail(
+            config: AgentConfig, *args: object, **kwargs: object
+        ) -> AgentInvocationResult:
             nonlocal call_count
             call_count += 1
             if call_count == 2:
@@ -1007,7 +1164,9 @@ class TestGenerateDraftsApiMode:
 
         with patch.object(invoker, "_invoke_api", new=_sometimes_fail):
             # Act
-            drafts = await invoker.generate_drafts(config, "prompt", tmp_path, 60, n_drafts=3, git=git)
+            drafts = await invoker.generate_drafts(
+                config, "prompt", tmp_path, 60, n_drafts=3, git=git
+            )
 
         # Assert: only 2 successful drafts returned
         assert len(drafts) == 2
@@ -1019,11 +1178,19 @@ class TestGenerateDraftsApiMode:
         config = _api_config(temperature=0.7, max_budget_usd=0.30)
         captured_configs: list[AgentConfig] = []
         mock_result = AgentInvocationResult(
-            success=True, cost_usd=0.01, input_tokens=10, output_tokens=5,
-            hypothesis=None, hypothesis_source="synthesized", tags=[], raw_output="x",
+            success=True,
+            cost_usd=0.01,
+            input_tokens=10,
+            output_tokens=5,
+            hypothesis=None,
+            hypothesis_source="synthesized",
+            tags=[],
+            raw_output="x",
         )
 
-        async def _capture(cfg: AgentConfig, *args: object, **kwargs: object) -> AgentInvocationResult:
+        async def _capture(
+            cfg: AgentConfig, *args: object, **kwargs: object
+        ) -> AgentInvocationResult:
             captured_configs.append(cfg)
             return mock_result
 
@@ -1032,7 +1199,9 @@ class TestGenerateDraftsApiMode:
 
         with patch.object(invoker, "_invoke_api", new=_capture):
             # Act
-            await invoker.generate_drafts(config, "prompt", tmp_path, 60, n_drafts=3, git=git)
+            await invoker.generate_drafts(
+                config, "prompt", tmp_path, 60, n_drafts=3, git=git
+            )
 
         # Assert: temperatures differ across drafts
         temps = [c.temperature for c in captured_configs]
@@ -1050,28 +1219,29 @@ class TestGenerateDraftsClaudeCodeMode:
         stdout: bytes = b'{"result":"ok","total_cost_usd":0.01,"usage":{"input_tokens":10,"output_tokens":5}}',
         returncode: int = 0,
     ) -> MagicMock:
-        proc = MagicMock()
-        proc.pid = 1
-        proc.returncode = returncode
-        proc.communicate = AsyncMock(return_value=(stdout, b""))
-        return proc
+        return _make_streaming_proc(stdout=stdout, returncode=returncode)
 
     @pytest.mark.asyncio
     async def test_generate_drafts_cc_returns_diffs(self, tmp_path: Path) -> None:
-        # Arrange
+        # Arrange — factory so each subprocess invocation gets fresh stream
+        # readers (they're single-shot AsyncMock side_effect iterators).
         invoker = AgentInvoker()
         config = _cc_config()
         config = config.model_copy(update={"max_budget_usd": 0.30})
-        proc = self._make_proc()
         git = AsyncMock()
         git.rev_parse = AsyncMock(return_value="sha123")
         git.capture_diff = AsyncMock(return_value="--- diff ---")
         git.reset_hard = AsyncMock()
         git.clean_untracked = AsyncMock()
 
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)):
+        async def _spawn(*_args: object, **_kwargs: object) -> MagicMock:
+            return _make_streaming_proc()
+
+        with patch("asyncio.create_subprocess_exec", new=AsyncMock(side_effect=_spawn)):
             # Act
-            drafts = await invoker.generate_drafts(config, "prompt", tmp_path, 60, n_drafts=2, git=git)
+            drafts = await invoker.generate_drafts(
+                config, "prompt", tmp_path, 60, n_drafts=2, git=git
+            )
 
         # Assert
         assert len(drafts) == 2
@@ -1079,28 +1249,36 @@ class TestGenerateDraftsClaudeCodeMode:
             assert diff == "--- diff ---"
 
     @pytest.mark.asyncio
-    async def test_generate_drafts_cc_resets_worktree_between_drafts(self, tmp_path: Path) -> None:
+    async def test_generate_drafts_cc_resets_worktree_between_drafts(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         invoker = AgentInvoker()
         config = _cc_config()
         config = config.model_copy(update={"max_budget_usd": 0.30})
-        proc = self._make_proc()
         git = AsyncMock()
         git.rev_parse = AsyncMock(return_value="sha123")
         git.capture_diff = AsyncMock(return_value="diff")
         git.reset_hard = AsyncMock()
         git.clean_untracked = AsyncMock()
 
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)):
+        async def _spawn(*_args: object, **_kwargs: object) -> MagicMock:
+            return _make_streaming_proc()
+
+        with patch("asyncio.create_subprocess_exec", new=AsyncMock(side_effect=_spawn)):
             # Act
-            await invoker.generate_drafts(config, "prompt", tmp_path, 60, n_drafts=3, git=git)
+            await invoker.generate_drafts(
+                config, "prompt", tmp_path, 60, n_drafts=3, git=git
+            )
 
         # Assert: reset_hard and clean_untracked called once per draft
         assert git.reset_hard.await_count == 3
         assert git.clean_untracked.await_count == 3
 
     @pytest.mark.asyncio
-    async def test_generate_drafts_cc_skips_failed_draft_and_still_resets(self, tmp_path: Path) -> None:
+    async def test_generate_drafts_cc_skips_failed_draft_and_still_resets(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         invoker = AgentInvoker()
         config = _cc_config()
@@ -1113,26 +1291,38 @@ class TestGenerateDraftsClaudeCodeMode:
 
         call_count = 0
 
-        async def _sometimes_fail(cfg: AgentConfig, *args: object, **kwargs: object) -> AgentInvocationResult:
+        async def _sometimes_fail(
+            cfg: AgentConfig, *args: object, **kwargs: object
+        ) -> AgentInvocationResult:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
                 raise AgentInvocationError("first draft failed")
             return AgentInvocationResult(
-                success=True, cost_usd=0.01, input_tokens=10, output_tokens=5,
-                hypothesis=None, hypothesis_source="synthesized", tags=[], raw_output="ok",
+                success=True,
+                cost_usd=0.01,
+                input_tokens=10,
+                output_tokens=5,
+                hypothesis=None,
+                hypothesis_source="synthesized",
+                tags=[],
+                raw_output="ok",
             )
 
         with patch.object(invoker, "_invoke_claude_code", new=_sometimes_fail):
             # Act
-            drafts = await invoker.generate_drafts(config, "prompt", tmp_path, 60, n_drafts=2, git=git)
+            drafts = await invoker.generate_drafts(
+                config, "prompt", tmp_path, 60, n_drafts=2, git=git
+            )
 
         # Assert: only 1 successful draft; reset still happened for both
         assert len(drafts) == 1
         assert git.reset_hard.await_count == 2
 
     @pytest.mark.asyncio
-    async def test_generate_drafts_cc_timeout_error_skips_draft(self, tmp_path: Path) -> None:
+    async def test_generate_drafts_cc_timeout_error_skips_draft(
+        self, tmp_path: Path
+    ) -> None:
         # Arrange
         invoker = AgentInvoker()
         config = _cc_config()
@@ -1144,11 +1334,14 @@ class TestGenerateDraftsClaudeCodeMode:
         git.clean_untracked = AsyncMock()
 
         with patch.object(
-            invoker, "_invoke_claude_code",
+            invoker,
+            "_invoke_claude_code",
             new=AsyncMock(side_effect=AgentTimeoutError("timed out")),
         ):
             # Act
-            drafts = await invoker.generate_drafts(config, "prompt", tmp_path, 60, n_drafts=2, git=git)
+            drafts = await invoker.generate_drafts(
+                config, "prompt", tmp_path, 60, n_drafts=2, git=git
+            )
 
         # Assert: all drafts failed, but resets still happened
         assert len(drafts) == 0

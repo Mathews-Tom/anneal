@@ -13,6 +13,7 @@ import os
 import re
 import signal
 from pathlib import Path
+from typing import Literal
 
 from anneal.engine.client import (
     compute_cost,
@@ -36,7 +37,7 @@ DIAGNOSIS_SYSTEM_PROMPT = (
     "Output valid JSON with these fields:\n"
     "- weakest_criteria: list of criterion names that failed or scored lowest\n"
     "- root_cause: one sentence explaining why these criteria failed\n"
-    "- fix_category: one of \"structural\", \"content\", \"formatting\", \"logic\", \"coverage\", \"other\"\n"
+    '- fix_category: one of "structural", "content", "formatting", "logic", "coverage", "other"\n'
     "- suggested_direction: 1-2 sentences describing what change would improve the weakest criteria"
 )
 
@@ -49,11 +50,101 @@ class AgentTimeoutError(AgentInvocationError):
     """Agent exceeded time budget."""
 
 
+class AgentStalledError(AgentTimeoutError):
+    """Agent emitted no output for stall_timeout_seconds.
+
+    Subclass of AgentTimeoutError so runner-level handlers that route
+    timeouts to ``Outcome.KILLED`` keep working without modification, but
+    distinguishable when retry classification needs the original signal.
+    """
+
+
+class AgentTransientError(AgentInvocationError):
+    """Retry-eligible failure (rate limit, 5xx, network blip, partial JSON).
+
+    Runner wraps invocation in an exponential-backoff retry loop that
+    catches this class and reissues the call within the same experiment
+    slot. Promoted to ``AgentStructuralError`` once the retry budget is
+    exhausted.
+    """
+
+
+class AgentStructuralError(AgentInvocationError):
+    """Terminal failure (auth error, schema break, agent-declined task).
+
+    Surfaces immediately as ``Outcome.CRASHED`` with no retry attempt.
+    """
+
+
+_TRANSIENT_HTTP_STATUSES: frozenset[int] = frozenset(
+    {408, 425, 429, 500, 502, 503, 504}
+)
+
+_TRANSIENT_STDERR_PATTERNS: tuple[str, ...] = (
+    "rate_limit",
+    "rate limit",
+    "overloaded",
+    "overloaded_error",
+    "service_unavailable",
+    "temporarily unavailable",
+    "connection reset",
+    "connection refused",
+    "connection timed out",
+    "read timed out",
+    "bad gateway",
+    "gateway timeout",
+    "ecconnreset",
+    "etimedout",
+)
+
+
+def _classify_api_exception(exc: BaseException) -> type[AgentInvocationError]:
+    """Map an arbitrary exception raised during an LLM API call to a
+    transient/structural class.
+
+    Conservative: defaults to ``AgentStructuralError`` on unknown types so
+    silent infinite-retry loops are impossible without an explicit
+    classification rule.
+    """
+    if isinstance(exc, asyncio.TimeoutError):
+        return AgentTransientError
+    if isinstance(exc, json.JSONDecodeError):
+        return AgentTransientError
+    if isinstance(exc, (ConnectionError, OSError)):
+        return AgentTransientError
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        response = getattr(exc, "response", None)
+        if response is not None:
+            status = getattr(response, "status_code", None)
+    if isinstance(status, int) and status in _TRANSIENT_HTTP_STATUSES:
+        return AgentTransientError
+    return AgentStructuralError
+
+
+def _classify_subprocess_failure(stderr_text: str) -> type[AgentInvocationError]:
+    """Classify a non-zero subprocess exit. Stderr substring match is
+    conservative: structural by default, transient only on known signals.
+    """
+    haystack = stderr_text.lower()
+    if any(needle in haystack for needle in _TRANSIENT_STDERR_PATTERNS):
+        return AgentTransientError
+    return AgentStructuralError
+
+
+def _kill_process_group(proc: asyncio.subprocess.Process) -> None:
+    """SIGKILL the subprocess's session group. Idempotent."""
+    if proc.returncode is not None:
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 def _extract_hypothesis(text: str) -> str | None:
     """Extract hypothesis text after '## Hypothesis' header."""
-    match = re.search(
-        r"## Hypothesis\s*\n(.*?)(?=\n## |\Z)", text, re.DOTALL
-    )
+    match = re.search(r"## Hypothesis\s*\n(.*?)(?=\n## |\Z)", text, re.DOTALL)
     if match:
         content = match.group(1).strip()
         return content if content else None
@@ -94,7 +185,6 @@ def _extract_tags(text: str) -> list[str]:
     return []
 
 
-
 class AgentInvoker:
     """Invokes a mutation agent via Claude Code subprocess or direct API call."""
 
@@ -108,11 +198,16 @@ class AgentInvoker:
     ) -> AgentInvocationResult:
         if config.mode == "claude_code":
             return await self._invoke_claude_code(
-                config, prompt, worktree_path, time_budget_seconds,
+                config,
+                prompt,
+                worktree_path,
+                time_budget_seconds,
                 deployment_mode=deployment_mode,
             )
         elif config.mode == "api":
-            return await self._invoke_api(config, prompt, worktree_path, time_budget_seconds)
+            return await self._invoke_api(
+                config, prompt, worktree_path, time_budget_seconds
+            )
         else:
             raise AgentInvocationError(f"Unknown agent mode: {config.mode}")
 
@@ -128,7 +223,10 @@ class AgentInvoker:
         The agent outputs proposed changes as text only.
         """
         return await self.invoke(
-            config, prompt, worktree_path, time_budget_seconds,
+            config,
+            prompt,
+            worktree_path,
+            time_budget_seconds,
             deployment_mode=True,
         )
 
@@ -155,12 +253,18 @@ class AgentInvoker:
 
         if config.mode == "claude_code":
             return await self._invoke_claude_code(
-                config, full_prompt, worktree_path, time_budget_seconds,
+                config,
+                full_prompt,
+                worktree_path,
+                time_budget_seconds,
                 meta_mode=True,
             )
         elif config.mode == "api":
             return await self._invoke_api(
-                config, full_prompt, worktree_path, time_budget_seconds,
+                config,
+                full_prompt,
+                worktree_path,
+                time_budget_seconds,
             )
         else:
             raise AgentInvocationError(f"Unknown agent mode: {config.mode}")
@@ -180,18 +284,20 @@ class AgentInvoker:
             allowed_tools = "Read"
         else:
             allowed_tools = "Edit,Write"
-        assert "Bash" not in allowed_tools, (
-            "Bash must never appear in --allowedTools"
-        )
+        assert "Bash" not in allowed_tools, "Bash must never appear in --allowedTools"
 
         cmd = [
             "claude",
             "-p",
-            "--output-format", "json",
+            "--output-format",
+            "json",
             "--no-session-persistence",
-            "--allowedTools", allowed_tools,
-            "--max-budget-usd", str(config.max_budget_usd),
-            "--model", config.model,
+            "--allowedTools",
+            allowed_tools,
+            "--max-budget-usd",
+            str(config.max_budget_usd),
+            "--model",
+            config.model,
         ]
 
         proc = await asyncio.create_subprocess_exec(
@@ -203,24 +309,17 @@ class AgentInvoker:
             start_new_session=True,
         )
 
-        try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(input=prompt.encode()),
-                timeout=time_budget_seconds,
-            )
-        except asyncio.TimeoutError:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            raise AgentTimeoutError(
-                f"Agent exceeded time budget of {time_budget_seconds}s"
-            )
+        stdout_bytes, stderr_bytes = await self._run_with_stall_detection(
+            proc,
+            prompt.encode(),
+            wall_clock_seconds=time_budget_seconds,
+            stall_seconds=config.stall_timeout_seconds,
+        )
 
         stderr_text = stderr_bytes.decode(errors="replace")
 
         if proc.returncode != 0:
-            raise AgentInvocationError(
+            raise _classify_subprocess_failure(stderr_text)(
                 f"Claude Code exited with code {proc.returncode}: {stderr_text}"
             )
 
@@ -229,7 +328,7 @@ class AgentInvoker:
         try:
             response = json.loads(stdout_text)
         except json.JSONDecodeError as exc:
-            raise AgentInvocationError(
+            raise AgentTransientError(
                 f"Invalid JSON response from Claude Code: {exc}"
             ) from exc
 
@@ -237,7 +336,7 @@ class AgentInvoker:
         is_error = response.get("is_error", False)
         subtype = response.get("subtype", "")
         if is_error or (subtype and subtype.startswith("error_")):
-            raise AgentInvocationError(
+            raise AgentStructuralError(
                 f"Claude Code returned error: subtype={subtype}, "
                 f"cost=${response.get('total_cost_usd', 0):.4f}"
             )
@@ -249,7 +348,9 @@ class AgentInvoker:
         raw_output = response.get("result", "")
 
         hypothesis = _extract_hypothesis(raw_output)
-        hypothesis_source: str = "agent" if hypothesis is not None else "synthesized"
+        hypothesis_source: Literal["agent", "synthesized"] = (
+            "agent" if hypothesis is not None else "synthesized"
+        )
         tags = _extract_tags(raw_output)
 
         return AgentInvocationResult(
@@ -262,6 +363,96 @@ class AgentInvoker:
             tags=tags,
             raw_output=raw_output,
         )
+
+    async def _run_with_stall_detection(
+        self,
+        proc: asyncio.subprocess.Process,
+        prompt: bytes,
+        wall_clock_seconds: int,
+        stall_seconds: int,
+    ) -> tuple[bytes, bytes]:
+        """Drive ``proc`` to completion while watching for silent stalls.
+
+        Streams stdout/stderr concurrently, refreshing ``last_activity_ts``
+        on every chunk. A watchdog SIGKILLs the process group if the gap
+        between activity exceeds ``stall_seconds`` (``stall_seconds=0``
+        disables the watchdog). ``wall_clock_seconds`` remains the hard
+        backstop and is enforced as before via :class:`AgentTimeoutError`.
+
+        Returns the concatenated ``(stdout, stderr)`` byte buffers on
+        success. Raises :class:`AgentStalledError` on stall (subclass of
+        :class:`AgentTimeoutError`) or :class:`AgentTimeoutError` on
+        wall-clock exhaustion.
+        """
+        loop = asyncio.get_running_loop()
+        last_activity = loop.time()
+        stdout_chunks: list[bytes] = []
+        stderr_chunks: list[bytes] = []
+        stall_seen: list[float] = []
+
+        async def pump(stream: asyncio.StreamReader | None, sink: list[bytes]) -> None:
+            nonlocal last_activity
+            if stream is None:
+                return
+            while True:
+                chunk = await stream.read(4096)
+                if not chunk:
+                    return
+                sink.append(chunk)
+                last_activity = loop.time()
+
+        async def watchdog() -> None:
+            if stall_seconds <= 0:
+                return
+            tick = max(1.0, min(stall_seconds / 4, 15.0))
+            while proc.returncode is None:
+                await asyncio.sleep(tick)
+                elapsed = loop.time() - last_activity
+                if elapsed > stall_seconds:
+                    stall_seen.append(elapsed)
+                    _kill_process_group(proc)
+                    return
+
+        if proc.stdin is not None:
+            try:
+                proc.stdin.write(prompt)
+                await proc.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            proc.stdin.close()
+
+        pump_stdout = asyncio.create_task(pump(proc.stdout, stdout_chunks))
+        pump_stderr = asyncio.create_task(pump(proc.stderr, stderr_chunks))
+        watch_task = asyncio.create_task(watchdog())
+        wait_task = asyncio.create_task(proc.wait())
+
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(pump_stdout, pump_stderr, watch_task, wait_task),
+                timeout=wall_clock_seconds,
+            )
+        except asyncio.TimeoutError:
+            _kill_process_group(proc)
+            for task in (pump_stdout, pump_stderr, watch_task, wait_task):
+                task.cancel()
+            await asyncio.gather(
+                pump_stdout,
+                pump_stderr,
+                watch_task,
+                wait_task,
+                return_exceptions=True,
+            )
+            raise AgentTimeoutError(
+                f"Agent exceeded wall-clock budget of {wall_clock_seconds}s"
+            )
+
+        if stall_seen:
+            raise AgentStalledError(
+                f"Agent emitted no output for {stall_seen[0]:.1f}s "
+                f"(stall_timeout={stall_seconds}s)"
+            )
+
+        return b"".join(stdout_chunks), b"".join(stderr_chunks)
 
     async def _invoke_api(
         self,
@@ -286,6 +477,8 @@ class AgentInvoker:
             raise AgentTimeoutError(
                 f"API agent exceeded time budget of {time_budget_seconds}s"
             )
+        except Exception as exc:
+            raise _classify_api_exception(exc)(f"API call failed: {exc}") from exc
 
         raw_output = response.choices[0].message.content or ""
 
@@ -295,7 +488,9 @@ class AgentInvoker:
         cost_usd = compute_cost(config.model, input_tokens, output_tokens)
 
         hypothesis = _extract_hypothesis(raw_output)
-        hypothesis_source: str = "agent" if hypothesis is not None else "synthesized"
+        hypothesis_source: Literal["agent", "synthesized"] = (
+            "agent" if hypothesis is not None else "synthesized"
+        )
         tags = _extract_tags(raw_output)
 
         return AgentInvocationResult(
@@ -324,7 +519,9 @@ class AgentInvoker:
         lines.append("## Evaluation Score")
         lines.append(f"Overall: {eval_result.score:.4f}")
         if eval_result.ci_lower is not None and eval_result.ci_upper is not None:
-            lines.append(f"CI: [{eval_result.ci_lower:.4f}, {eval_result.ci_upper:.4f}]")
+            lines.append(
+                f"CI: [{eval_result.ci_lower:.4f}, {eval_result.ci_upper:.4f}]"
+            )
         lines.append("")
 
         if eval_result.per_criterion_scores:
@@ -354,10 +551,14 @@ class AgentInvoker:
         recent_history: list[ExperimentRecord],
         worktree_path: Path,
     ) -> DiagnosisResult:
-        diagnosis_model = config.diagnosis_model or config.exploration_model or config.model
+        diagnosis_model = (
+            config.diagnosis_model or config.exploration_model or config.model
+        )
         client = make_client(diagnosis_model)
         api_model = strip_provider_prefix(diagnosis_model)
-        user_prompt = self._build_diagnosis_prompt(artifact_content, eval_result, recent_history)
+        user_prompt = self._build_diagnosis_prompt(
+            artifact_content, eval_result, recent_history
+        )
 
         try:
             response = await asyncio.wait_for(
@@ -432,11 +633,19 @@ class AgentInvoker:
             tasks = []
             for i in range(n_drafts):
                 temp_offset = (i - n_drafts // 2) * 0.1
-                draft_config = config.model_copy(update={
-                    "temperature": max(0.0, min(2.0, config.temperature + temp_offset)),
-                    "max_budget_usd": config.max_budget_usd / n_drafts,
-                })
-                tasks.append(self._invoke_api(draft_config, prompt, worktree_path, time_budget_seconds))
+                draft_config = config.model_copy(
+                    update={
+                        "temperature": max(
+                            0.0, min(2.0, config.temperature + temp_offset)
+                        ),
+                        "max_budget_usd": config.max_budget_usd / n_drafts,
+                    }
+                )
+                tasks.append(
+                    self._invoke_api(
+                        draft_config, prompt, worktree_path, time_budget_seconds
+                    )
+                )
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for result in results:
@@ -449,12 +658,17 @@ class AgentInvoker:
         else:
             # Sequential claude_code invocations with diff capture
             for i in range(n_drafts):
-                draft_config = config.model_copy(update={
-                    "max_budget_usd": config.max_budget_usd / n_drafts,
-                })
+                draft_config = config.model_copy(
+                    update={
+                        "max_budget_usd": config.max_budget_usd / n_drafts,
+                    }
+                )
                 try:
                     result = await self._invoke_claude_code(
-                        draft_config, prompt, worktree_path, time_budget_seconds,
+                        draft_config,
+                        prompt,
+                        worktree_path,
+                        time_budget_seconds,
                     )
                     diff_text = await git.capture_diff(worktree_path)
                     drafts.append((result, diff_text))

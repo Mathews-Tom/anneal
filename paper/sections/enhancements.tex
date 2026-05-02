@@ -155,33 +155,29 @@ Maximum cache size is configurable (default 200 entries) with LRU eviction.
 % ==================================================================
 \begin{table*}[t]
 \centering
-\caption{Summary of enhancements by track, mechanism, and benefit. The
-\emph{Val} column marks isolated mechanism validation in \cref{sec:results}:
-$\checkmark$ indicates the component is one of the three mechanisms tested
-against an analytically known ground truth (\cref{sec:gate-false-positives,sec:gate-sa,sec:gate-retrieval});
-a dash indicates the component is argued from design and contributes to the
-end-to-end comparison in \cref{sec:end-to-end} as part of the treatment
-configuration's enhancement bundle.}
+\caption{Summary of enhancements by track, mechanism, and evidence status. The
+\emph{Status} column separates isolated mechanism validation from implemented
+features that are not independently evaluated in the end-to-end study.}
 \label{tab:enhancements}
 \footnotesize
 \setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}p{2.4cm}p{1.7cm}p{4.5cm}p{6.0cm}c@{}}
+\begin{tabular}{@{}p{2.4cm}p{1.7cm}p{4.1cm}p{5.4cm}p{1.8cm}@{}}
 \toprule
-\textbf{Name} & \textbf{Track} & \textbf{Mechanism} & \textbf{Benefit} & \textbf{Val} \\
+\textbf{Name} & \textbf{Track} & \textbf{Mechanism} & \textbf{Benefit} & \textbf{Status} \\
 \midrule
-Strategy Manifest & Representation & Structured YAML with named components & Component-level evolution; avoids catastrophic forgetting of working strategies & --- \\
-Token-Efficient Context & Representation & Three compression modes & Reduces input token cost; keeps agent within context budget & --- \\
-Dual-Agent Mutation & Search & Thompson Sampling over Beta-Binomial arms & Adaptive explore-exploit without manual scheduling & --- \\
-Two-Phase Mutation & Search & Diagnosis step before mutation & Focuses mutations on weakest criteria and root cause & --- \\
-Simulated Annealing & Search & $\exp(\Delta/T)$ acceptance with adaptive reheat & Escapes local optima; reheat prevents premature convergence & $\checkmark$ \\
-Island Population & Search & $N$ independent populations with migration & Maintains diversity; best individuals propagate across islands & --- \\
-Episodic Memory (TF-IDF) & Knowledge & Structured Lesson extraction + TF-IDF / sentence-embedding retrieval & Avoids repeating failed approaches; transfers successful patterns; retrieval precision validated in \cref{sec:gate-retrieval} & $\checkmark$ \\
-Lineage Context & Knowledge & Causal chain of accepted mutations & Agent understands how current artifact state was reached & --- \\
-Research Operator & Knowledge & External knowledge injection on plateau & Breaks out of exploration dead ends & --- \\
-Cross-Domain Transfer & Knowledge & Learning pool with decay and domain penalties & Transfers insights across targets and projects & --- \\
-Adaptive Sampling & Evaluation & Cohen's $d$ early-stop / extend & Reduces cost on clear experiments; increases power on marginal ones & --- \\
-Drift Detection & Evaluation & Sliding-window variance comparison & Detects evaluator degradation before it corrupts optimization & --- \\
-Eval Caching & Evaluation & Content-addressed LRU cache & Eliminates redundant evaluation of identical artifacts & --- \\
+Strategy Manifest & Representation & Structured YAML with named components & Component-level evolution; avoids catastrophic forgetting of working strategies & implemented \\
+Token-Efficient Context & Representation & Three compression modes & Reduces input token cost; keeps agent within context budget & implemented \\
+Dual-Agent Mutation & Search & Thompson Sampling over Beta-Binomial arms & Adaptive explore-exploit without manual scheduling & implemented \\
+Two-Phase Mutation & Search & Diagnosis step before mutation & Focuses mutations on weakest criteria and root cause & implemented \\
+Simulated Annealing & Search & $\exp(\Delta/T)$ acceptance with adaptive reheat & Escapes local optima; reheat prevents premature convergence & validated \\
+Island Population & Search & $N$ independent populations with migration & Maintains diversity; best individuals propagate across islands & implemented \\
+Episodic Memory (TF-IDF) & Knowledge & Structured Lesson extraction + TF-IDF / sentence-embedding retrieval & Avoids repeating failed approaches; transfers successful patterns & validated \\
+Lineage Context & Knowledge & Causal chain of accepted mutations & Agent understands how current artifact state was reached & implemented \\
+Research Operator & Knowledge & External knowledge injection on plateau & Breaks out of exploration dead ends & implemented \\
+Cross-Domain Transfer & Knowledge & Learning pool with decay and domain penalties & Transfers insights across targets and projects & implemented \\
+Adaptive Sampling & Evaluation & Cohen's $d$ early-stop / extend & Reduces cost on clear experiments; increases power on marginal ones & implemented \\
+Drift Detection & Evaluation & Sliding-window variance comparison & Detects evaluator degradation before it corrupts optimization & implemented \\
+Eval Caching & Evaluation & Content-addressed LRU cache & Eliminates redundant evaluation of identical artifacts & implemented \\
 \bottomrule
 \end{tabular}
 \end{table*}
@@ -196,8 +192,8 @@ Values are the defaults shipped with the engine; every entry is overridable per-
 \centering
 \caption{Default hyperparameters across components. Values listed are the engine-shipped defaults; the corresponding configuration class for each component allows per-target override.}
 \label{tab:hyperparameters}
-\small
-\begin{tabular}{@{}llll@{}}
+\footnotesize
+\begin{tabular}{@{}p{4.0cm}p{4.0cm}p{2.6cm}p{5.0cm}@{}}
 \toprule
 \textbf{Parameter} & \textbf{Component} & \textbf{Default} & \textbf{Rationale} \\
 \midrule
@@ -225,6 +221,10 @@ Drift variance threshold              & Drift Detection (\cref{sec:drift-detecti
 Drift variance ratio                  & Drift Detection (\cref{sec:drift-detection}) & $2\times$ & Half-window variance increase flag \\
 \texttt{EvalCache} max entries        & Eval Caching (\cref{sec:eval-cache}) & $200$ & LRU bound \\
 Score-history std flag                & Eval Caching (\cref{sec:eval-cache}) & $0.1$ & Cross-run consistency outlier flag \\
+\texttt{stall\_timeout\_seconds}      & Agent Runtime (\cref{sec:worktree}) & $300$ & Detect silent subprocess stalls \\
+\texttt{max\_transient\_retries}      & Agent Runtime (\cref{sec:worktree}) & $3$ & Bound provider retry loops \\
+\texttt{transient\_retry\_base\_seconds} & Agent Runtime (\cref{sec:worktree}) & $10.0$ & Initial exponential-backoff delay \\
+\texttt{transient\_retry\_cap\_seconds} & Agent Runtime (\cref{sec:worktree}) & $300.0$ & Maximum retry delay \\
 \bottomrule
 \end{tabular}
 \end{table*}

@@ -23,7 +23,7 @@ Every optimization target in \textsc{anneal} is registered as a triplet of decla
     \item \textbf{Agent} (\texttt{AgentConfig} + \texttt{program.md}).
     An LLM that proposes mutations, restricted to file-edit tools operating within the editable scope.
     The agent receives the current artifact content, experiment history, and mutation instructions (\texttt{program.md}), but never sees the eval command, criteria definitions, or scoring logic.
-    \texttt{AgentInvoker} dispatches to either a Claude Code subprocess (which writes files directly to disk) or a direct API call depending on \texttt{AgentConfig.mode}.
+    \texttt{AgentInvoker} dispatches to either a Claude Code subprocess (which writes files directly to disk) or a direct API call depending on \texttt{AgentConfig.mode}; in API mode, the runner extracts the returned fenced code block and writes it to the registered artifact path before scope enforcement.
 \end{enumerate}
 
 The triplet is the schema of \texttt{Optimization\allowbreak{}Target} (\texttt{anneal/\allowbreak{}engine/\allowbreak{}types.py}), persisted to \texttt{.anneal/\allowbreak{}config.toml} via the \texttt{Registry} class.
@@ -60,6 +60,10 @@ The experiment cycle within the worktree proceeds as follows; \cref{alg:experime
     \State $\textit{prompt} \gets \textit{diagnosis} \mathbin\Vert \textit{prompt}$
 \EndIf
 \State $\textit{mutation} \gets \Call{InvokeAgent}{\mathcal{T}.\textit{agent}, \textit{prompt}, W}$
+\If{$\textit{mutation}$ is timeout, stall, or structural failure}
+    \State \Call{ResetHard}{$W, \textit{sha}_{\text{pre}}$}
+    \State \Return \textsc{blocked}
+\EndIf
 \State $\textit{violations} \gets \Call{EnforceScope}{W, \mathcal{T}.\textit{scope}}$
 \If{$\textit{violations}.\textit{all\_blocked}$}
     \State \Call{ResetHard}{$W, \textit{sha}_{\text{pre}}$}
@@ -84,6 +88,9 @@ The system never uses \texttt{git stash}.
 The only snapshot and restore mechanism is commit and hard reset.
 Every accepted mutation is a real git commit, making the full optimization history inspectable with standard git tooling.
 Garbage collection is configured to retain unreachable commits (\texttt{gc.reflogExpire=never}), preserving the complete experiment lineage.
+
+Agent invocation is not treated as an infallible atomic call.
+Claude Code subprocesses run under process-group time limits and stall watchdogs; transient provider failures are retried with bounded exponential backoff, while structural failures such as invalid output format or scope violations are classified and recorded without retrying indefinitely.
 
 For in-place targets where worktree isolation is not feasible, a \texttt{File\allowbreak{}Backup\allowbreak{}Environment} copies artifact files to \texttt{.anneal/\allowbreak{}backups/\allowbreak{}<target-id>/} before each experiment, restoring them on discard.
 

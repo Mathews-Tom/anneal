@@ -7,7 +7,7 @@ import logging
 import time
 from pathlib import Path
 
-from filelock import FileLock, Timeout
+from filelock import BaseFileLock, FileLock, Timeout
 
 from anneal.engine.types import OptimizationTarget
 
@@ -35,7 +35,7 @@ class Scheduler:
         self._targets = {t.id: t for t in targets}
         self._max_skip_threshold = max_skip_threshold
         self._skip_counts: dict[str, int] = {t.id: 0 for t in targets}
-        self._locks: dict[str, FileLock] = {}
+        self._locks: dict[str, BaseFileLock] = {}
         self._halted: set[str] = set()
 
     # ------------------------------------------------------------------
@@ -63,9 +63,7 @@ class Scheduler:
                 lock_path = self._lock_path(target)
                 lock_path.unlink(missing_ok=True)
                 self._skip_counts[target_id] = 0
-                logger.warning(
-                    "Removed stale lock for target %s (age > 1h)", target_id
-                )
+                logger.warning("Removed stale lock for target %s (age > 1h)", target_id)
 
             lock = self._make_lock(target)
 
@@ -97,7 +95,7 @@ class Scheduler:
     # Lock lifecycle
     # ------------------------------------------------------------------
 
-    def acquire_lock(self, target_id: str) -> FileLock:
+    def acquire_lock(self, target_id: str) -> BaseFileLock:
         """Acquire the target's lock. Returns the lock for the caller to release."""
         target = self._resolve_target(target_id)
         lock = self._make_lock(target)
@@ -109,9 +107,7 @@ class Scheduler:
         """Release the target's lock."""
         lock = self._locks.pop(target_id, None)
         if lock is None:
-            raise SchedulerError(
-                f"No active lock for target {target_id!r}"
-            )
+            raise SchedulerError(f"No active lock for target {target_id!r}")
         lock.release()
 
     # ------------------------------------------------------------------
@@ -145,7 +141,9 @@ class Scheduler:
         path = Path(target.worktree_path).resolve() / ".anneal.lock"
         return path
 
-    def _is_lock_stale(self, target: OptimizationTarget, max_age_seconds: int = 3600) -> bool:
+    def _is_lock_stale(
+        self, target: OptimizationTarget, max_age_seconds: int = 3600
+    ) -> bool:
         """Return True if the lock file is older than *max_age_seconds*."""
         lock_path = self._lock_path(target)
         if not lock_path.exists():
@@ -153,5 +151,5 @@ class Scheduler:
         age = time.time() - lock_path.stat().st_mtime
         return age > max_age_seconds
 
-    def _make_lock(self, target: OptimizationTarget) -> FileLock:
-        return FileLock(str(self._lock_path(target)), timeout=0)  # type: ignore[return-value]
+    def _make_lock(self, target: OptimizationTarget) -> BaseFileLock:
+        return FileLock(str(self._lock_path(target)), timeout=0)

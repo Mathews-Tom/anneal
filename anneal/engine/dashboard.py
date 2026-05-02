@@ -156,7 +156,8 @@ class AnnealStateReader:
         if not status_path.exists():
             return None
         try:
-            return json.loads(status_path.read_text(encoding="utf-8"))
+            data: dict[str, Any] = json.loads(status_path.read_text(encoding="utf-8"))
+            return data
         except (json.JSONDecodeError, OSError):
             return None
 
@@ -184,7 +185,9 @@ class AnnealStateReader:
                 outcome_counts[oc] = outcome_counts.get(oc, 0) + 1
             kept_count = outcome_counts.get("KEPT", 0)
             kept_rate = kept_count / experiment_count if experiment_count > 0 else 0.0
-            durations = [r["duration_seconds"] for r in records if "duration_seconds" in r]
+            durations = [
+                r["duration_seconds"] for r in records if "duration_seconds" in r
+            ]
             avg_duration = sum(durations) / len(durations) if durations else 0.0
             best_score = max(scores) if scores else meta.get("baseline", 0.0)
 
@@ -194,7 +197,9 @@ class AnnealStateReader:
                 "eval_mode": meta.get("eval_mode", "unknown"),
                 "git_branch": meta.get("git_branch", ""),
                 "experiment_count": experiment_count,
-                "score": last_record["score"] if last_record else meta.get("baseline", 0.0),
+                "score": last_record["score"]
+                if last_record
+                else meta.get("baseline", 0.0),
                 "outcome": last_record.get("outcome") if last_record else None,
                 "hypothesis": last_record.get("hypothesis") if last_record else None,
                 "cost": last_record.get("cost_usd", 0.0) if last_record else 0.0,
@@ -225,7 +230,10 @@ class AnnealStateReader:
         for pareto_path in candidates:
             if pareto_path.exists():
                 try:
-                    return json.loads(pareto_path.read_text(encoding="utf-8"))
+                    data: list[dict[str, float]] = json.loads(
+                        pareto_path.read_text(encoding="utf-8")
+                    )
+                    return data
                 except (json.JSONDecodeError, OSError):
                     return None
         return None
@@ -273,22 +281,30 @@ class FilePollingBus:
             for tid in targets_meta:
                 new_records = self._reader.read_new_experiments(tid)
                 for record in new_records:
-                    self.publish("experiment_complete", {
-                        "target_id": tid,
-                        "score": record.get("score", 0.0),
-                        "baseline": record.get("baseline_score", 0.0),
-                        "outcome": record.get("outcome", "UNKNOWN"),
-                        "hypothesis": (record.get("hypothesis") or "")[:200],
-                        "cost": record.get("cost_usd", 0.0),
-                        "duration": record.get("duration_seconds", 0.0),
-                    })
+                    self.publish(
+                        "experiment_complete",
+                        {
+                            "target_id": tid,
+                            "score": record.get("score", 0.0),
+                            "baseline": record.get("baseline_score", 0.0),
+                            "outcome": record.get("outcome", "UNKNOWN"),
+                            "hypothesis": (record.get("hypothesis") or "")[:200],
+                            "cost": record.get("cost_usd", 0.0),
+                            "duration": record.get("duration_seconds", 0.0),
+                        },
+                    )
                     pareto_front = self._reader._read_pareto_front(tid)
                     if pareto_front:
-                        self.publish("pareto_update", {
-                            "target_id": tid,
-                            "front": pareto_front,
-                            "criterion_names": list(pareto_front[0].keys()) if pareto_front else [],
-                        })
+                        self.publish(
+                            "pareto_update",
+                            {
+                                "target_id": tid,
+                                "front": pareto_front,
+                                "criterion_names": list(pareto_front[0].keys())
+                                if pareto_front
+                                else [],
+                            },
+                        )
 
     def stop(self) -> None:
         self._polling = False
@@ -716,7 +732,9 @@ class DashboardServer:
         self._poll_task = asyncio.create_task(self._bus.poll_loop())
         logger.info(
             "Dashboard serving .anneal/ at %s — http://%s:%d",
-            self._reader.root, self._host, self._port,
+            self._reader.root,
+            self._host,
+            self._port,
         )
 
     async def stop(self) -> None:

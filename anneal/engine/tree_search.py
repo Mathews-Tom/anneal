@@ -1,4 +1,5 @@
 """UCB tree search over artifact space for backtracking and branch exploration."""
+
 from __future__ import annotations
 
 import json
@@ -61,10 +62,14 @@ class UCBTreeSearch:
         if self._total_visits == 0:
             return node.score
         exploitation = node.score
-        exploration = self._c * math.sqrt(math.log(self._total_visits) / node.visit_count)
+        exploration = self._c * math.sqrt(
+            math.log(self._total_visits) / node.visit_count
+        )
         return exploitation + exploration
 
-    def _add_node(self, sha: str, score: float, parent_sha: str | None = None) -> TreeNode:
+    def _add_node(
+        self, sha: str, score: float, parent_sha: str | None = None
+    ) -> TreeNode:
         """Add a node to the tree. If it exists, update score."""
         if sha in self._nodes:
             node = self._nodes[sha]
@@ -90,7 +95,8 @@ class UCBTreeSearch:
             raise ValueError("Tree is empty — cannot select parent")
 
         candidates = [
-            node for node in self._nodes.values()
+            node
+            for node in self._nodes.values()
             if not node.pruned and self._depth(node) < self._max_depth
         ]
         if not candidates:
@@ -122,7 +128,7 @@ class UCBTreeSearch:
         self._total_visits += 1
 
         # Propagate visit to ancestors
-        current_sha = parent_sha
+        current_sha: str | None = parent_sha
         while current_sha is not None and current_sha in self._nodes:
             self._nodes[current_sha].visit_count += 1
             current_sha = self._nodes[current_sha].parent_sha
@@ -136,11 +142,11 @@ class UCBTreeSearch:
         if sha not in self._nodes:
             return
         node = self._nodes[sha]
-        non_improving = sum(
-            1 for child in node.children
-            if child.score <= node.score
-        )
-        if non_improving >= self._prune_threshold and len(node.children) >= self._prune_threshold:
+        non_improving = sum(1 for child in node.children if child.score <= node.score)
+        if (
+            non_improving >= self._prune_threshold
+            and len(node.children) >= self._prune_threshold
+        ):
             self.prune_subtree(sha)
 
     def prune_subtree(self, sha: str) -> None:
@@ -163,6 +169,8 @@ class UCBTreeSearch:
         direction: Direction,
         min_improvement_threshold: float = 0.0,
         confidence: float = 0.95,
+        experiment_index: int = 0,
+        holm_bonferroni: bool = False,
     ) -> bool:
         """SearchStrategy protocol — accept if improving in the given direction."""
         if direction is Direction.HIGHER_IS_BETTER:

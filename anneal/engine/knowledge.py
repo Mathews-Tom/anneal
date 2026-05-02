@@ -14,6 +14,7 @@ from collections import Counter
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -36,13 +37,13 @@ _EMBEDDING_AVAILABLE = False
 _embedding_model = None
 
 
-def _get_embedding_model() -> object:  # SentenceTransformer | None (optional dep)
+def _get_embedding_model() -> Any:  # SentenceTransformer | None (optional dep)
     """Lazy-load sentence transformer model."""
     global _embedding_model, _EMBEDDING_AVAILABLE
     if _embedding_model is not None:
         return _embedding_model
     try:
-        from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
+        from sentence_transformers import SentenceTransformer
 
         _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
         _EMBEDDING_AVAILABLE = True
@@ -389,8 +390,8 @@ class KnowledgeStore:
         texts = [e["hypothesis"] for e in entries]
         ids = [e["id"] for e in entries]
 
-        query_emb = model.encode(query, convert_to_numpy=True)  # type: ignore[union-attr]
-        doc_embs = model.encode(texts, convert_to_numpy=True)  # type: ignore[union-attr]
+        query_emb = model.encode(query, convert_to_numpy=True)
+        doc_embs = model.encode(texts, convert_to_numpy=True)
 
         query_norm = query_emb / (np.linalg.norm(query_emb) + 1e-10)
         doc_norms = doc_embs / (np.linalg.norm(doc_embs, axis=1, keepdims=True) + 1e-10)
@@ -526,7 +527,7 @@ class KnowledgeStore:
             for i in range(max_criterion_count):
                 name = crit_names[i] if i < len(crit_names) else f"criterion_{i}"
                 values = [
-                    r.raw_scores[i]  # type: ignore[index]
+                    r.raw_scores[i]
                     for r in records_with_raw
                     if r.raw_scores is not None and len(r.raw_scores) > i
                 ]
@@ -723,6 +724,7 @@ class KnowledgeStore:
                 "Explore broadly — try a meaningful change and observe the effect."
             )
 
+        sections: list[str]
         if count < self.COLD_START_THRESHOLD:
             recent = self.load_records()
             sections = [
@@ -738,7 +740,7 @@ class KnowledgeStore:
             return "\n".join(sections)
 
         # Full context: recent + similar + learnings
-        sections: list[str] = []
+        sections = []
 
         # Last 5 records
         recent = self.load_records(limit=5)

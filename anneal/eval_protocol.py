@@ -116,7 +116,7 @@ class _FunctionEvaluator:
         self._fn = fn
 
     def evaluate(self, artifact_path: str) -> EvalResult:
-        result = self._fn(artifact_path)  # type: ignore[call-arg]
+        result = self._fn(artifact_path)
         if not isinstance(result, EvalResult):
             raise TypeError(
                 f"Evaluator function must return EvalResult, got {type(result).__name__}"
@@ -229,5 +229,5 @@ def _load_module_from_file(file_path: str) -> object:
         raise ImportError(f"Cannot load module from file: {file_path}")
 
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    spec.loader.exec_module(module)
     return module

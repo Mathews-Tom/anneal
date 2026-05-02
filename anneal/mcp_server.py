@@ -18,7 +18,10 @@ from anneal.engine.knowledge import KnowledgeStore
 from anneal.engine.registry import Registry
 from anneal.engine.runner import RunLoopState
 
-mcp = FastMCP("anneal", instructions="Autonomous optimization engine for code, configs, and prompts.")
+mcp = FastMCP(
+    "anneal",
+    instructions="Autonomous optimization engine for code, configs, and prompts.",
+)
 
 
 def _find_repo_root() -> Path:
@@ -30,7 +33,7 @@ def _find_repo_root() -> Path:
     raise FileNotFoundError("No .anneal/ directory found. Run 'anneal init' first.")
 
 
-@mcp.tool()
+@mcp.tool()  # type: ignore[untyped-decorator]
 def anneal_status(target_id: str) -> str:
     """Get current status for an optimization target.
 
@@ -49,19 +52,22 @@ def anneal_status(target_id: str) -> str:
     loop_path = Path(target.knowledge_path) / ".loop-state.json"
     loop = RunLoopState.load(loop_path)
 
-    return json.dumps({
-        "target_id": target.id,
-        "runner_state": status_data.get("state", "UNKNOWN"),
-        "baseline_score": target.baseline_score,
-        "current_score": status_data.get("last_score", target.baseline_score),
-        "total_experiments": loop.total_experiments,
-        "kept_count": loop.kept_count,
-        "total_cost_usd": loop.cumulative_cost_usd,
-        "eval_mode": target.eval_mode.value,
-    }, indent=2)
+    return json.dumps(
+        {
+            "target_id": target.id,
+            "runner_state": status_data.get("state", "UNKNOWN"),
+            "baseline_score": target.baseline_score,
+            "current_score": status_data.get("last_score", target.baseline_score),
+            "total_experiments": loop.total_experiments,
+            "kept_count": loop.kept_count,
+            "total_cost_usd": loop.cumulative_cost_usd,
+            "eval_mode": target.eval_mode.value,
+        },
+        indent=2,
+    )
 
 
-@mcp.tool()
+@mcp.tool()  # type: ignore[untyped-decorator]
 def anneal_history(target_id: str, limit: int = 10) -> str:
     """Get recent experiment records for a target.
 
@@ -74,35 +80,41 @@ def anneal_history(target_id: str, limit: int = 10) -> str:
     knowledge = KnowledgeStore(repo_root / target.knowledge_path)
     records = knowledge.load_records(limit=limit)
 
-    return json.dumps([
-        {
-            "id": r.id,
-            "outcome": r.outcome.value,
-            "score": r.score,
-            "hypothesis": r.hypothesis,
-            "git_sha": r.git_sha,
-            "cost_usd": r.cost_usd,
-            "duration_seconds": r.duration_seconds,
-        }
-        for r in records
-    ], indent=2)
+    return json.dumps(
+        [
+            {
+                "id": r.id,
+                "outcome": r.outcome.value,
+                "score": r.score,
+                "hypothesis": r.hypothesis,
+                "git_sha": r.git_sha,
+                "cost_usd": r.cost_usd,
+                "duration_seconds": r.duration_seconds,
+            }
+            for r in records
+        ],
+        indent=2,
+    )
 
 
-@mcp.tool()
+@mcp.tool()  # type: ignore[untyped-decorator]
 def anneal_list_targets() -> str:
     """List all registered optimization targets."""
     repo_root = _find_repo_root()
     registry = Registry(repo_root)
 
-    return json.dumps([
-        {
-            "id": t.id,
-            "eval_mode": t.eval_mode.value,
-            "baseline_score": t.baseline_score,
-            "worktree": t.worktree_path,
-        }
-        for t in registry.all_targets()
-    ], indent=2)
+    return json.dumps(
+        [
+            {
+                "id": t.id,
+                "eval_mode": t.eval_mode.value,
+                "baseline_score": t.baseline_score,
+                "worktree": t.worktree_path,
+            }
+            for t in registry.all_targets()
+        ],
+        indent=2,
+    )
 
 
 if __name__ == "__main__":

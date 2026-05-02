@@ -108,16 +108,22 @@ def extract_learning(
         criterion_names = list(previous_per_criterion.keys())
         for i, name in enumerate(criterion_names):
             if i < len(record.raw_scores):
-                criterion_deltas[name] = record.raw_scores[i] - previous_per_criterion[name]
+                criterion_deltas[name] = (
+                    record.raw_scores[i] - previous_per_criterion[name]
+                )
 
     # Build deterministic observation text
     parts: list[str] = []
     parts.append(f"Hypothesis: {record.hypothesis}")
     parts.append(f"Outcome: {record.outcome.value}")
-    parts.append(f"Score delta: {score_delta:+.4f} ({record.baseline_score:.4f} -> {record.score:.4f})")
+    parts.append(
+        f"Score delta: {score_delta:+.4f} ({record.baseline_score:.4f} -> {record.score:.4f})"
+    )
 
     if criterion_deltas:
-        sorted_criteria = sorted(criterion_deltas.items(), key=lambda x: abs(x[1]), reverse=True)
+        sorted_criteria = sorted(
+            criterion_deltas.items(), key=lambda x: abs(x[1]), reverse=True
+        )
         top = sorted_criteria[:3]
         criterion_parts = [f"{name}: {delta:+.4f}" for name, delta in top]
         parts.append(f"Top criterion changes: {', '.join(criterion_parts)}")
@@ -160,16 +166,23 @@ def _dict_to_learning(d: dict[str, object]) -> Learning:
     else:
         created_at = datetime.now(UTC)
 
+    raw_ids = d["source_experiment_ids"]
+    raw_deltas = d["criterion_deltas"]
+    raw_tags = d["tags"]
+    assert isinstance(raw_ids, list), "source_experiment_ids must be a list"
+    assert isinstance(raw_deltas, dict), "criterion_deltas must be a dict"
+    assert isinstance(raw_tags, list), "tags must be a list"
+
     return Learning(
         observation=str(d["observation"]),
         signal=LearningSignal(d["signal"]),
         source_condition=str(d["source_condition"]),
         source_target=str(d["source_target"]),
-        source_experiment_ids=list(d["source_experiment_ids"]),  # type: ignore[arg-type]
+        source_experiment_ids=[int(x) for x in raw_ids],
         score_delta=float(d["score_delta"]),  # type: ignore[arg-type]
-        criterion_deltas={str(k): float(v) for k, v in d["criterion_deltas"].items()},  # type: ignore[union-attr]
+        criterion_deltas={str(k): float(v) for k, v in raw_deltas.items()},
         confidence=float(d["confidence"]),  # type: ignore[arg-type]
-        tags=[str(t) for t in d["tags"]],  # type: ignore[union-attr]
+        tags=[str(t) for t in raw_tags],
         created_at=created_at,
         project_id=str(d.get("project_id", "")),
         domain=str(d.get("domain", "")),
@@ -186,7 +199,9 @@ class LearningPool:
 
     DEFAULT_MAX_SIZE = 1000
 
-    def __init__(self, decay_rate: float = 0.05, max_size: int = DEFAULT_MAX_SIZE) -> None:
+    def __init__(
+        self, decay_rate: float = 0.05, max_size: int = DEFAULT_MAX_SIZE
+    ) -> None:
         self._learnings: list[Learning] = []
         self._decay_rate = decay_rate
         self._max_size = max_size
@@ -201,7 +216,7 @@ class LearningPool:
         """Remove lowest-impact learnings. Break ties randomly."""
         scored = sorted(
             self._learnings,
-            key=lambda l: (self._effective_score(l), random.random()),
+            key=lambda learning: (self._effective_score(learning), random.random()),
             reverse=True,
         )
         self._learnings = scored[: self._max_size]
@@ -246,19 +261,23 @@ class LearningPool:
         candidates = self._learnings
 
         if exclude_condition is not None:
-            candidates = [l for l in candidates if l.source_condition != exclude_condition]
+            candidates = [
+                c for c in candidates if c.source_condition != exclude_condition
+            ]
 
         if signal is not None:
-            candidates = [l for l in candidates if l.signal is signal]
+            candidates = [c for c in candidates if c.signal is signal]
 
         if source_condition is not None:
-            candidates = [l for l in candidates if l.source_condition == source_condition]
+            candidates = [
+                c for c in candidates if c.source_condition == source_condition
+            ]
 
         if source_target is not None:
-            candidates = [l for l in candidates if l.source_target == source_target]
+            candidates = [c for c in candidates if c.source_target == source_target]
 
         if project_id is not None:
-            candidates = [l for l in candidates if l.project_id == project_id]
+            candidates = [c for c in candidates if c.project_id == project_id]
 
         # Scope filtering: narrow by scope semantics
         # CONDITION scope requires source_condition filter (caller must provide)
@@ -275,6 +294,7 @@ class LearningPool:
         candidates = sorted(candidates, key=_domain_adjusted_score, reverse=True)
 
         if domain_tags:
+
             def _tag_boost(learning: Learning) -> float:
                 lesson_tags = self._extract_tags(learning.observation)
                 overlap = len(set(domain_tags) & set(lesson_tags))
@@ -283,14 +303,15 @@ class LearningPool:
             candidates = sorted(candidates, key=_tag_boost, reverse=True)
 
         # Return with decayed confidence values
-        return [self._decay_confidence(l) for l in candidates[:k]]
+        return [self._decay_confidence(c) for c in candidates[:k]]
 
     @staticmethod
     def _extract_tags(observation: str) -> list[str]:
         """Extract domain_tags from a learning observation that may contain JSON lesson data."""
         try:
             data = json.loads(observation)
-            return data.get("domain_tags", [])
+            tags = data.get("domain_tags", []) if isinstance(data, dict) else []
+            return [str(t) for t in tags]
         except (json.JSONDecodeError, TypeError):
             return []
 
@@ -328,7 +349,9 @@ class LearningPool:
                     key=lambda x: abs(x[1]),
                     reverse=True,
                 )[:3]
-                criterion_str = ", ".join(f"{name}: {d:+.2f}" for name, d in top_criteria)
+                criterion_str = ", ".join(
+                    f"{name}: {d:+.2f}" for name, d in top_criteria
+                )
                 line += f"\n   Criteria: {criterion_str}"
             lines.append(line)
 

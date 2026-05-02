@@ -3,7 +3,7 @@
 \label{sec:results}
 
 We evaluate \textsc{anneal} along two complementary axes.
-\Cref{sec:gate-false-positives,sec:gate-sa,sec:gate-retrieval} validate the three central mechanisms---statistical acceptance, adaptive metaheuristic search, and structured knowledge retrieval---in isolation on synthetic tasks where the ground truth is known analytically.
+\Cref{sec:gate-false-positives,sec:gate-sa,sec:gate-retrieval} validate the three central mechanisms (statistical acceptance, adaptive metaheuristic search, and structured knowledge retrieval) in isolation on synthetic tasks where the ground truth is known analytically.
 \Cref{sec:end-to-end} reports an end-to-end comparison of four nested configurations across the five-target benchmark suite of \cref{sec:benchmark-suite}, using the multi-seed paired protocol of \cref{sec:stat-design}.
 The mechanism-level baselines in this section are method-specific (uncorrected sequential testing, fixed-schedule simulated annealing, Jaccard set similarity) and do not exercise the raw, greedy, control, and treatment vocabulary, which is reserved for the end-to-end study.
 Each gate benchmark is evaluated against a quantitative threshold defined before the experiment was run.
@@ -215,7 +215,7 @@ The treatment-versus-control effect sizes are small to large across targets ($d 
 
 \paragraph{Why this is the framework working as designed.}
 The non-significance of treatment-versus-control after correction is the framework's statistical acceptance discipline applied to itself.
-A point-score comparison of the same data would report ``treatment beats control on 5/5 targets'' as a victory; the same comparison run with the engine's own machinery---paired Wilcoxon, multiplicity correction across the five-target family---declines to make that claim at $n = 5$ paired seeds.
+A point-score comparison of the same data would report ``treatment beats control on 5/5 targets'' as a victory; the same comparison run with the engine's own machinery (paired Wilcoxon, multiplicity correction across the five-target family) declines to make that claim at $n = 5$ paired seeds.
 The Wilcoxon test's minimum attainable $p$-value at $n = 5$ is $1/2^5 = 0.03125$ for a one-sided test and $0.0625$ for a two-sided test, so even a perfect 5/0 sign sweep within a target sits just above the per-comparison threshold and well above the corrected one.
 This is the same conservatism that \cref{sec:gate-false-positives} validated on a synthetic null: the multiplicity correction does not produce false-positive headlines, and at this seed count it requires effect sizes well into Cohen's-large territory or perfect directional consistency in conjunction with a less aggressive correction to reject the null.
 The directional pattern across targets and the two near-significant B3/B5 greedy-versus-treatment comparisons both indicate where a higher-powered replication would push the result.
@@ -259,7 +259,7 @@ The seed artifact is a single-file CRUD endpoint of $\sim 60$ lines: validation 
 Under the deterministic composite scorer (correctness via a hidden test suite, plus lint compliance scaled by violation count), this artifact scores $\bar{x}_{\text{raw}} = 0.174$ across the five seeds.
 On the first accepted treatment mutation of seed 1, the agent rewrote the file end-to-end: typed pydantic-style request models, explicit email-format and age-range validation with \texttt{422} responses, structured exception handling with distinct status codes for validation versus internal errors, and ISO-formatted timestamps via \texttt{datetime.isoformat}.
 The composite score moved from $0.435$ at the seed's pre-experiment baseline to $0.9$ after the mutation, a single-step jump that the framework's statistical-acceptance layer then preserved as the reference baseline for subsequent experiments.
-This pattern---a large early jump from the raw artifact, followed by smaller incremental refinements that the multiplicity-corrected acceptance layer admits selectively---is consistent with the per-target descriptive statistics in \cref{tab:e2e-final-scores}.
+This pattern (a large early jump from the raw artifact, followed by smaller incremental refinements that the multiplicity-corrected acceptance layer admits selectively) is consistent with the per-target descriptive statistics in \cref{tab:e2e-final-scores}.
 The full per-experiment trajectories for every seed and configuration are shipped as JSONL in \texttt{benchmarks/raw\_results\_seeds1-5/}.
 
 \subsubsection{Layer-by-Layer Marginal Effects}
@@ -291,7 +291,7 @@ Reading down the chain isolates the marginal contribution of each layer of \text
 The raw $\to$ greedy column is reported only for targets where the raw mean is non-zero, since percentage change from a zero baseline is undefined.
 On the four targets where the greedy $\to$ control transition is well-defined alongside the rest of the chain, the statistical-acceptance layer adds value above greedy on three of them; the regressions on B2 and B4 are small in absolute terms and within the seed-level standard deviation, consistent with sampling noise at $n = 5$.
 The control $\to$ treatment transition is positive on all five targets, ranging from $+3.5\%$ to $+44.5\%$.
-This is the cleanest empirical evidence in the suite that the four enhancement tracks of \cref{sec:enhancements}---representation, search, knowledge, evaluation---contribute incrementally above a hybrid-search engine without those tracks, even when the additional contribution does not survive multiplicity correction at the seed count run.
+This is the cleanest empirical evidence in the suite that the four enhancement tracks of \cref{sec:enhancements} (representation, search, knowledge, evaluation) contribute incrementally above a hybrid-search engine without those tracks, even when the additional contribution does not survive multiplicity correction at the seed count run.
 
 % ==================================================================
 \subsection{Synthesis}

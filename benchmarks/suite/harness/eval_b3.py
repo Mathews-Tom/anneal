@@ -15,7 +15,7 @@ Usage: uv run python benchmarks/suite/harness/eval_b3.py
 
 from __future__ import annotations
 
-import importlib.util
+import math
 import re
 import subprocess
 import sys
@@ -33,10 +33,18 @@ MIN_EXEC_TIME_MS = 1.0
 # The eval engine sets cwd=worktree_path, so this reads the worktree's artifact.
 ARTIFACT = Path("benchmarks/suite/artifacts/B3_utility_function.py")
 
-# Spot-check pairs: (name_a, name_b, expected_distance)
-# Verified against the reference Levenshtein implementation.
-# The artifact must produce these exact pairs to prove computation is real.
-_SPOT_CHECKS: list[tuple[str, str, int]] = [
+_SPOT_CHECK_VERIFIER = """
+from __future__ import annotations
+
+import importlib.util
+import os
+import sys
+from pathlib import Path
+
+raw_exit = os._exit
+
+artifact_path = Path(sys.argv[1])
+spot_checks = [
     ("alice", "alyce", 1),
     ("bartholomew", "bartholemew", 1),
     ("katherine", "catharine", 2),
@@ -45,44 +53,49 @@ _SPOT_CHECKS: list[tuple[str, str, int]] = [
     ("ozymandias", "ozymandeas", 1),
 ]
 
-
-def _verify_spot_checks(artifact_path: Path) -> bool:
-    """Import the artifact module and verify spot-check pairs exist in output.
-
-    Mutated artifacts may break the canonical _find_close_pairs(a, b, threshold)
-    contract — wrong arity, wrong input types, module-level crashes. Any such
-    breach is a failed spot-check (returns False → PENALTY in main()), never a
-    propagated exception that would corrupt the JSONL with a stack trace.
-    """
+try:
     spec = importlib.util.spec_from_file_location("b3_artifact", artifact_path)
     if spec is None or spec.loader is None:
-        return False
+        raw_exit(2)
+
     mod = importlib.util.module_from_spec(spec)
-    try:
-        spec.loader.exec_module(mod)
-    except Exception:
-        return False
+    spec.loader.exec_module(mod)
 
     run_fn = getattr(mod, "run_benchmark", None)
-    if run_fn is None:
-        return False
-
     find_fn = getattr(mod, "_find_close_pairs", None)
     names_a = getattr(mod, "_NAMES_A", None)
     names_b = getattr(mod, "_NAMES_B", None)
-    if find_fn is None or names_a is None or names_b is None:
-        return False
+    if run_fn is None or find_fn is None or names_a is None or names_b is None:
+        raw_exit(2)
 
+    pairs = find_fn(names_a, names_b, 2)
+    pair_set = {(a, b, d) for a, b, d in pairs}
+    if all(check in pair_set for check in spot_checks):
+        raw_exit(0)
+    raw_exit(2)
+except BaseException:
+    raw_exit(2)
+"""
+
+
+def _verify_spot_checks(artifact_path: Path) -> bool:
+    """Verify spot-check pairs in an isolated process.
+
+    The artifact is untrusted mutated code. Importing it in this evaluator process
+    lets it monkeypatch process globals used for the final score emission. Keep
+    that import in a disposable subprocess and use only the subprocess exit code
+    as the trust boundary.
+    """
     try:
-        pairs = find_fn(names_a, names_b, 2)
-        pair_set = {(a, b, d) for a, b, d in pairs}
-    except Exception:
+        result = subprocess.run(
+            [sys.executable, "-c", _SPOT_CHECK_VERIFIER, str(artifact_path.resolve())],
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
         return False
-
-    for a, b, expected_d in _SPOT_CHECKS:
-        if (a, b, expected_d) not in pair_set:
-            return False
-    return True
+    return result.returncode == 0
 
 
 def main() -> None:
@@ -119,7 +132,11 @@ def main() -> None:
         print(PENALTY)
         return
 
-    if exec_time is None or exec_time < MIN_EXEC_TIME_MS:
+    if (
+        exec_time is None
+        or not math.isfinite(exec_time)
+        or exec_time < MIN_EXEC_TIME_MS
+    ):
         print(PENALTY)
         return
 

@@ -3,7 +3,7 @@
 \label{sec:results}
 
 We evaluate \textsc{anneal} along two complementary axes.
-\Cref{sec:gate-false-positives,sec:gate-sa,sec:gate-retrieval} validate the three central mechanisms (statistical acceptance, adaptive metaheuristic search, and structured knowledge retrieval) in isolation on synthetic tasks where the ground truth is known analytically.
+\Cref{sec:gate-false-positives,sec:gate-sa,sec:gate-retrieval} evaluate the three central mechanisms (statistical acceptance, adaptive metaheuristic search, and structured knowledge retrieval) in isolation on synthetic tasks where the ground truth is known analytically.
 \Cref{sec:end-to-end} reports an exploratory end-to-end comparison of four configurations across the five-target benchmark suite of \cref{sec:benchmark-suite}, using the multi-seed paired protocol of \cref{sec:stat-design}.
 The mechanism-level baselines in this section are method-specific (uncorrected sequential testing, fixed-schedule simulated annealing, Jaccard set similarity) and do not exercise the raw, greedy, control, and treatment vocabulary, which is reserved for the end-to-end study.
 Each gate benchmark is evaluated against a quantitative threshold defined before the experiment was run.
@@ -21,8 +21,8 @@ We run 100 independent 50-experiment windows and count the average number of fal
 (ii) Holm--Bonferroni-corrected comparison with the adjusted threshold $\alpha / (W - i)$ within a rolling window of size $W = 50$, as described in \cref{sec:stat-comparison}.
 
 \paragraph{Result.}
-Uncorrected comparison produces an average of 2.1 false positives per 50-experiment window.
-Holm--Bonferroni correction reduces this to 0.3 false positives per window, a reduction of 86\%, comfortably exceeding the gate threshold of 50\% committed to in the benchmark harness before the experiment was run.
+Uncorrected comparison produces an average of \fpUncorrected\ false positives per 50-experiment window.
+Holm--Bonferroni correction reduces this to \fpCorrected\ false positives per window, a reduction of \fpReductionPct\%, comfortably exceeding the gate threshold of 50\% committed to in the benchmark harness before the experiment was run.
 This result directly substantiates the statistical-rigor claim in \cref{sec:stat-comparison}: on stochastic evaluation signals, sequential acceptance without multiplicity control admits a non-trivial rate of spurious improvements, and the engine's correction machinery removes the majority of them while remaining valid under the standard family-wise error rate definition.
 
 \begin{table}[t]
@@ -53,30 +53,30 @@ The fixed baseline disables reheat (\texttt{reheat\_factor} $= 1.0$); the adapti
 The primary metric is the best Rastrigin value encountered during the trajectory, since reheat is designed to escape local optima mid-run rather than to improve the asymptotic converged value.
 
 \paragraph{Result.}
-Fixed SA achieves an average best score of 18.3144 across the 50 trajectories.
-Adaptive SA with reheat achieves 14.8228, a 19.1\% improvement.
-Adaptive SA strictly outperforms fixed SA on 27 of the 50 seeds, with the remaining seeds either tied or marginally worse when the fixed schedule happens to cool into a basin containing the trajectory-best value before the reheat would fire.
-The 19.1\% average improvement exceeds the 15\% gate threshold committed to in the benchmark harness before the experiment was run.
+Fixed SA achieves an average best score of \saFixedAvg\ across the \saTotalSeeds\ trajectories.
+Adaptive SA with reheat achieves \saAdaptiveAvg, a \saImprovementPct\% improvement.
+Adaptive SA strictly outperforms fixed SA on \saAdaptiveWins\ of the \saTotalSeeds\ seeds, with the remaining seeds either tied or marginally worse when the fixed schedule happens to cool into a basin containing the trajectory-best value before the reheat would fire.
+The \saImprovementPct\% average improvement falls narrowly below the 15\% gate threshold committed to in the benchmark harness before the experiment was run.
 
 \begin{table}[t]
   \centering
-  \caption{Adaptive vs. fixed simulated annealing on 3D Rastrigin ($T_0 = 10.0$, cooling rate $0.75$, 50 seeds $\times$ 100 experiments). Adaptive reheat yields a 19.1\% average reduction in the best Rastrigin value encountered, meeting the 15\% gate threshold.}
+  \caption{Adaptive vs. fixed simulated annealing on 3D Rastrigin ($T_0 = 10.0$, cooling rate $0.75$, 50 seeds $\times$ 100 experiments). Adaptive reheat yields a 14.5\% average reduction in the best Rastrigin value encountered, narrowly missing the 15\% gate threshold.}
   \label{tab:gate-sa}
   \small
   \begin{tabular}{@{}lr@{}}
     \toprule
     Configuration & Avg. best Rastrigin score \\
     \midrule
-    Fixed SA (no reheat) & 18.3144 \\
-    Adaptive SA (with reheat) & 14.8228 \\
+    Fixed SA (no reheat) & 18.8346 \\
+    Adaptive SA (with reheat) & 16.0955 \\
     \midrule
-    Improvement & 19.1\% \\
+    Improvement & 14.5\% \\
     Adaptive wins / seeds & 27 / 50 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-This result substantiates the claim in \cref{sec:simulated-annealing} that adaptive reheat materially helps the search escape local optima in a multimodal landscape, relative to a fixed geometric cooling schedule.
+This result supports the direction of the claim in \cref{sec:simulated-annealing} that adaptive reheat can help the search escape local optima in a multimodal landscape, but it is not a passing gate under the matched-seed protocol.
 The experiment uses a closed-form analytical objective rather than a learned LLM judge, isolating the contribution of the temperature schedule from any variance in the evaluation signal itself.
 
 % ==================================================================
@@ -90,8 +90,8 @@ The corpus consists of 30 synthetic experiment hypotheses organized into 5 group
 The metric is precision@5: for each query, we retrieve the top 5 most similar documents and compute the fraction that belong to the same ground-truth group as the query.
 
 \paragraph{Result.}
-Jaccard retrieval achieves precision@5 of 0.647.
-TF-IDF retrieval achieves precision@5 of 1.000, corresponding to a $1.55\times$ improvement ratio.
+Jaccard retrieval achieves precision@5 of \retrievalJaccard.
+TF-IDF retrieval achieves precision@5 of \retrievalTFIDF, corresponding to a $\retrievalRatio\times$ improvement ratio.
 This exceeds the $1.5\times$ gate threshold committed to in the benchmark harness before the experiment was run.
 The gap reflects the inverse-document-frequency weighting: shared generic terms inflate the Jaccard set union and dilute the discriminative signal, while TF-IDF down-weights those terms and surfaces the group-unique keyword.
 In the context of episodic memory, this precision difference directly controls how often the system surfaces genuinely similar prior experiments---as opposed to superficially overlapping but topically unrelated records---when assembling agent context.
@@ -147,11 +147,23 @@ Population search, island search, Pareto search, and bandit strategy selection a
 \subsubsection{Final-Score Results}
 \label{sec:end-to-end-final-scores}
 
-\Cref{tab:e2e-final-scores} reports the mean final score per configuration on each target across the five paired seeds.
-The treatment configuration produces a directional improvement over the control configuration on all five targets: $+3.5\%$ on B1, $+10.2\%$ on B2, $-44.5\%$ on B3 (B3 minimizes), $+11.7\%$ on B4, and $+18.5\%$ on B5.
+\Cref{fig:convergence-strip} shows the per-experiment trajectories that drive the final-score columns of \cref{tab:e2e-final-scores}, and \cref{tab:e2e-final-scores} reports the mean final score per configuration on each target across the five paired seeds.
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=0.195\textwidth]{figures/convergence/convergence_B1.png}\hfill
+  \includegraphics[width=0.195\textwidth]{figures/convergence/convergence_B2.png}\hfill
+  \includegraphics[width=0.195\textwidth]{figures/convergence/convergence_B3.png}\hfill
+  \includegraphics[width=0.195\textwidth]{figures/convergence/convergence_B4.png}\hfill
+  \includegraphics[width=0.195\textwidth]{figures/convergence/convergence_B5.png}
+  \Description{Five line plots, one per benchmark target B1 through B5, showing mean final score versus experiment index with one line per configuration (greedy, control, treatment) and shaded standard deviation across the five paired seeds.}
+  \caption{Per-experiment convergence trajectories on B1--B5 across the five paired seeds. Each panel plots mean final-score vs.\ experiment index for greedy, control, and treatment; shaded bands show the seed-level standard deviation. Generated by \texttt{benchmarks/analysis/convergence.py} from \texttt{benchmarks/raw\_results\_seeds1-5/}.}
+  \label{fig:convergence-strip}
+\end{figure*}
+The treatment configuration produces a directional improvement over the control configuration on all five targets: $\deltaTCBone\%$ on B1, $\deltaTCBtwo\%$ on B2, $\deltaTCBthreeArith\%$ on B3 (B3 minimizes), $\deltaTCBfour\%$ on B4, and $\deltaTCBfive\%$ on B5.
 The treatment configuration also produces a directional improvement over the greedy configuration on all five targets, ranging from $+4.5\%$ on B2 to $+87.8\%$ on B5.
 The largest configuration gap is between any optimization configuration and the raw baseline, where the engine reliably moves the artifact away from a starting point that scores zero (B1, B2, B5) or near-zero (B4) on the evaluation rubric.
-B3 is noisier: its raw mean is much worse than treatment, but its raw median is zero in the generated summary because several raw executions hit the parser's best-case floor while others are extreme slow outliers.
+B3 is noisier: its raw mean is much worse than treatment, while its raw median is zero in the generated summary because several raw executions hit the parser's best-case floor while others are extreme slow outliers.\footnote{The B3 raw-mean (185.68\,ms) and raw-median (0\,ms) divergence reflects this bimodal distribution: roughly half of the seeds produce trivially-fast outputs that the parser clamps at the floor, while the rest are slow outliers that dominate the mean. Treatment mutations bring all five seeds into a compact mid-range distribution, eliminating both modes.}
 
 \begin{table}[t]
   \centering
@@ -212,7 +224,7 @@ The corrected significance threshold is $\alpha = 0.05$.
 No comparison reaches significance after Holm--Bonferroni correction at $n = 5$ paired seeds across the five-target family.
 The two strongest non-raw signals are the treatment-versus-greedy comparisons on B3 ($d = -1.09$, 95\% CI nearly excludes zero, $p_{\text{corr}} = 0.312$) and on B5 ($d = 1.35$, 95\% CI excludes zero, $p_{\text{corr}} = 0.312$).
 Their uncorrected $p$-values are both $0.062$, the smallest the Wilcoxon test can produce at $n = 5$ paired observations: even a perfect 5/5 directional sweep does not clear the corrected threshold under a five-target correction.
-The treatment-versus-control effect sizes are small to large across targets ($d \in [-0.53, 0.57]$ on the original sign convention; B3's negative $d$ corresponds to a $44.5\%$ improvement under minimization), and the Wilcoxon test does not reject the null at the corrected threshold.
+The treatment-versus-control effect sizes are small to large across targets ($d \in [-0.53, 0.51]$ on the original sign convention; B3's negative $d$ corresponds to a $44.5\%$ improvement under minimization), and the Wilcoxon test does not reject the null at the corrected threshold.
 
 \paragraph{Why this is the right standard.}
 The non-significance of treatment-versus-control after correction is the framework's statistical acceptance discipline applied to itself.
@@ -289,14 +301,14 @@ The four configurations of \cref{tab:e2e-configs} can be read as descriptive ste
 
 The raw $\to$ greedy column is reported only for targets where the raw mean is non-zero, since percentage change from a zero baseline is undefined.
 On the four targets where the greedy $\to$ control transition is well-defined alongside the rest of the chain, control improves over greedy on three of them; the regressions on B2 and B4 are small in absolute terms and within the seed-level standard deviation, consistent with sampling noise at $n = 5$.
-The control $\to$ treatment transition is positive on all five targets, ranging from $+3.5\%$ to $+44.5\%$.
+The control $\to$ treatment transition is positive on all five targets, ranging from $\deltaTCBone\%$ to $\deltaTCBthree\%$.
 This table is useful for locating where the named configurations differ most, but it does not identify which member of the treatment bundle caused the difference.
 
 % ==================================================================
 \subsection{Synthesis}
 \label{sec:empirical-scope}
 
-The mechanism gates and the end-to-end comparison together establish the strongest claim the data support: the validated subsystems behave as specified in isolation, and the archived treatment configuration produces a consistent directional advantage over greedy hill-climbing and over control on every target in the shipped suite.
-The framework's own statistical discipline declines to call this advantage significant after multiplicity correction at $n = 5$ paired seeds across the five-target family.
-We treat this conservatism as a feature: the same machinery that produced the 86\% false-positive reduction in \cref{sec:gate-false-positives} produces a stricter standard for systemic claims here, and the directional pattern across targets together with the strongest B3 and B5 greedy-versus-treatment effects ($d = -1.09$ and $d = 1.35$, $p_{\text{corr}} = 0.312$) identifies the comparisons a future higher-powered replication should prioritize.
+The mechanism gates and the end-to-end comparison together establish the strongest claim the data support: the validated subsystems behave as specified in isolation, and the archived treatment configuration improves over greedy hill-climbing and over control on every target in the shipped suite.
+The framework's own statistical discipline declines to call this gap significant after multiplicity correction at $n = 5$ paired seeds across the five-target family.
+We treat this conservatism as a feature: the same machinery that produced the 86\% false-positive reduction in \cref{sec:gate-false-positives} imposes a stricter standard on systemic claims here, and the strongest B3 and B5 greedy-versus-treatment effects ($d = -1.09$ and $d = 1.35$, $p_{\text{corr}} = 0.312$) identify the comparisons a future higher-powered replication should prioritize.
 The threats-to-validity discussion in \cref{sec:threats} elaborates on what the seed count can and cannot resolve, and on the construct-validity considerations specific to LLM-judge evaluation.

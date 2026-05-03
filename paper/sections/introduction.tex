@@ -33,7 +33,7 @@ Reproducibility demands that every experiment state be recoverable, every compar
 
 No existing system addresses all four concerns simultaneously.
 DSPy~\cite{khattab2024dspy} and OPRO~\cite{yang2024opro} focus on prompt optimization without structured search or statistical testing.
-AlphaEvolve~\cite{novikov2025alphaevolve} provides evolutionary search for code but lacks statistical comparison and knowledge transfer.
+AlphaEvolve provides evolutionary search for code but lacks statistical comparison and knowledge transfer.
 ProTeGi~\cite{pryzant2023protegi} uses gradient-inspired textual feedback but operates greedily with no memory.
 FunSearch~\cite{romera2024funsearch} pairs LLMs with evaluators but is restricted to function-level code search with best-shot selection.
 
@@ -42,23 +42,23 @@ FunSearch~\cite{romera2024funsearch} pairs LLMs with evaluators but is restricte
 We present \textsc{anneal}, an open-source framework for autonomous artifact optimization that addresses the four gaps above.
 The framework makes three technical contributions (each validated as an independent mechanism in \cref{sec:results}) supported by two architectural contributions that realize the framework as an integrated, reproducible research artifact.
 
-\paragraph{Technical contributions (validated in \cref{sec:results}).}
+\paragraph{Technical contributions (evaluated in \cref{sec:results}).}
 
 \begin{enumerate}
   \item \textbf{Statistical acceptance under stochastic evaluation} (\cref{sec:gate-false-positives}).
     Stochastic evaluations are compared via the Wilcoxon signed-rank test~\cite{wilcoxon1945individual} with Holm--Bonferroni correction~\cite{holm1979simple} for sequential multiplicity.
     Position-bias-cancelled Bradley--Terry scoring~\cite{bradley1952rank} calibrates the LLM judge, and adaptive sample sizing extends or early-stops evaluation based on the observed effect size.
-    On a synthetic null distribution, Holm--Bonferroni correction reduces false-positive acceptance by 86\% relative to uncorrected thresholding.
+    On a synthetic null distribution, Holm--Bonferroni correction reduces false-positive acceptance by \fpReductionPct\% relative to uncorrected thresholding.
 
   \item \textbf{Adaptive metaheuristic search} (\cref{sec:gate-sa}).
     Beyond greedy hill-climbing, \textsc{anneal} implements simulated annealing with adaptive cooling and reheat, population-based search with tournament selection and LLM-guided crossover, island migration for diversity maintenance, Pareto search for multi-objective optimization, and bandit selection among search arms.
     The isolated validation in this paper targets the adaptive-reheat mechanism rather than every implemented search mode.
-    On the 3D Rastrigin function, adaptive reheat yields a 19.1\% improvement over fixed geometric cooling.
+    On the 3D Rastrigin function, adaptive reheat yields a directional \saImprovementPct\% improvement over fixed geometric cooling under the matched-seed protocol, narrowly missing the precommitted 15\% gate.
 
   \item \textbf{Structured episodic knowledge retrieval} (\cref{sec:gate-retrieval}).
     Each experiment produces a structured \texttt{Lesson} capturing what changed, which criteria improved or regressed, and transferable insights.
     A cross-target learning pool shares knowledge across optimization tasks with domain-aware relevance filtering, a strategy manifest evolves the weakest component of the mutation approach when progress stalls, and a research operator injects external knowledge during plateaus.
-    The isolated validation in this paper targets retrieval precision; on a controlled similarity corpus, TF-IDF retrieval achieves $1.55\times$ the precision of Jaccard similarity.
+    The isolated validation in this paper targets retrieval precision; on a controlled similarity corpus, TF-IDF retrieval achieves $\retrievalRatio\times$ the precision of Jaccard similarity.
 \end{enumerate}
 
 \paragraph{Architectural contributions (argued from design).}

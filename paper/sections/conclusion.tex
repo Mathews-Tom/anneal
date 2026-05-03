@@ -2,7 +2,7 @@
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented \textsc{anneal}, a domain-agnostic framework that brings statistical decision theory to the accept/reject boundary of iterative LLM-guided artifact optimization.
+We presented \textsc{anneal}, an interface-level domain-agnostic framework that brings statistical decision theory to the accept/reject boundary of iterative LLM-guided artifact optimization.
 The system operates on the minimal abstraction of an (Artifact, Eval, Agent) triplet: given any measurable artifact and an evaluation function, an LLM agent generates informed mutations, the engine evaluates them under statistical rigor, and a search strategy decides whether to accept or revert each change.
 Every experiment is git-committed, scope-enforced, and logged.
 
@@ -10,10 +10,10 @@ The framework's three technical contributions (statistical acceptance under stoc
 Holm--Bonferroni correction reduces false-positive acceptance by 86\% under a synthetic null distribution (\cref{sec:gate-false-positives}), adaptive simulated annealing yields a 19.1\% improvement over fixed cooling on the 3D Rastrigin function (\cref{sec:gate-sa}), and TF-IDF retrieval achieves $1.55\times$ the precision of Jaccard similarity on a controlled corpus (\cref{sec:gate-retrieval}).
 These mechanism-level results are supported by two architectural contributions (git-native isolation with scope enforcement, and a domain-agnostic artifact--evaluation interface) that realize the framework as an integrated, reproducible research artifact.
 
-The end-to-end study of \cref{sec:end-to-end} runs four nested configurations (raw, greedy, control, treatment) on the five-target benchmark suite at $n = 5$ paired seeds.
-The full treatment configuration produces a directional improvement on final-score over the same engine without enhancement tracks on every target, ranging from $+3.5\%$ to $+44.5\%$, at cost largely comparable to control.
-After Holm--Bonferroni correction across the five-target family, no treatment-versus-control or treatment-versus-greedy comparison reaches significance at the seed count run; the two strongest greedy-versus-treatment effects (B3 and B5) sit at the Wilcoxon two-sided floor of $p = 0.0625$ before correction, indicating where a higher-powered replication would push the result.
-The benchmark harness, targets, analysis pipeline, and raw per-seed result files ship as part of the open-source distribution to enable independent replication and extension.
+The exploratory end-to-end study of \cref{sec:end-to-end} compares four configurations (raw, greedy, control, treatment) on the five-target benchmark suite at $n = 5$ paired seeds.
+The archived treatment configuration produces a directional improvement on final-score over control on every target, ranging from $+3.5\%$ to $+44.5\%$, with mean cost in the same range under the recorded model-routing setup.
+After Holm--Bonferroni correction across the five-target family, no treatment-versus-control or treatment-versus-greedy comparison reaches significance at the seed count run; the strongest greedy-versus-treatment effects (B3 and B5) sit at the Wilcoxon two-sided floor of $p = 0.0625$ before correction.
+The benchmark targets, raw per-seed result files, and analysis pipeline ship as part of the open-source distribution so that readers can inspect the archived evidence and extend the suite.
 The highest-priority extensions are higher-powered replications resolving the open near-significant comparisons and multi-artifact coordinated mutations that lift the current single-file scope (\cref{sec:future-work}).
 
 \textsc{anneal} is available under the Apache-2.0 license at \url{https://github.com/Mathews-Tom/anneal} and as the \texttt{anneal-cli} package on PyPI.

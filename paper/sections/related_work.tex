@@ -96,7 +96,7 @@ DSPy focuses on prompt pipeline compilation rather than general artifact optimiz
 \paragraph{EvoPrompt.}
 Guo et al.~\cite{guo2023evoprompt} apply discrete evolutionary operators (genetic algorithm and differential evolution) to prompt optimization, treating prompts as individuals in a population.
 EvoPrompt demonstrates that evolutionary search outperforms greedy prompt editing on several benchmarks.
-\textsc{anneal} offers population-based search as one of several strategies and adds Thompson Sampling~\cite{thompson1933likelihood} to adaptively select among strategies, rather than committing to a single evolutionary algorithm.
+\textsc{anneal} offers population-based search as one of several implemented strategies and includes Thompson Sampling~\cite{thompson1933likelihood} as an optional strategy-selection mechanism, rather than committing to a single evolutionary algorithm.
 
 \paragraph{OPRO.}
 Yang et al.~\cite{yang2024opro} frame prompt optimization as an optimization problem where an LLM generates new prompts given a history of (prompt, score) pairs.
@@ -138,7 +138,7 @@ Mouret and Clune~\cite{mouret2015mapelites} introduce MAP-Elites, a quality-dive
 \paragraph{Thompson Sampling.}
 Thompson Sampling~\cite{thompson1933likelihood} is a Bayesian approach to the multi-armed bandit problem: sample from the posterior distribution of each arm's reward and select the arm with the highest sample.
 Chapelle and Li~\cite{chapelle2011empirical} provide an empirical evaluation demonstrating its effectiveness relative to UCB and $\epsilon$-greedy strategies.
-\textsc{anneal} uses Thompson Sampling as a meta-strategy to select among search algorithms (greedy, simulated annealing, population-based) based on each algorithm's observed performance during the optimization run, treating strategy selection as a contextual bandit problem with Beta-distributed priors updated after each experiment.
+\textsc{anneal} implements Thompson Sampling as an optional meta-strategy to select among search algorithms (greedy, simulated annealing, population-based) based on each algorithm's observed performance during the optimization run, treating strategy selection as a contextual bandit problem with Beta-distributed priors updated after each experiment.
 
 \paragraph{Simulated annealing.}
 Kirkpatrick et al.~\cite{kirkpatrick1983sa} introduced simulated annealing, which accepts worse solutions with a probability that decreases as a temperature parameter cools.
@@ -152,7 +152,7 @@ ELM establishes that LLM-as-mutation-operator is a viable alternative to symboli
 \paragraph{LLaMEA.}
 van Stein and B\"ack~\cite{vanstein2024llamea} present an LLM-driven evolutionary algorithm for automatically generating metaheuristics, applying LLM mutation operators to metaheuristic code and evaluating the resulting algorithms on benchmark suites.
 LLaMEA demonstrates that the LLM-as-mutation approach scales from code-synthesis tasks to the generation of optimization algorithms themselves.
-\textsc{anneal} targets a different level: rather than generating new metaheuristics, it composes existing metaheuristic strategies (greedy, simulated annealing, population, Thompson Sampling meta-selection) into a decision layer over LLM-generated artifact edits.
+\textsc{anneal} targets a different level: rather than generating new metaheuristics, it exposes existing metaheuristic strategies (greedy, simulated annealing, population, Thompson Sampling meta-selection) as decision layers over LLM-generated artifact edits.
 
 \subsection{Agent Memory and Self-Reflection}
 

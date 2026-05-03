@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,7 +12,9 @@ from anneal.engine.agent import AgentInvoker
 from anneal.engine.types import AgentConfig
 
 
-def _make_config(mode: str = "claude_code") -> AgentConfig:
+def _make_config(
+    mode: Literal["claude_code", "codex_exec", "api"] = "api",
+) -> AgentConfig:
     return AgentConfig(
         mode=mode,
         model="gpt-4.1",
@@ -167,9 +170,10 @@ class TestInvokeMeta:
         from pydantic import ValidationError
 
         with pytest.raises(
-            ValidationError, match="Input should be 'claude_code' or 'api'"
+            ValidationError,
+            match="Input should be 'claude_code', 'codex_exec' or 'api'",
         ):
-            _make_config(mode="unknown")
+            _make_config(mode="unknown")  # type: ignore[arg-type]
 
     @pytest.mark.asyncio
     async def test_meta_bash_excluded(self, tmp_path: Path) -> None:

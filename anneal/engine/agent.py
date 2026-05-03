@@ -1,7 +1,7 @@
-"""Agent invoker — supports Claude Code subprocess mode and API mode.
+"""Agent invoker — supports subprocess and API agent modes.
 
-Dispatches based on AgentConfig.mode to either shell out to Claude Code
-or call an OpenAI-compatible chat completions endpoint directly.
+Dispatches based on AgentConfig.mode to either shell out to a local coding
+agent CLI or call an OpenAI-compatible chat completions endpoint directly.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import signal
+import tempfile
 from pathlib import Path
 from typing import Literal
 
@@ -74,6 +75,9 @@ class AgentStructuralError(AgentInvocationError):
 
     Surfaces immediately as ``Outcome.CRASHED`` with no retry attempt.
     """
+
+
+_SUBPROCESS_MODES: frozenset[str] = frozenset({"claude_code", "codex_exec"})
 
 
 _TRANSIENT_HTTP_STATUSES: frozenset[int] = frozenset(
@@ -185,8 +189,62 @@ def _extract_tags(text: str) -> list[str]:
     return []
 
 
+def _extract_json_object(text: str) -> dict[str, object]:
+    """Parse the first JSON object from an LLM text response."""
+    stripped = text.strip()
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError:
+        start = stripped.find("{")
+        end = stripped.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise
+        parsed = json.loads(stripped[start : end + 1])
+    if not isinstance(parsed, dict):
+        raise json.JSONDecodeError("Expected JSON object", stripped, 0)
+    return parsed
+
+
+def _diagnosis_result_from_data(data: dict[str, object]) -> DiagnosisResult:
+    """Validate untyped JSON data as a DiagnosisResult."""
+    return DiagnosisResult.model_validate(data)
+
+
+def _extract_codex_json_event_text(stdout_text: str) -> str:
+    """Best-effort extraction of a final assistant message from Codex JSONL."""
+    for line in reversed(stdout_text.splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        for key in ("message", "item", "event"):
+            value = event.get(key)
+            if isinstance(value, dict):
+                content = value.get("content")
+                if isinstance(content, str) and content.strip():
+                    return content.strip()
+                if isinstance(content, list):
+                    parts: list[str] = []
+                    for part in content:
+                        if isinstance(part, str):
+                            parts.append(part)
+                        elif isinstance(part, dict):
+                            text = part.get("text") or part.get("content")
+                            if isinstance(text, str):
+                                parts.append(text)
+                    if parts:
+                        return "\n".join(parts).strip()
+        result = event.get("result") or event.get("content") or event.get("text")
+        if isinstance(result, str) and result.strip():
+            return result.strip()
+    return ""
+
+
 class AgentInvoker:
-    """Invokes a mutation agent via Claude Code subprocess or direct API call."""
+    """Invokes a mutation agent via subprocess or direct API call."""
 
     async def invoke(
         self,
@@ -198,6 +256,14 @@ class AgentInvoker:
     ) -> AgentInvocationResult:
         if config.mode == "claude_code":
             return await self._invoke_claude_code(
+                config,
+                prompt,
+                worktree_path,
+                time_budget_seconds,
+                deployment_mode=deployment_mode,
+            )
+        elif config.mode == "codex_exec":
+            return await self._invoke_codex_exec(
                 config,
                 prompt,
                 worktree_path,
@@ -258,6 +324,14 @@ class AgentInvoker:
                 worktree_path,
                 time_budget_seconds,
                 meta_mode=True,
+            )
+        elif config.mode == "codex_exec":
+            return await self._invoke_codex_exec(
+                config,
+                full_prompt,
+                worktree_path,
+                time_budget_seconds,
+                deployment_mode=False,
             )
         elif config.mode == "api":
             return await self._invoke_api(
@@ -358,6 +432,96 @@ class AgentInvoker:
             cost_usd=cost_usd,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            hypothesis=hypothesis,
+            hypothesis_source=hypothesis_source,
+            tags=tags,
+            raw_output=raw_output,
+        )
+
+    async def _invoke_codex_exec(
+        self,
+        config: AgentConfig,
+        prompt: str,
+        worktree_path: Path,
+        time_budget_seconds: int,
+        deployment_mode: bool = False,
+    ) -> AgentInvocationResult:
+        sandbox = "read-only" if deployment_mode else "workspace-write"
+        fd, output_name = tempfile.mkstemp(prefix="anneal-codex-", suffix=".md")
+        os.close(fd)
+        output_path = Path(output_name)
+        proc: asyncio.subprocess.Process | None = None
+
+        cmd = [
+            "codex",
+            "exec",
+            "--cd",
+            str(worktree_path.resolve()),
+            "--model",
+            config.model,
+            "--sandbox",
+            sandbox,
+            "--color",
+            "never",
+            "--json",
+            "--output-last-message",
+            str(output_path),
+            "--ephemeral",
+            "-",
+        ]
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(worktree_path.resolve()),
+                start_new_session=True,
+            )
+            stdout_bytes, stderr_bytes = await self._run_with_stall_detection(
+                proc,
+                prompt.encode(),
+                wall_clock_seconds=time_budget_seconds,
+                stall_seconds=config.stall_timeout_seconds,
+            )
+        except Exception:
+            if proc is not None and proc.returncode is None:
+                _kill_process_group(proc)
+            output_path.unlink(missing_ok=True)
+            raise
+
+        stderr_text = stderr_bytes.decode(errors="replace")
+
+        if proc.returncode != 0:
+            raise _classify_subprocess_failure(stderr_text)(
+                f"Codex exec exited with code {proc.returncode}: {stderr_text}"
+            )
+
+        stdout_text = stdout_bytes.decode(errors="replace")
+        raw_output = ""
+        try:
+            if output_path.exists():
+                raw_output = output_path.read_text(encoding="utf-8").strip()
+        finally:
+            output_path.unlink(missing_ok=True)
+
+        if not raw_output:
+            raw_output = _extract_codex_json_event_text(stdout_text)
+        if not raw_output:
+            raise AgentTransientError("Codex exec completed without a final message")
+
+        hypothesis = _extract_hypothesis(raw_output)
+        hypothesis_source: Literal["agent", "synthesized"] = (
+            "agent" if hypothesis is not None else "synthesized"
+        )
+        tags = _extract_tags(raw_output)
+
+        return AgentInvocationResult(
+            success=True,
+            cost_usd=0.0,
+            input_tokens=0,
+            output_tokens=0,
             hypothesis=hypothesis,
             hypothesis_source=hypothesis_source,
             tags=tags,
@@ -554,11 +718,31 @@ class AgentInvoker:
         diagnosis_model = (
             config.diagnosis_model or config.exploration_model or config.model
         )
-        client = make_client(diagnosis_model)
-        api_model = strip_provider_prefix(diagnosis_model)
         user_prompt = self._build_diagnosis_prompt(
             artifact_content, eval_result, recent_history
         )
+
+        if config.mode == "codex_exec":
+            diagnosis_config = config.model_copy(update={"model": diagnosis_model})
+            result = await self._invoke_codex_exec(
+                diagnosis_config,
+                f"{DIAGNOSIS_SYSTEM_PROMPT}\n\n{user_prompt}\n\n"
+                "Return only the JSON object, with no markdown fence.",
+                worktree_path,
+                time_budget_seconds=60,
+                deployment_mode=True,
+            )
+            try:
+                data = _extract_json_object(result.raw_output)
+            except json.JSONDecodeError as exc:
+                raise AgentInvocationError(
+                    f"Diagnosis returned invalid JSON: {exc}"
+                ) from exc
+            data["cost_usd"] = result.cost_usd
+            return _diagnosis_result_from_data(data)
+
+        client = make_client(diagnosis_model)
+        api_model = strip_provider_prefix(diagnosis_model)
 
         try:
             response = await asyncio.wait_for(
@@ -585,14 +769,14 @@ class AgentInvoker:
         cost_usd = compute_cost(diagnosis_model, input_tokens, output_tokens)
 
         try:
-            data = json.loads(raw)
+            data = _extract_json_object(raw)
         except json.JSONDecodeError as exc:
             raise AgentInvocationError(
                 f"Diagnosis returned invalid JSON: {exc}"
             ) from exc
 
         data["cost_usd"] = cost_usd
-        return DiagnosisResult(**data)
+        return _diagnosis_result_from_data(data)
 
     async def invoke_api_text(self, config: AgentConfig, prompt: str) -> str:
         client = make_client(config.model)
@@ -656,7 +840,7 @@ class AgentInvoker:
                 # We store the raw_output as a pseudo-diff (the agent's proposed changes)
                 drafts.append((result, result.raw_output))
         else:
-            # Sequential claude_code invocations with diff capture
+            # Sequential subprocess invocations with diff capture
             for i in range(n_drafts):
                 draft_config = config.model_copy(
                     update={
@@ -664,7 +848,7 @@ class AgentInvoker:
                     }
                 )
                 try:
-                    result = await self._invoke_claude_code(
+                    result = await self.invoke(
                         draft_config,
                         prompt,
                         worktree_path,

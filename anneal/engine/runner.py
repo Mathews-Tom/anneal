@@ -484,7 +484,7 @@ class ExperimentRunner:
         drafts_generated = 1
         drafts_survived = 1
 
-        if n_drafts > 1 and target.agent_config.mode == "claude_code":
+        if n_drafts > 1 and target.agent_config.mode in {"claude_code", "codex_exec"}:
             # Multi-draft path: generate N drafts, verify each, select best
             drafts = await self._agent.generate_drafts(
                 target.agent_config,

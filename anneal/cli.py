@@ -224,11 +224,12 @@ def _handle_register(args: argparse.Namespace) -> None:
         gen_mode = getattr(args, "generation_mode", None) or gen.get("agent", {}).get(
             "mode", "api"
         )
-        # Claude Code subprocess needs higher budget than API due to session overhead
-        gen_budget = 0.50 if gen_mode == "claude_code" else 0.02
+        # Subprocess coding-agent modes need higher budget than API due to session overhead.
+        gen_budget = 0.50 if gen_mode in {"claude_code", "codex_exec"} else 0.02
         gen_agent = AgentConfig(
             mode=gen_mode,
-            model=gen.get("agent", {}).get("model", "gemini-2.5-flash"),
+            model=args.generation_model
+            or gen.get("agent", {}).get("model", "gemini-2.5-flash"),
             evaluator_model=args.evaluator_model,
             max_budget_usd=gen.get("agent", {}).get("max_budget_usd", gen_budget),
             temperature=gen.get("agent", {}).get("temperature", 0.7),
@@ -244,10 +245,12 @@ def _handle_register(args: argparse.Namespace) -> None:
             "agent", {}
         ).get("model", None)
         if judge_mode or judge_model:
-            effective_judge_mode: Literal["claude_code", "api"] = (
-                "claude_code" if judge_mode == "claude_code" else "api"
+            effective_judge_mode: Literal["claude_code", "codex_exec", "api"] = (
+                judge_mode if judge_mode in {"claude_code", "codex_exec"} else "api"
             )
-            judge_budget = 0.50 if effective_judge_mode == "claude_code" else 0.02
+            judge_budget = (
+                0.50 if effective_judge_mode in {"claude_code", "codex_exec"} else 0.02
+            )
             judgment_agent_config = AgentConfig(
                 mode=effective_judge_mode,
                 model=judge_model or args.evaluator_model,
@@ -1667,7 +1670,7 @@ def _build_parser() -> argparse.ArgumentParser:
     reg.add_argument("--agent-model", default="sonnet", help="Agent model identifier")
     reg.add_argument(
         "--agent-mode",
-        choices=["claude_code", "api"],
+        choices=["claude_code", "codex_exec", "api"],
         default="claude_code",
         help="Agent invocation mode",
     )
@@ -1742,8 +1745,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "Uses file backup for rollback.",
     )
     reg.add_argument(
+        "--generation-model",
+        default=None,
+        help="Generation model for stochastic eval (default: from criteria TOML)",
+    )
+    reg.add_argument(
         "--generation-mode",
-        choices=["claude_code", "api"],
+        choices=["claude_code", "codex_exec", "api"],
         default=None,
         help="Generation agent mode for stochastic eval (default: from criteria TOML or api)",
     )
@@ -1754,7 +1762,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     reg.add_argument(
         "--judgment-mode",
-        choices=["claude_code", "api"],
+        choices=["claude_code", "codex_exec", "api"],
         default=None,
         help="Judgment agent mode for stochastic eval (default: api)",
     )
@@ -1882,7 +1890,9 @@ def _build_parser() -> argparse.ArgumentParser:
     conf.add_argument("--daily-budget", type=float, help="Set daily budget cap (USD)")
     conf.add_argument("--agent-model", help="Set agent model")
     conf.add_argument(
-        "--agent-mode", choices=["claude_code", "api"], help="Set agent invocation mode"
+        "--agent-mode",
+        choices=["claude_code", "codex_exec", "api"],
+        help="Set agent invocation mode",
     )
     conf.add_argument("--evaluator-model", help="Set evaluator model")
     conf.add_argument(
@@ -1890,13 +1900,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     conf.add_argument(
         "--generation-mode",
-        choices=["claude_code", "api"],
+        choices=["claude_code", "codex_exec", "api"],
         help="Set generation agent mode (stochastic)",
     )
     conf.add_argument("--judgment-model", help="Set judgment model (stochastic)")
     conf.add_argument(
         "--judgment-mode",
-        choices=["claude_code", "api"],
+        choices=["claude_code", "codex_exec", "api"],
         help="Set judgment agent mode (stochastic)",
     )
     conf.add_argument(

@@ -21,10 +21,22 @@ Examples:
 
     # Run a single specific target + config combination
     uv run python benchmarks/suite/run_suite.py --target B1 --config treatment --seeds 3
+
+    # Run with explicit OpenAI model routing
+    uv run python benchmarks/suite/run_suite.py --target B3 --config treatment \
+        --mutation-model gpt-5.5 --diagnosis-model gpt-5.4-mini \
+        --judge-model gpt-5.4-mini
+
+    # Run with Codex CLI as the agent backend
+    uv run python benchmarks/suite/run_suite.py --target B5 --config treatment \
+        --agent-mode codex_exec --mutation-model gpt-5.4 \
+        --diagnosis-model gpt-5.4-mini --judge-model gpt-5.4-mini
 """
+
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -34,18 +46,24 @@ _SCRIPT_REPO_ROOT = Path(__file__).parent.parent.parent
 if str(_SCRIPT_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_REPO_ROOT))
 
-from rich.console import Console
-from rich.panel import Panel
+from rich.console import Console  # noqa: E402
+from rich.panel import Panel  # noqa: E402
 
-from benchmarks.suite.config import BenchmarkConfig, BenchmarkRun
-from benchmarks.suite.runner import (
+from benchmarks.suite.config import (  # noqa: E402
+    BenchmarkConfig,
+    BenchmarkModelRoute,
+    BenchmarkRun,
+    BenchmarkTarget,
+)
+from benchmarks.suite.runner import (  # noqa: E402
     BENCHMARK_CONFIGS,
     CONFIG_BY_NAME,
+    DEFAULT_MODEL_ROUTE,
     build_run_matrix,
     execute_runs,
     print_dry_run,
 )
-from benchmarks.suite.targets import ALL_TARGETS, get_target
+from benchmarks.suite.targets import ALL_TARGETS, get_target  # noqa: E402
 
 console = Console()
 
@@ -114,7 +132,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=_DEFAULT_PARALLEL,
         metavar="N",
         help=f"Maximum concurrent workers (default: {_DEFAULT_PARALLEL}). "
-             "Increase carefully — each worker makes live API calls.",
+        "Increase carefully — each worker makes live API calls.",
     )
     parser.add_argument(
         "--output-dir",
@@ -129,6 +147,35 @@ def _build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Print all commands without executing any of them.",
     )
+    parser.add_argument(
+        "--mutation-model",
+        default=DEFAULT_MODEL_ROUTE.mutation_model,
+        metavar="MODEL",
+        help="Primary artifact mutation model "
+        f"(default: {DEFAULT_MODEL_ROUTE.mutation_model}).",
+    )
+    parser.add_argument(
+        "--diagnosis-model",
+        default=DEFAULT_MODEL_ROUTE.diagnosis_model,
+        metavar="MODEL",
+        help="Diagnosis, exploration, research, and policy model "
+        f"(default: {DEFAULT_MODEL_ROUTE.diagnosis_model}).",
+    )
+    parser.add_argument(
+        "--judge-model",
+        default=DEFAULT_MODEL_ROUTE.judge_model,
+        metavar="MODEL",
+        help="Stochastic judge and deterministic evaluator model "
+        f"(default: {DEFAULT_MODEL_ROUTE.judge_model}).",
+    )
+    parser.add_argument(
+        "--agent-mode",
+        choices=("api", "claude_code", "codex_exec"),
+        default="api",
+        metavar="MODE",
+        help="Mutation agent backend mode (default: api). "
+        "Use codex_exec to invoke Codex CLI instead of direct LLM API calls.",
+    )
 
     return parser
 
@@ -138,7 +185,7 @@ def _build_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_targets(args: argparse.Namespace) -> list:
+def _resolve_targets(args: argparse.Namespace) -> list[BenchmarkTarget]:
     """Return the list of BenchmarkTarget objects based on --target / --all."""
     if args.target:
         return [get_target(args.target)]
@@ -155,6 +202,15 @@ def _resolve_configs(args: argparse.Namespace) -> list[BenchmarkConfig]:
     return BENCHMARK_CONFIGS
 
 
+def _resolve_model_route(args: argparse.Namespace) -> BenchmarkModelRoute:
+    """Return the model route requested for this suite invocation."""
+    return BenchmarkModelRoute(
+        mutation_model=args.mutation_model,
+        diagnosis_model=args.diagnosis_model,
+        judge_model=args.judge_model,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Summary helpers
 # ---------------------------------------------------------------------------
@@ -164,8 +220,18 @@ def _print_run_summary(runs: list[BenchmarkRun], dry_run: bool, parallel: int) -
     target_ids = sorted({r.target.id for r in runs})
     config_names = sorted({r.config.name for r in runs})
     seeds = sorted({r.seed for r in runs})
+    routes = {r.model_route for r in runs}
+    route = next(iter(routes)) if len(routes) == 1 else None
+    agent_modes = sorted({r.agent_mode for r in runs})
 
     mode = "DRY-RUN" if dry_run else "LIVE"
+    route_lines = (
+        f"Mutation model:   {route.mutation_model}\n"
+        f"Diagnosis model:  {route.diagnosis_model}\n"
+        f"Judge model:      {route.judge_model}\n"
+        if route is not None
+        else "Model routes:     mixed\n"
+    )
     console.print(
         Panel(
             f"Targets:         {', '.join(target_ids)}\n"
@@ -173,6 +239,8 @@ def _print_run_summary(runs: list[BenchmarkRun], dry_run: bool, parallel: int) -
             f"Seeds:           {seeds[0]}–{seeds[-1]} ({len(seeds)} total)\n"
             f"Total runs:      {len(runs)}\n"
             f"Parallel workers: {parallel}\n"
+            f"Agent mode:      {', '.join(agent_modes)}\n"
+            f"{route_lines}"
             f"Output dir:      {runs[0].output_dir if runs else 'N/A'}",
             title=f"Benchmark suite — {mode}",
             style="cyan" if dry_run else "green",
@@ -195,7 +263,26 @@ def _print_results_summary(results: list[dict[str, object]]) -> None:
 
     if failed:
         for r in failed:
-            console.print(f"  [red]FAILED[/red] {r.get('run_id', '?')}: {r.get('error', '')}")
+            console.print(
+                f"  [red]FAILED[/red] {r.get('run_id', '?')}: {r.get('error', '')}"
+            )
+
+
+def _write_model_route_metadata(
+    output_dir: Path,
+    model_route: BenchmarkModelRoute,
+) -> None:
+    """Persist model route provenance for a live benchmark batch."""
+    payload = {
+        "mutation_model": model_route.mutation_model,
+        "diagnosis_model": model_route.diagnosis_model,
+        "judge_model": model_route.judge_model,
+    }
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "model_route.json").write_text(
+        json.dumps(payload, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
 
     targets = _resolve_targets(args)
     configs = _resolve_configs(args)
+    model_route = _resolve_model_route(args)
     seeds = list(range(args.seed_start, args.seed_start + args.seeds))
 
     runs = build_run_matrix(
@@ -219,6 +307,8 @@ def main(argv: list[str] | None = None) -> int:
         configs=configs,
         seeds=seeds,
         output_dir=args.output_dir,
+        model_route=model_route,
+        agent_mode=args.agent_mode,
     )
 
     if not runs:
@@ -233,6 +323,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Ensure output directory exists
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    _write_model_route_metadata(args.output_dir, model_route)
 
     results = execute_runs(runs, dry_run=False, parallel=args.parallel)
     _print_results_summary(results)

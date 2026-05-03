@@ -5,6 +5,7 @@ and individual run descriptors used by the suite runner.
 
 Usage: uv run python benchmarks/suite/run_suite.py --dry-run
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -61,6 +62,21 @@ class BenchmarkConfig:
     enhancements: dict[str, bool] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class BenchmarkModelRoute:
+    """Model assignments for one benchmark run.
+
+    The route maps benchmark roles to anneal model slots:
+      - mutation_model: primary artifact mutation agent.
+      - diagnosis_model: diagnosis, exploration, research, and policy rewriting.
+      - judge_model: stochastic judge and deterministic evaluator slot.
+    """
+
+    mutation_model: str
+    diagnosis_model: str
+    judge_model: str
+
+
 @dataclass
 class BenchmarkRun:
     """Fully-specified descriptor for a single benchmark execution.
@@ -76,6 +92,8 @@ class BenchmarkRun:
     config: BenchmarkConfig
     seed: int
     output_dir: Path
+    model_route: BenchmarkModelRoute
+    agent_mode: str = "api"
 
     @property
     def run_id(self) -> str:

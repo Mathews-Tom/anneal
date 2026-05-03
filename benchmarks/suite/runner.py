@@ -17,6 +17,7 @@ Usage: uv run python benchmarks/suite/run_suite.py --dry-run
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 import time
@@ -27,7 +28,12 @@ from rich.console import Console
 from rich.table import Table
 
 from anneal.engine.display import LiveProgressMonitor, OutputMode, build_run_summary
-from benchmarks.suite.config import BenchmarkConfig, BenchmarkRun, BenchmarkTarget
+from benchmarks.suite.config import (
+    BenchmarkConfig,
+    BenchmarkModelRoute,
+    BenchmarkRun,
+    BenchmarkTarget,
+)
 
 console = Console()
 
@@ -39,14 +45,14 @@ _SUITE_DIR = Path(__file__).parent
 _REPO_ROOT = _SUITE_DIR.parent.parent
 _ANNEAL_DIR = _REPO_ROOT / ".anneal"
 
-# Three-model split used for all benchmark runs.
+# Default three-model split used for benchmark runs.
 #
-#   _MUTATION_MODEL:    primary mutation agent (AgentConfig.model)
-#   _DIAGNOSIS_MODEL:   two-phase diagnosis, dual-agent exploration arm,
-#                       research operator, and policy rewriter
-#   _JUDGE_MODEL:       stochastic-eval LLM judge (and deterministic
-#                       evaluator_model slot, since the CLI routes both
-#                       through --evaluator-model)
+#   mutation_model:    primary mutation agent (AgentConfig.model)
+#   diagnosis_model:   two-phase diagnosis, dual-agent exploration arm,
+#                      research operator, and policy rewriter
+#   judge_model:       stochastic-eval LLM judge (and deterministic
+#                      evaluator_model slot, since the CLI routes both
+#                      through --evaluator-model)
 #
 # All three roles run over the OpenAI-compatible HTTP shim against Google's
 # Gemini endpoint using GEMINI_API_KEY. The mutation role uses api mode, and
@@ -63,9 +69,11 @@ _ANNEAL_DIR = _REPO_ROOT / ".anneal"
 #
 # Pricing for all three models must be defined in anneal/engine/client.py
 # (_load_pricing) or ~/.anneal/pricing.toml before cost tracking is accurate.
-_MUTATION_MODEL = "gemini-3.1-pro-preview"
-_DIAGNOSIS_MODEL = "gemini-3.1-pro-preview"
-_JUDGE_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL_ROUTE = BenchmarkModelRoute(
+    mutation_model="gemini-3.1-pro-preview",
+    diagnosis_model="gemini-3.1-pro-preview",
+    judge_model="gemini-2.5-flash",
+)
 
 # The four experimental configurations applied to every target.
 BENCHMARK_CONFIGS: list[BenchmarkConfig] = [
@@ -171,18 +179,37 @@ def build_register_command(run: BenchmarkRun) -> list[str]:
         if target.parse_cmd:
             cmd += ["--parse-cmd", _resolve_repo_root_placeholder(target.parse_cmd)]
 
-    # Three-model split (see module constants). The CLI only exposes three of
+    # Three-model split. The CLI only exposes three of
     # the six model slots; the remaining three (exploration_model,
     # diagnosis_model, research_config.model) are patched into config.toml
     # after registration by _patch_model_config().
+    route = run.model_route
     cmd += [
-        "--agent-model", _MUTATION_MODEL,
-        "--agent-mode", "api",
-        "--evaluator-model", _JUDGE_MODEL,
-        "--policy-model", _DIAGNOSIS_MODEL,
+        "--agent-model",
+        route.mutation_model,
+        "--agent-mode",
+        run.agent_mode,
+        "--evaluator-model",
+        route.judge_model,
     ]
+    # PolicyAgent currently uses a direct chat-completions client. Keep the
+    # Codex-backed benchmark route API-free by not enabling policy rewrites.
+    if run.agent_mode != "codex_exec":
+        cmd += ["--policy-model", route.diagnosis_model]
     if target.eval_mode == "stochastic":
-        cmd += ["--judgment-model", _JUDGE_MODEL]
+        cmd += [
+            "--generation-model",
+            route.judge_model,
+            "--judgment-model",
+            route.judge_model,
+        ]
+        if run.agent_mode in {"claude_code", "codex_exec"}:
+            cmd += [
+                "--generation-mode",
+                run.agent_mode,
+                "--judgment-mode",
+                run.agent_mode,
+            ]
 
     # Set budget high enough for the full experiment budget to complete
     # without pausing. Default $5/day would stall after ~5 experiments.
@@ -260,6 +287,8 @@ def build_run_matrix(
     configs: list[BenchmarkConfig],
     seeds: list[int],
     output_dir: Path,
+    model_route: BenchmarkModelRoute = DEFAULT_MODEL_ROUTE,
+    agent_mode: str = "api",
 ) -> list[BenchmarkRun]:
     """Build all BenchmarkRun objects for the given targets, configs, and seeds.
 
@@ -276,6 +305,8 @@ def build_run_matrix(
                         config=config,
                         seed=seed,
                         output_dir=output_dir,
+                        model_route=model_route,
+                        agent_mode=agent_mode,
                     )
                 )
     return runs
@@ -396,6 +427,30 @@ def _read_loop_total_experiments(target_name: str) -> int:
         return 0
 
 
+def _record_has_invalid_resume_score(
+    run: BenchmarkRun, record: dict[str, object]
+) -> bool:
+    """Return True if a saved partial-run score cannot be trusted for resume."""
+    score = record.get("score")
+    if not isinstance(score, int | float):
+        return False
+
+    value = float(score)
+    if not math.isfinite(value):
+        return True
+
+    # B3 is wall-clock milliseconds. A valid persisted score below the harness
+    # lower bound means the prior run used an exploitable evaluator revision.
+    return run.target.id == "B3" and value < 1.0
+
+
+def _has_invalid_resume_records(run: BenchmarkRun) -> bool:
+    return any(
+        _record_has_invalid_resume_score(run, record)
+        for record in _read_experiment_records(run.target_name)
+    )
+
+
 def _can_resume(run: BenchmarkRun) -> tuple[bool, int]:
     """Return (resumable, already_completed) for this run.
 
@@ -409,6 +464,8 @@ def _can_resume(run: BenchmarkRun) -> tuple[bool, int]:
     """
     if run.config.search_strategy == "none":
         return (False, 0)
+    if _has_invalid_resume_records(run):
+        return (False, 0)
     marker_seed = _read_benchmark_seed_marker(run.target_name)
     if marker_seed != run.seed:
         return (False, 0)
@@ -418,7 +475,7 @@ def _can_resume(run: BenchmarkRun) -> tuple[bool, int]:
     return (True, done)
 
 
-def _patch_model_config(target_name: str) -> None:
+def _patch_model_config(target_name: str, model_route: BenchmarkModelRoute) -> None:
     """Fill in the three non-CLI model slots in ``.anneal/config.toml``.
 
     After ``anneal register`` writes the target section, three ``agent_config``
@@ -452,14 +509,14 @@ def _patch_model_config(target_name: str) -> None:
 
         if current_section == agent_section_header:
             if stripped.startswith("exploration_model"):
-                lines[i] = f'exploration_model = "{_DIAGNOSIS_MODEL}"'
+                lines[i] = f'exploration_model = "{model_route.diagnosis_model}"'
                 patched_agent["exploration_model"] = True
             elif stripped.startswith("diagnosis_model"):
-                lines[i] = f'diagnosis_model = "{_DIAGNOSIS_MODEL}"'
+                lines[i] = f'diagnosis_model = "{model_route.diagnosis_model}"'
                 patched_agent["diagnosis_model"] = True
         elif current_section == research_section_header:
             if stripped.startswith("model"):
-                lines[i] = f'model = "{_DIAGNOSIS_MODEL}"'
+                lines[i] = f'model = "{model_route.diagnosis_model}"'
                 patched_research = True
 
     if not all(patched_agent.values()):
@@ -474,7 +531,7 @@ def _patch_model_config(target_name: str) -> None:
     research_note = " + research_config.model" if patched_research else ""
     console.print(
         f"    [dim]patched agent_config.exploration_model, "
-        f"diagnosis_model{research_note} → {_DIAGNOSIS_MODEL}[/dim]"
+        f"diagnosis_model{research_note} → {model_route.diagnosis_model}[/dim]"
     )
 
 
@@ -604,7 +661,7 @@ def _execute_run(run: BenchmarkRun, dry_run: bool = False) -> dict[str, object]:
 
         # Step 1a: Patch the three model slots the CLI does not expose
         # (exploration_model, diagnosis_model, research_config.model).
-        _patch_model_config(run.target_name)
+        _patch_model_config(run.target_name, run.model_route)
 
         # Step 1b: Scrub eval harness files from the worktree so the optimization
         # agent cannot read the hidden test suite.  The eval commands reference

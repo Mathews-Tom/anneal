@@ -117,32 +117,29 @@
 | B5 | treatment | total_cost_usd | 10 | 3.8003 | 0.7615 | 9.5562 | 0.4280 | 0.3820 | 30.9831 |
 
 
-## Enhancement Attribution
+## Treatment-Control Metric Deltas
 
-| Enhancement | Target | Metric | Direction | Control Mean | Treatment Mean | Relative Change (%) |
+These rows are descriptive configuration-level deltas. They do not attribute effects to individual enhancements, because the treatment configuration changes multiple mechanisms at once.
+
+| Metric Label | Target | Metric | Direction | Control Mean | Treatment Mean | Relative Change (%) |
 |-------------|--------|--------|-----------|--------------|----------------|---------------------|
-| Strategy Manifest | B1 | final_score | maximize | 2.8600 | 2.9600 | +3.50% |
-| Strategy Manifest | B2 | final_score | maximize | 2.5400 | 2.8000 | +10.24% |
-| Strategy Manifest | B3 | final_score | minimize | 49.6450 | 40.8800 | +17.66% |
-| Strategy Manifest | B4 | final_score | maximize | 0.7010 | 0.7832 | +11.73% |
-| Strategy Manifest | B5 | final_score | maximize | 1.2400 | 1.5500 | +25.00% |
-| Dual-Agent Mutation | B1 | total_cost_usd | maximize | 2.1879 | 2.7222 | +24.42% |
-| Dual-Agent Mutation | B2 | total_cost_usd | maximize | 3.1210 | 2.8586 | -8.41% |
-| Dual-Agent Mutation | B3 | total_cost_usd | minimize | 2.7080 | 2.8448 | -5.05% |
-| Dual-Agent Mutation | B4 | total_cost_usd | maximize | 1.5655 | 1.4976 | -4.34% |
-| Dual-Agent Mutation | B5 | total_cost_usd | maximize | 4.2203 | 3.8003 | -9.95% |
-| Two-Phase Mutation | B1 | acceptance_rate | maximize | 0.6601 | 0.6181 | -6.36% |
-| Two-Phase Mutation | B2 | acceptance_rate | maximize | 0.5207 | 0.4880 | -6.27% |
-| Two-Phase Mutation | B3 | acceptance_rate | minimize | 0.6656 | 0.6172 | +7.26% |
-| Two-Phase Mutation | B4 | acceptance_rate | maximize | 0.8131 | 0.7940 | -2.35% |
-| Two-Phase Mutation | B5 | acceptance_rate | maximize | 0.4242 | 0.3678 | -13.31% |
-| Lineage Context | B1 | convergence_experiment | maximize | 3.6000 | 4.0000 | +11.11% |
-| Lineage Context | B2 | convergence_experiment | maximize | 4.4000 | 16.2000 | +268.18% |
-| Lineage Context | B3 | convergence_experiment | minimize | 6.5000 | 10.8000 | -66.15% |
-| Lineage Context | B4 | convergence_experiment | maximize | 3.2000 | 14.0000 | +337.50% |
-| Lineage Context | B5 | convergence_experiment | maximize | 12.0000 | 9.6000 | -20.00% |
-| Episodic Memory | B1 | final_score | maximize | 2.8600 | 2.9600 | +3.50% |
-| Episodic Memory | B2 | final_score | maximize | 2.5400 | 2.8000 | +10.24% |
-| Episodic Memory | B3 | final_score | minimize | 49.6450 | 40.8800 | +17.66% |
-| Episodic Memory | B4 | final_score | maximize | 0.7010 | 0.7832 | +11.73% |
-| Episodic Memory | B5 | final_score | maximize | 1.2400 | 1.5500 | +25.00% |
+| Final score | B1 | final_score | maximize | 2.8600 | 2.9600 | +3.50% |
+| Final score | B2 | final_score | maximize | 2.5400 | 2.8000 | +10.24% |
+| Final score | B3 | final_score | minimize | 49.6450 | 40.8800 | +17.66% |
+| Final score | B4 | final_score | maximize | 0.7010 | 0.7832 | +11.73% |
+| Final score | B5 | final_score | maximize | 1.2400 | 1.5500 | +25.00% |
+| Total cost | B1 | total_cost_usd | maximize | 2.1879 | 2.7222 | +24.42% |
+| Total cost | B2 | total_cost_usd | maximize | 3.1210 | 2.8586 | -8.41% |
+| Total cost | B3 | total_cost_usd | minimize | 2.7080 | 2.8448 | -5.05% |
+| Total cost | B4 | total_cost_usd | maximize | 1.5655 | 1.4976 | -4.34% |
+| Total cost | B5 | total_cost_usd | maximize | 4.2203 | 3.8003 | -9.95% |
+| Acceptance rate | B1 | acceptance_rate | maximize | 0.6601 | 0.6181 | -6.36% |
+| Acceptance rate | B2 | acceptance_rate | maximize | 0.5207 | 0.4880 | -6.27% |
+| Acceptance rate | B3 | acceptance_rate | minimize | 0.6656 | 0.6172 | +7.26% |
+| Acceptance rate | B4 | acceptance_rate | maximize | 0.8131 | 0.7940 | -2.35% |
+| Acceptance rate | B5 | acceptance_rate | maximize | 0.4242 | 0.3678 | -13.31% |
+| Convergence experiment | B1 | convergence_experiment | maximize | 3.6000 | 4.0000 | +11.11% |
+| Convergence experiment | B2 | convergence_experiment | maximize | 4.4000 | 16.2000 | +268.18% |
+| Convergence experiment | B3 | convergence_experiment | minimize | 6.5000 | 10.8000 | -66.15% |
+| Convergence experiment | B4 | convergence_experiment | maximize | 3.2000 | 14.0000 | +337.50% |
+| Convergence experiment | B5 | convergence_experiment | maximize | 12.0000 | 9.6000 | -20.00% |

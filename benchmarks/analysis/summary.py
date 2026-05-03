@@ -3,13 +3,14 @@
 Generates:
   1. Markdown table of statistical comparisons (for README or paper appendix).
   2. JSON file with all results for programmatic consumption.
-  3. Enhancement attribution analysis linking metrics to treatment components.
+  3. Treatment-control metric deltas for descriptive comparison.
 
 All aggregation is done per-target. Pooling descriptive statistics across
 targets is unsound because targets use heterogeneous metric spaces (e.g. B3
 reports wall-clock seconds under ``direction=minimize`` while B1/B2/B4/B5
 report composite 0-5 scores under ``direction=maximize``).
 """
+
 from __future__ import annotations
 
 import json
@@ -25,18 +26,17 @@ from benchmarks.analysis.statistics import (
 
 
 # Targets whose primary metric is minimized rather than maximized. Used to
-# flip the sign of relative-change calculations in the attribution table so
+# flip the sign of relative-change calculations in the delta table so
 # that "improvement" always reads as a positive percentage.
 _MINIMIZATION_TARGETS: frozenset[str] = frozenset({"B3"})
 
-# Enhancements present in the "treatment" configuration and the metric each
-# most directly influences. Used for attribution analysis.
-_ENHANCEMENT_METRIC_MAP: dict[str, str] = {
-    "Strategy Manifest": "final_score",
-    "Dual-Agent Mutation": "total_cost_usd",
-    "Two-Phase Mutation": "acceptance_rate",
-    "Lineage Context": "convergence_experiment",
-    "Episodic Memory": "final_score",
+# Descriptive metrics reported for treatment-control comparison. These are
+# configuration-level deltas, not feature-level causal attribution.
+_TREATMENT_CONTROL_METRICS: dict[str, str] = {
+    "Final score": "final_score",
+    "Total cost": "total_cost_usd",
+    "Acceptance rate": "acceptance_rate",
+    "Convergence experiment": "convergence_experiment",
 }
 
 
@@ -113,19 +113,19 @@ def generate_summary_stats_table(stats: list[SummaryStats]) -> str:
     return header + "\n".join(rows) + "\n"
 
 
-def generate_attribution_analysis(
+def generate_treatment_control_deltas(
     results: list[RunResult],
     control_config: str = "control",
     treatment_config: str = "treatment",
 ) -> dict[str, dict[str, dict[str, float | str]]]:
-    """Estimate which enhancements contributed to treatment improvements.
+    """Compute descriptive treatment-control metric deltas.
 
-    For each (enhancement, target) pair, computes the relative difference
-    between treatment and control on the enhancement's primary metric.
-    Minimization targets (``_MINIMIZATION_TARGETS``) have the sign flipped so
-    that a positive relative change always reads as "treatment improved over
-    control". Metrics from different targets are never pooled — every number
-    is scoped to one target.
+    For each (metric label, target) pair, computes the relative difference
+    between treatment and control. Minimization targets
+    (``_MINIMIZATION_TARGETS``) have the sign flipped for final-score-like
+    metrics so that a positive relative change reads as "treatment improved
+    over control". Metrics from different targets are never pooled; every
+    number is scoped to one target.
 
     Args:
         results: All run results.
@@ -133,13 +133,13 @@ def generate_attribution_analysis(
         treatment_config: Name of the treatment configuration.
 
     Returns:
-        Nested dict ``{enhancement: {target_id: {metric, direction,
+        Nested dict ``{metric_label: {target_id: {metric, direction,
         control_mean, treatment_mean, relative_change_pct}}}``.
     """
     by_target = group_by_target(results)
-    attribution: dict[str, dict[str, dict[str, float | str]]] = {}
+    deltas: dict[str, dict[str, dict[str, float | str]]] = {}
 
-    for enhancement, metric in _ENHANCEMENT_METRIC_MAP.items():
+    for metric_label, metric in _TREATMENT_CONTROL_METRICS.items():
         per_target: dict[str, dict[str, float | str]] = {}
 
         for target_id, target_runs in sorted(by_target.items()):
@@ -157,8 +157,9 @@ def generate_attribution_analysis(
             raw_change = 100.0 * (trt_mean - ctrl_mean) / denom
 
             direction = "minimize" if target_id in _MINIMIZATION_TARGETS else "maximize"
-            # Minimization: a drop in the metric is an improvement, so flip
-            # the sign so positive always means "treatment better than control".
+            # For minimized target scores, a drop is an improvement. Other
+            # metrics remain descriptive and retain the same target direction
+            # for table readability.
             rel_change = -raw_change if direction == "minimize" else raw_change
 
             per_target[target_id] = {
@@ -170,15 +171,15 @@ def generate_attribution_analysis(
             }
 
         if per_target:
-            attribution[enhancement] = per_target
+            deltas[metric_label] = per_target
 
-    return attribution
+    return deltas
 
 
 def write_json_results(
     comparisons: list[ComparisonResult],
     summary_stats: list[SummaryStats],
-    attribution: dict[str, dict[str, dict[str, float | str]]],
+    deltas: dict[str, dict[str, dict[str, float | str]]],
     output_path: Path,
 ) -> None:
     """Serialise all analysis results to a JSON file.
@@ -186,13 +187,13 @@ def write_json_results(
     Args:
         comparisons: Statistical comparison results.
         summary_stats: Descriptive statistics per config.
-        attribution: Enhancement attribution analysis.
+        deltas: Treatment-control metric deltas.
         output_path: Destination JSON file path.
     """
     payload: dict[str, object] = {
         "comparisons": [asdict(cr) for cr in comparisons],
         "summary_stats": [asdict(s) for s in summary_stats],
-        "attribution": attribution,
+        "treatment_control_deltas": deltas,
     }
 
     # ComparisonResult contains tuple fields that JSON cannot serialise
@@ -216,17 +217,18 @@ def write_json_results(
 def write_markdown_summary(
     comparisons: list[ComparisonResult],
     summary_stats: list[SummaryStats],
-    attribution: dict[str, dict[str, dict[str, float | str]]],
+    deltas: dict[str, dict[str, dict[str, float | str]]],
     output_path: Path,
 ) -> None:
     """Write a full Markdown summary document to disk.
 
-    Sections: statistical comparisons, descriptive stats, attribution analysis.
+    Sections: statistical comparisons, descriptive stats, and treatment-control
+    metric deltas.
 
     Args:
         comparisons: Statistical comparison results.
         summary_stats: Descriptive statistics per (target, config, metric).
-        attribution: Nested attribution dict ``{enhancement: {target_id: ...}}``.
+        deltas: Nested delta dict ``{metric_label: {target_id: ...}}``.
         output_path: Destination Markdown file path.
     """
     sections: list[str] = ["# Benchmark Analysis Summary\n"]
@@ -237,21 +239,26 @@ def write_markdown_summary(
     sections.append("\n## Descriptive Statistics\n")
     sections.append(generate_summary_stats_table(summary_stats))
 
-    sections.append("\n## Enhancement Attribution\n")
+    sections.append("\n## Treatment-Control Metric Deltas\n")
+    sections.append(
+        "These rows are descriptive configuration-level deltas. They do not "
+        "attribute effects to individual enhancements, because the treatment "
+        "configuration changes multiple mechanisms at once.\n"
+    )
     attr_header = (
-        "| Enhancement | Target | Metric | Direction "
+        "| Metric Label | Target | Metric | Direction "
         "| Control Mean | Treatment Mean | Relative Change (%) |\n"
         "|-------------|--------|--------|-----------"
         "|--------------|----------------|---------------------|\n"
     )
     attr_rows: list[str] = []
-    for enhancement, per_target in attribution.items():
+    for metric_label, per_target in deltas.items():
         for target_id, data in sorted(per_target.items()):
-            ctrl_mean = float(data["control_mean"])  # type: ignore[arg-type]
-            trt_mean = float(data["treatment_mean"])  # type: ignore[arg-type]
-            rel_change = float(data["relative_change_pct"])  # type: ignore[arg-type]
+            ctrl_mean = float(data["control_mean"])
+            trt_mean = float(data["treatment_mean"])
+            rel_change = float(data["relative_change_pct"])
             attr_rows.append(
-                f"| {enhancement} | {target_id} | {data['metric']} "
+                f"| {metric_label} | {target_id} | {data['metric']} "
                 f"| {data['direction']} | {ctrl_mean:.4f} | {trt_mean:.4f} "
                 f"| {rel_change:+.2f}% |"
             )
@@ -275,7 +282,12 @@ def compute_all_summary_stats(
         List of SummaryStats, one per (target_id, config_name, metric) triple.
     """
     if metrics is None:
-        metrics = ["final_score", "convergence_experiment", "acceptance_rate", "total_cost_usd"]
+        metrics = [
+            "final_score",
+            "convergence_experiment",
+            "acceptance_rate",
+            "total_cost_usd",
+        ]
 
     by_target = group_by_target(results)
     all_stats: list[SummaryStats] = []

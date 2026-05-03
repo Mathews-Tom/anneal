@@ -7,6 +7,7 @@ reaches target scores at lower API spend.
 matplotlib is optional and must be installed via the [dashboard] extra:
     uv pip install 'anneal-cli[dashboard]'
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -43,7 +44,9 @@ def _interpolate_cost_curve(
         costs = np.array(run.costs, dtype=float)
         scores = np.array(run.scores, dtype=float)
         # Use step interpolation: left-fill for values below first cost point.
-        matrix[i] = np.interp(cost_grid, costs, scores, left=scores[0], right=scores[-1])
+        matrix[i] = np.interp(
+            cost_grid, costs, scores, left=scores[0], right=scores[-1]
+        )
 
     return matrix
 
@@ -88,9 +91,10 @@ def plot_cost_efficiency(
         ValueError: If no results exist for target_id.
     """
     try:
-        import matplotlib
+        import matplotlib  # type: ignore[import-not-found]
+
         matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
+        import matplotlib.pyplot as plt  # type: ignore[import-not-found]
     except ImportError as exc:
         raise ImportError(
             "matplotlib is required for cost efficiency plots. "

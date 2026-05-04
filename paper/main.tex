@@ -1,7 +1,7 @@
 %% main.tex — Anneal: LLM-Guided Artifact Optimization as Principled Search
 %% Target: arXiv preprint (single-column article style)
 
-\documentclass[11pt]{article}
+\documentclass[10pt]{article}
 
 %%
 %% Page geometry — single column, ~1in margins on US Letter for screen
@@ -12,14 +12,21 @@
 %%
 %% Typography
 %%
-\usepackage{times}
-\usepackage{microtype}
-
-%%
-%% Math, tables, graphics
+%% Times for body text, matched Times-style math via newtxmath, and
+%% Inconsolata for monospace. All three are free Type 1 fonts shipped
+%% in TeX Live and accepted by arXiv. newtxmath replaces the default
+%% Computer Modern math fonts so equations match the body text style.
 %%
 \usepackage{amsmath}
 \usepackage{amssymb}
+\usepackage{newtxtext}
+\usepackage{newtxmath}
+\usepackage[scaled=0.95]{inconsolata}
+\usepackage{microtype}
+
+%%
+%% Tables, graphics
+%%
 \usepackage{booktabs}
 \usepackage{graphicx}
 \usepackage[dvipsnames]{xcolor}

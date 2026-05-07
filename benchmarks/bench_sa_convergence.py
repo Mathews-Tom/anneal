@@ -12,11 +12,12 @@ mid-run rather than improving the final converged value.
 Parameters are calibrated so fixed SA cools too fast and gets stuck
 while adaptive SA can reheat and explore further local optima.
 
-Usage: uv run python benchmarks/bench_sa_convergence.py
+Usage: uv run python benchmarks/bench_sa_convergence.py [--report-only]
 """
 
 from __future__ import annotations
 
+import argparse
 import math
 import random
 import sys
@@ -71,7 +72,20 @@ def run_optimization(
     return best_score
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Measure adaptive SA convergence on Rastrigin."
+    )
+    parser.add_argument(
+        "--report-only",
+        action="store_true",
+        help="Print the gate result but return success even when the threshold misses.",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     n_runs = 50
     n_experiments = 100
 
@@ -136,7 +150,7 @@ def main() -> None:
     print(f"Gate (>=15% improvement): {'PASS' if passed else 'FAIL'}")
     print("=" * 60)
 
-    sys.exit(0 if passed else 1)
+    sys.exit(0 if passed or args.report_only else 1)
 
 
 if __name__ == "__main__":

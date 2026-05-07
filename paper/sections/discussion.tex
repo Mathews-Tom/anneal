@@ -44,7 +44,10 @@ The end-to-end comparison in \cref{sec:end-to-end} runs at $n = 5$ paired seeds 
 At this seed count the Wilcoxon signed-rank test has a two-sided $p$-value floor of $0.0625$, so no comparison can reach the conventional $\alpha = 0.05$ threshold per-target without ties or unusual sign patterns, and after Holm--Bonferroni correction across five targets the bar rises further still.
 The directional pattern across targets (treatment beats control on 5/5 targets, treatment beats greedy on 5/5 targets) and the Cohen's-large effect sizes on the two strongest greedy-versus-treatment comparisons (B3, $d = -1.09$; B5, $d = 1.35$) indicate that seed count is one binding constraint on whether systemic claims clear the corrected threshold.
 A higher-powered replication (larger $n$ per target, or a study restricted to one or two targets that does not pay the five-target multiplicity tax) would test whether the directional advantage of the treatment configuration translates into a statistically defensible claim.
-We have intentionally not run such a replication at this stage because the seed-counted result with its honest non-significance is more informative than a post-hoc-selected single-target study would be: it illustrates exactly the conservatism the framework's statistical-acceptance layer is designed to enforce.
+After the archived five-target study, we ran an additional focused B3/B5 experiment using the Codex CLI backend with \texttt{gpt-5.4} for mutation and \texttt{gpt-5.4-mini} for diagnosis and judging over 15 paired seeds.
+We do not treat that run as a primary replication of the end-to-end result bundle: it excludes B1, B2, and B4, omits the raw baseline, and uses a reduced-fidelity B5 protocol (\texttt{sample\_count=1}, \texttt{judgment\_votes=1}, budget 5) to make Codex-backed stochastic judging operationally tractable.
+Its main signal is methodological rather than evidential: both selected targets saturated under the reduced protocol, with all B3 configurations reaching the best observed score and B5 operating near ceiling.
+The focused run therefore reinforces the need for harder benchmark variants and direction-aware best-score analysis before additional seed expansion can support stronger treatment-effect claims.
 The domain-agnostic design claim in \cref{sec:introduction} continues to rest primarily on the architecture of the artifact--evaluation--agent triplet (\cref{sec:triplet}); the suite spans prompts, code, and documentation, but five targets cannot establish that the framework composes into improvements across the broader space of text-artifact optimization problems.
 
 \paragraph{External validity.}
@@ -73,7 +76,8 @@ Where alignment is weak, the framework will optimize the proxy, not the intent.
 \paragraph{Higher-powered empirical replication.}
 The seed-counted end-to-end study in \cref{sec:end-to-end} establishes a consistent directional advantage of the treatment configuration over both control and greedy across the suite, but does not clear the multiplicity-corrected significance threshold at $n = 5$.
 The two strongest greedy-versus-treatment comparisons (B3, B5) sit at the Wilcoxon two-sided $p$-value floor for $n = 5$, indicating that statistical power is one unresolved constraint on the systemic claim.
-A replication at higher seed counts on a smaller subset of targets would resolve whether the directional advantage translates into a statistically defensible claim.
+A focused 15-seed Codex-backed B3/B5 run showed that simply increasing seeds on the current B3/B5 definitions is not enough: both targets can saturate under reduced protocols, eliminating score headroom.
+The next replication should therefore pair higher seed counts with harder target variants and direction-aware primary metrics (best score for minimization targets, success rate, and cost-to-threshold), rather than only rerunning the same saturated tasks.
 
 \paragraph{Multi-artifact optimization.}
 Extending the mutation scope to coordinated changes across multiple files (e.g., modifying a function signature and all its call sites simultaneously) would enable structural refactoring that single-file mutations cannot achieve.

@@ -1,4 +1,5 @@
 """Failure taxonomy: classification, distribution, and blind spot detection."""
+
 from __future__ import annotations
 
 import json
@@ -15,12 +16,21 @@ logger = logging.getLogger(__name__)
 SEED_CATEGORIES: list[dict[str, str]] = [
     {"category": "output_format", "description": "Output structure/schema violation"},
     {"category": "logic_error", "description": "Incorrect reasoning or calculation"},
-    {"category": "regression", "description": "Degraded a previously-passing criterion"},
+    {
+        "category": "regression",
+        "description": "Degraded a previously-passing criterion",
+    },
     {"category": "scope_violation", "description": "Edits outside permitted scope"},
     {"category": "syntax_error", "description": "Code/config fails to parse"},
     {"category": "semantic_drift", "description": "Correct format but wrong meaning"},
-    {"category": "over_optimization", "description": "Improved metric by gaming evaluation"},
-    {"category": "incomplete_edit", "description": "Partial change leaving inconsistent state"},
+    {
+        "category": "over_optimization",
+        "description": "Improved metric by gaming evaluation",
+    },
+    {
+        "category": "incomplete_edit",
+        "description": "Partial change leaving inconsistent state",
+    },
 ]
 
 _CLASSIFICATION_PROMPT = """Classify this failed experiment into one of the categories below.
@@ -78,15 +88,19 @@ class FailureTaxonomy:
             categories=categories_text,
         )
 
-        client = make_client(model)
-        api_model = strip_provider_prefix(model)
-
         try:
+            client = make_client(model)
+            api_model = strip_provider_prefix(model)
             response = await client.chat.completions.create(
                 model=api_model,
                 temperature=1.0,
                 messages=[{"role": "user", "content": prompt}],
             )
+        except KeyError as exc:
+            logger.info(
+                "Taxonomy classification skipped: missing environment key %s", exc
+            )
+            return self._fallback_classify(hypothesis, failure_mode), 0.0
         except (openai.APITimeoutError, openai.APIConnectionError) as exc:
             logger.warning("Taxonomy classification failed: %s", exc)
             return self._fallback_classify(hypothesis, failure_mode), 0.0
@@ -128,28 +142,37 @@ class FailureTaxonomy:
         fm = (failure_mode or "").lower()
         if "scope" in fm:
             return FailureClassification(
-                category="scope_violation", description=failure_mode or "",
-                fix_direction="Restrict edits to permitted scope", confidence=0.8,
+                category="scope_violation",
+                description=failure_mode or "",
+                fix_direction="Restrict edits to permitted scope",
+                confidence=0.8,
             )
         if "syntax" in fm or "parse" in fm:
             return FailureClassification(
-                category="syntax_error", description=failure_mode or "",
-                fix_direction="Ensure output parses correctly", confidence=0.7,
+                category="syntax_error",
+                description=failure_mode or "",
+                fix_direction="Ensure output parses correctly",
+                confidence=0.7,
             )
         if "verifier" in fm:
             return FailureClassification(
                 category="syntax_error",
                 description=f"Verifier gate failed: {failure_mode}",
-                fix_direction="Fix verifier violation before resubmitting", confidence=0.6,
+                fix_direction="Fix verifier violation before resubmitting",
+                confidence=0.6,
             )
         if "constraint" in fm:
             return FailureClassification(
-                category="regression", description=failure_mode or "",
-                fix_direction="Maintain constraint thresholds", confidence=0.6,
+                category="regression",
+                description=failure_mode or "",
+                fix_direction="Maintain constraint thresholds",
+                confidence=0.6,
             )
         return FailureClassification(
-            category="logic_error", description=failure_mode or hypothesis,
-            fix_direction="Review mutation logic", confidence=0.3,
+            category="logic_error",
+            description=failure_mode or hypothesis,
+            fix_direction="Review mutation logic",
+            confidence=0.3,
         )
 
     def _best_match_category(self, raw_category: str) -> str:
@@ -176,7 +199,9 @@ class FailureTaxonomy:
         Returns category names that have never been attributed but could
         plausibly apply given the failure count.
         """
-        failed = [r for r in records if r.outcome in (Outcome.DISCARDED, Outcome.BLOCKED)]
+        failed = [
+            r for r in records if r.outcome in (Outcome.DISCARDED, Outcome.BLOCKED)
+        ]
         if len(failed) < 10:
             return []
 

@@ -12,7 +12,11 @@ from benchmarks.suite.config import (
     BenchmarkRun,
     BenchmarkTarget,
 )
-from benchmarks.suite.runner import _record_has_invalid_resume_score
+from benchmarks.suite.runner import (
+    _record_has_invalid_resume_score,
+    build_run_command,
+    build_run_matrix,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -163,3 +167,42 @@ def test_resume_guard_allows_zero_for_non_b3_targets(tmp_path: Path) -> None:
     run = _benchmark_run("B4", tmp_path)
 
     assert _record_has_invalid_resume_score(run, {"score": 0.0}) is False
+
+
+def test_run_command_uses_experiment_budget_override(tmp_path: Path) -> None:
+    run = _benchmark_run("B5", tmp_path)
+    run.experiment_budget = 5
+    cmd = build_run_command(run)
+    index = cmd.index("--experiments")
+
+    assert cmd[index + 1] == "5"
+
+
+def test_build_run_matrix_carries_stochastic_overrides(tmp_path: Path) -> None:
+    target = _benchmark_run("B5", tmp_path).target
+    config = BenchmarkConfig(
+        name="treatment",
+        description="treatment",
+        search_strategy="hybrid",
+    )
+    route = BenchmarkModelRoute(
+        mutation_model="gpt-5.4",
+        diagnosis_model="gpt-5.4-mini",
+        judge_model="gpt-5.4-mini",
+    )
+
+    runs = build_run_matrix(
+        targets=[target],
+        configs=[config],
+        seeds=[1],
+        output_dir=tmp_path,
+        model_route=route,
+        agent_mode="codex_exec",
+        experiment_budget=5,
+        sample_count=1,
+        judgment_votes=1,
+    )
+
+    assert runs[0].effective_experiment_budget == 5
+    assert runs[0].sample_count == 1
+    assert runs[0].judgment_votes == 1

@@ -859,6 +859,7 @@ def _handle_run(args: argparse.Namespace) -> None:
         summary = build_run_summary(
             records,
             baseline_score=target.baseline_score,
+            direction=target.eval_config.direction,
             mode=OutputMode.RICH,
         )
         assert isinstance(summary, str)

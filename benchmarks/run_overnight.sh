@@ -49,6 +49,10 @@
 #   BACKEND=codex_exec
 #   DRY_RUN=1             # print runner commands without executing API work
 #   TEE_SESSION_LOG=0     # disable process-substitution tee in restricted shells
+#   STREAM_RUN_LOG=0      # disable live per-run log streaming
+#   BENCHMARK_NO_PROGRESS_TIMEOUT_SECONDS=3600  # child run watchdog
+#   B5_EXPERIMENT_BUDGET=5 B5_SAMPLE_COUNT=1 B5_JUDGMENT_VOTES=1
+#                           # lower-fidelity Codex-only B5 exploratory runs
 
 set -u  # undefined variables are errors; do NOT use -e (continue on per-run failure)
 
@@ -75,8 +79,12 @@ CONFIGS=(raw greedy control treatment)
 SEEDS=(2 3 4 5 6 7 8 9 10)
 EXTENDED_SEED_MIN=6
 RUN_ANALYSIS="${RUN_ANALYSIS:-}"
+STREAM_RUN_LOG="${STREAM_RUN_LOG:-1}"
 EXTENDED_TARGETS_ENV="${EXTENDED_TARGETS:-}"
 EXTENDED_TARGETS=()
+B5_EXPERIMENT_BUDGET="${B5_EXPERIMENT_BUDGET:-}"
+B5_SAMPLE_COUNT="${B5_SAMPLE_COUNT:-}"
+B5_JUDGMENT_VOTES="${B5_JUDGMENT_VOTES:-}"
 
 SESSION_STAMP="$(date +%Y%m%d-%H%M%S)"
 
@@ -89,6 +97,12 @@ build_seeds() {
   for (( seed=start; seed<end; seed++ )); do
     SEEDS+=("$seed")
   done
+}
+
+split_override() {
+  local raw="${1//,/ }"
+  # shellcheck disable=SC2206  # word-split normalized env string into array intentionally
+  echo ${raw}
 }
 
 case "$EXPERIMENT" in
@@ -134,18 +148,18 @@ case "$EXPERIMENT" in
 esac
 
 if [[ -n "${TARGETS_OVERRIDE:-}" ]]; then
-  # shellcheck disable=SC2206  # word-split env string into array intentionally
-  TARGETS=( ${TARGETS_OVERRIDE} )
+  # shellcheck disable=SC2207  # split_override intentionally emits words
+  TARGETS=( $(split_override "$TARGETS_OVERRIDE") )
 fi
 
 if [[ -n "${CONFIGS_OVERRIDE:-}" ]]; then
-  # shellcheck disable=SC2206
-  CONFIGS=( ${CONFIGS_OVERRIDE} )
+  # shellcheck disable=SC2207
+  CONFIGS=( $(split_override "$CONFIGS_OVERRIDE") )
 fi
 
 if [[ -n "${SEED_LIST:-}" ]]; then
-  # shellcheck disable=SC2206
-  SEEDS=( ${SEED_LIST} )
+  # shellcheck disable=SC2207
+  SEEDS=( $(split_override "$SEED_LIST") )
 elif [[ -n "${SEED_START:-}" && -n "${SEED_COUNT:-}" && "$EXPERIMENT" == "default" ]]; then
   build_seeds "$SEED_START" "$SEED_COUNT"
 fi
@@ -153,8 +167,8 @@ fi
 if [[ "${SYMMETRIC:-0}" == "1" ]]; then
   EXTENDED_TARGETS=("${TARGETS[@]}")
 elif [[ -n "$EXTENDED_TARGETS_ENV" ]]; then
-  # shellcheck disable=SC2206  # word-split env string into array intentionally
-  EXTENDED_TARGETS=( ${EXTENDED_TARGETS_ENV} )
+  # shellcheck disable=SC2207
+  EXTENDED_TARGETS=( $(split_override "$EXTENDED_TARGETS_ENV") )
 elif (( ${#EXTENDED_TARGETS[@]} == 0 )); then
   EXTENDED_TARGETS=(B3 B5)
 fi
@@ -200,12 +214,65 @@ fi
 # --------------------------------------------------------------------------
 
 is_done() {
-  # Returns 0 iff the JSONL result exists and is non-empty.
-  [[ -s "$1" ]]
+  local result_path="$1"
+  local done_marker="${result_path}.done"
+  [[ -f "$done_marker" ]]
 }
 
 count_lines() {
   [[ -f "$1" ]] && wc -l < "$1" | tr -d ' ' || echo 0
+}
+
+expected_records() {
+  local target="$1"
+  local config="$2"
+  if [[ "$config" == "raw" ]]; then
+    echo 1
+  elif [[ "$target" == "B5" && -n "$B5_EXPERIMENT_BUDGET" ]]; then
+    echo "$B5_EXPERIMENT_BUDGET"
+  else
+    echo 50
+  fi
+}
+
+has_complete_legacy_result() {
+  local result_path="$1"
+  local expected="$2"
+  local lines
+  lines=$(count_lines "$result_path")
+  (( lines >= expected ))
+}
+
+format_duration() {
+  local seconds="$1"
+  local hours=$(( seconds / 3600 ))
+  local minutes=$(( (seconds % 3600) / 60 ))
+  local secs=$(( seconds % 60 ))
+  if (( hours > 0 )); then
+    printf "%dh %02dm %02ds" "$hours" "$minutes" "$secs"
+  elif (( minutes > 0 )); then
+    printf "%dm %02ds" "$minutes" "$secs"
+  else
+    printf "%ds" "$secs"
+  fi
+}
+
+start_log_stream() {
+  local log_file="$1"
+  RUN_LOG_TAIL_PID=""
+  if [[ "$STREAM_RUN_LOG" == "1" ]]; then
+    tail -n +1 -f "$log_file" &
+    RUN_LOG_TAIL_PID="$!"
+  fi
+}
+
+stop_log_stream() {
+  local stream_pid="$1"
+  if [[ -n "$stream_pid" ]]; then
+    sleep 0.2
+    kill "$stream_pid" 2>/dev/null || true
+    wait "$stream_pid" 2>/dev/null || true
+  fi
 }
 
 ts() { date +%Y-%m-%dT%H:%M:%S%z; }
@@ -279,6 +346,11 @@ if [[ -n "${MUTATION_MODEL:-}" || -n "${DIAGNOSIS_MODEL:-}" || -n "${JUDGE_MODEL
   echo "[$(ts)] MODEL_ROUTE mutation=${MUTATION_MODEL:-default} diagnosis=${DIAGNOSIS_MODEL:-default} judge=${JUDGE_MODEL:-default}"
 fi
 echo "[$(ts)] BACKEND=${BACKEND:-api}"
+echo "[$(ts)] STREAM_RUN_LOG=$STREAM_RUN_LOG"
+echo "[$(ts)] NO_PROGRESS_TIMEOUT=${BENCHMARK_NO_PROGRESS_TIMEOUT_SECONDS:-3600}s"
+if [[ -n "$B5_EXPERIMENT_BUDGET" || -n "$B5_SAMPLE_COUNT" || -n "$B5_JUDGMENT_VOTES" ]]; then
+  echo "[$(ts)] B5_OVERRIDES experiment_budget=${B5_EXPERIMENT_BUDGET:-default} sample_count=${B5_SAMPLE_COUNT:-default} judgment_votes=${B5_JUDGMENT_VOTES:-default}"
+fi
 echo "[$(ts)] TARGETS=(${TARGETS[*]}) CONFIGS=(${CONFIGS[*]}) SEEDS=(${SEEDS[*]})"
 echo "[$(ts)] seeds >= $EXTENDED_SEED_MIN restricted to: ${EXTENDED_TARGETS[*]}"
 echo
@@ -292,16 +364,21 @@ for seed in "${SEEDS[@]}"; do
       current=$(( current + 1 ))
       run_id="${target}-${config}-seed${seed}"
       result_path="$OUT_DIR/${run_id}.jsonl"
+      done_marker="${result_path}.done"
       run_log="$LOG_DIR/${run_id}-${SESSION_STAMP}.log"
+      expected="$(expected_records "$target" "$config")"
 
-      if is_done "$result_path"; then
+      if is_done "$result_path" || has_complete_legacy_result "$result_path" "$expected"; then
         lines=$(count_lines "$result_path")
-        echo "[$(ts)] [$current/$total] SKIP $run_id (already has $lines records)"
+        echo "[$(ts)] [$current/$total] SKIP $run_id (already has $lines/$expected records)"
         skipped=$(( skipped + 1 ))
         continue
       fi
 
       echo "[$(ts)] [$current/$total] RUN  $run_id → $run_log"
+      : > "$run_log"
+      RUN_LOG_TAIL_PID=""
+      start_log_stream "$run_log"
       start=$(date +%s)
       cmd=(
         uv run python benchmarks/suite/run_suite.py
@@ -323,6 +400,15 @@ for seed in "${SEEDS[@]}"; do
       if [[ -n "${BACKEND:-}" ]]; then
         cmd+=(--agent-mode "$BACKEND")
       fi
+      if [[ "$target" == "B5" && -n "$B5_EXPERIMENT_BUDGET" ]]; then
+        cmd+=(--experiment-budget "$B5_EXPERIMENT_BUDGET")
+      fi
+      if [[ "$target" == "B5" && -n "$B5_SAMPLE_COUNT" ]]; then
+        cmd+=(--sample-count "$B5_SAMPLE_COUNT")
+      fi
+      if [[ "$target" == "B5" && -n "$B5_JUDGMENT_VOTES" ]]; then
+        cmd+=(--judgment-votes "$B5_JUDGMENT_VOTES")
+      fi
       if [[ "${DRY_RUN:-0}" == "1" ]]; then
         cmd+=(--dry-run)
       fi
@@ -332,23 +418,31 @@ for seed in "${SEEDS[@]}"; do
       else
         rc=$?
       fi
+      stop_log_stream "$RUN_LOG_TAIL_PID"
       elapsed=$(( $(date +%s) - start ))
+      elapsed_text="$(format_duration "$elapsed")"
 
       if [[ "${DRY_RUN:-0}" == "1" ]]; then
-        echo "[$(ts)] [$current/$total] DRY  $run_id (${elapsed}s, rc=$rc)"
+        echo "[$(ts)] [$current/$total] DRY  $run_id (${elapsed_text}, rc=$rc)"
         completed=$(( completed + 1 ))
-      elif is_done "$result_path"; then
+      elif (( rc == 0 )) && [[ -s "$result_path" ]]; then
         lines=$(count_lines "$result_path")
-        echo "[$(ts)] [$current/$total] DONE $run_id ($lines records, ${elapsed}s, rc=$rc)"
+        : > "$done_marker"
+        echo "[$(ts)] [$current/$total] DONE $run_id ($lines/$expected records, ${elapsed_text}, rc=$rc)"
         completed=$(( completed + 1 ))
       else
+        lines=$(count_lines "$result_path")
         # rc=130 means the child received SIGINT (likely propagated from
         # our Ctrl-C). Tag it as interrupted rather than failed so the
         # post-run summary is honest about what happened.
         if (( rc == 130 )) || (( STOP )); then
-          echo "[$(ts)] [$current/$total] INTR $run_id (interrupted, ${elapsed}s — partial state in .anneal/targets/${run_id%-seed*})"
+          echo "[$(ts)] [$current/$total] INTR $run_id (interrupted after ${elapsed_text}, $lines records saved — partial state in .anneal/targets/${run_id%-seed*})"
         else
-          echo "[$(ts)] [$current/$total] FAIL $run_id (no records, ${elapsed}s, rc=$rc — see $run_log)"
+          if (( lines > 0 )); then
+            echo "[$(ts)] [$current/$total] FAIL $run_id ($lines records saved, ${elapsed_text}, rc=$rc — see $run_log)"
+          else
+            echo "[$(ts)] [$current/$total] FAIL $run_id (no records, ${elapsed_text}, rc=$rc — see $run_log)"
+          fi
           failed=$(( failed + 1 ))
           failed_list+=("$run_id")
         fi

@@ -293,11 +293,14 @@ class StochasticEvaluator:
         config: StochasticEval,
         artifact_content: str,
     ) -> EvalResult:
+        prompts = config.test_prompts[: config.sample_count]
+        if not prompts:
+            raise EvalError("No test_prompts configured for stochastic evaluation")
         return await self._evaluate_with_prompts(
             worktree_path,
             config,
             artifact_content,
-            config.test_prompts,
+            prompts,
         )
 
     async def evaluate_held_out(

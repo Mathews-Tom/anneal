@@ -94,6 +94,9 @@ class BenchmarkRun:
     output_dir: Path
     model_route: BenchmarkModelRoute
     agent_mode: str = "api"
+    experiment_budget: int | None = None
+    sample_count: int | None = None
+    judgment_votes: int | None = None
 
     @property
     def run_id(self) -> str:
@@ -109,3 +112,8 @@ class BenchmarkRun:
     def result_path(self) -> Path:
         """JSONL file path for this run's results."""
         return self.output_dir / f"{self.run_id}.jsonl"
+
+    @property
+    def effective_experiment_budget(self) -> int:
+        """Experiment budget after suite-level overrides."""
+        return self.experiment_budget or self.target.experiment_budget

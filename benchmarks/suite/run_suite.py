@@ -176,6 +176,27 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Mutation agent backend mode (default: api). "
         "Use codex_exec to invoke Codex CLI instead of direct LLM API calls.",
     )
+    parser.add_argument(
+        "--experiment-budget",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Override the target experiment budget for this suite invocation.",
+    )
+    parser.add_argument(
+        "--sample-count",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Override stochastic evaluation sample_count after registration.",
+    )
+    parser.add_argument(
+        "--judgment-votes",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Override stochastic evaluation judgment_votes after registration.",
+    )
 
     return parser
 
@@ -211,6 +232,14 @@ def _resolve_model_route(args: argparse.Namespace) -> BenchmarkModelRoute:
     )
 
 
+def _validate_positive_override(
+    parser: argparse.ArgumentParser, name: str, value: int | None
+) -> None:
+    """Reject non-positive numeric overrides at the CLI boundary."""
+    if value is not None and value <= 0:
+        parser.error(f"{name} must be a positive integer")
+
+
 # ---------------------------------------------------------------------------
 # Summary helpers
 # ---------------------------------------------------------------------------
@@ -223,6 +252,11 @@ def _print_run_summary(runs: list[BenchmarkRun], dry_run: bool, parallel: int) -
     routes = {r.model_route for r in runs}
     route = next(iter(routes)) if len(routes) == 1 else None
     agent_modes = sorted({r.agent_mode for r in runs})
+    experiment_budgets = sorted({r.effective_experiment_budget for r in runs})
+    sample_counts = sorted({r.sample_count for r in runs if r.sample_count is not None})
+    judgment_votes = sorted(
+        {r.judgment_votes for r in runs if r.judgment_votes is not None}
+    )
 
     mode = "DRY-RUN" if dry_run else "LIVE"
     route_lines = (
@@ -240,6 +274,9 @@ def _print_run_summary(runs: list[BenchmarkRun], dry_run: bool, parallel: int) -
             f"Total runs:      {len(runs)}\n"
             f"Parallel workers: {parallel}\n"
             f"Agent mode:      {', '.join(agent_modes)}\n"
+            f"Experiment budget: {experiment_budgets[0] if len(experiment_budgets) == 1 else 'mixed'}\n"
+            f"Sample override: {sample_counts[0] if len(sample_counts) == 1 else 'default' if not sample_counts else 'mixed'}\n"
+            f"Vote override:   {judgment_votes[0] if len(judgment_votes) == 1 else 'default' if not judgment_votes else 'mixed'}\n"
             f"{route_lines}"
             f"Output dir:      {runs[0].output_dir if runs else 'N/A'}",
             title=f"Benchmark suite — {mode}",
@@ -293,6 +330,9 @@ def _write_model_route_metadata(
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+    _validate_positive_override(parser, "--experiment-budget", args.experiment_budget)
+    _validate_positive_override(parser, "--sample-count", args.sample_count)
+    _validate_positive_override(parser, "--judgment-votes", args.judgment_votes)
 
     # Require at least --target or --all when not doing dry-run from bare invocation.
     # (Bare invocation without flags defaults to all targets — that is intentional.)
@@ -309,6 +349,9 @@ def main(argv: list[str] | None = None) -> int:
         output_dir=args.output_dir,
         model_route=model_route,
         agent_mode=args.agent_mode,
+        experiment_budget=args.experiment_budget,
+        sample_count=args.sample_count,
+        judgment_votes=args.judgment_votes,
     )
 
     if not runs:

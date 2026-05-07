@@ -18,11 +18,15 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import signal
 import shutil
 import subprocess
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import TextIO
 
 from rich.console import Console
 from rich.table import Table
@@ -44,6 +48,10 @@ console = Console()
 _SUITE_DIR = Path(__file__).parent
 _REPO_ROOT = _SUITE_DIR.parent.parent
 _ANNEAL_DIR = _REPO_ROOT / ".anneal"
+_NO_PROGRESS_TIMEOUT_SECONDS = int(
+    os.environ.get("BENCHMARK_NO_PROGRESS_TIMEOUT_SECONDS", "3600")
+)
+_PROGRESS_POLL_SECONDS = 15.0
 
 # Default three-model split used for benchmark runs.
 #
@@ -232,7 +240,7 @@ def build_run_command(
     incremental count within a single process, not an absolute budget, so
     when resuming a partially-complete target we pass the difference
     between the target's total budget and the already-completed count.
-    Defaults to ``run.target.experiment_budget`` (full budget) when None.
+    Defaults to the run's effective experiment budget when None.
     """
     if run.config.search_strategy == "none":
         return []
@@ -240,7 +248,7 @@ def build_run_command(
     exp_count = (
         remaining_experiments
         if remaining_experiments is not None
-        else run.target.experiment_budget
+        else run.effective_experiment_budget
     )
 
     cmd: list[str] = [
@@ -289,6 +297,9 @@ def build_run_matrix(
     output_dir: Path,
     model_route: BenchmarkModelRoute = DEFAULT_MODEL_ROUTE,
     agent_mode: str = "api",
+    experiment_budget: int | None = None,
+    sample_count: int | None = None,
+    judgment_votes: int | None = None,
 ) -> list[BenchmarkRun]:
     """Build all BenchmarkRun objects for the given targets, configs, and seeds.
 
@@ -307,6 +318,9 @@ def build_run_matrix(
                         output_dir=output_dir,
                         model_route=model_route,
                         agent_mode=agent_mode,
+                        experiment_budget=experiment_budget,
+                        sample_count=sample_count,
+                        judgment_votes=judgment_votes,
                     )
                 )
     return runs
@@ -367,6 +381,85 @@ def _read_experiment_records(target_name: str) -> list[dict[str, object]]:
             continue
         records.append(json.loads(line))
     return records
+
+
+def _file_mtime(path: Path) -> float | None:
+    try:
+        return path.stat().st_mtime
+    except FileNotFoundError:
+        return None
+
+
+def _kill_process_group(proc: subprocess.Popen[str]) -> None:
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def _read_temp_output(file_obj: TextIO) -> str:
+    file_obj.seek(0)
+    return file_obj.read()
+
+
+def _run_with_progress_watchdog(
+    cmd: list[str],
+    *,
+    cwd: Path,
+    progress_path: Path,
+) -> tuple[subprocess.CompletedProcess[str], str | None]:
+    """Run a child process and kill it if experiment records stop changing."""
+    last_progress = time.monotonic()
+    last_mtime = _file_mtime(progress_path)
+    timeout_reason: str | None = None
+
+    with (
+        tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as stdout_file,
+        tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as stderr_file,
+    ):
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(cwd),
+            stdout=stdout_file,
+            stderr=stderr_file,
+            text=True,
+            start_new_session=True,
+        )
+
+        while proc.poll() is None:
+            time.sleep(_PROGRESS_POLL_SECONDS)
+            current_mtime = _file_mtime(progress_path)
+            if current_mtime is not None and current_mtime != last_mtime:
+                last_mtime = current_mtime
+                last_progress = time.monotonic()
+
+            stalled_for = time.monotonic() - last_progress
+            if (
+                _NO_PROGRESS_TIMEOUT_SECONDS > 0
+                and stalled_for > _NO_PROGRESS_TIMEOUT_SECONDS
+            ):
+                timeout_reason = (
+                    f"no experiment record progress for {stalled_for:.0f}s "
+                    f"(limit={_NO_PROGRESS_TIMEOUT_SECONDS}s)"
+                )
+                _kill_process_group(proc)
+                break
+
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            _kill_process_group(proc)
+            proc.wait(timeout=10)
+
+        stdout = _read_temp_output(stdout_file)
+        stderr = _read_temp_output(stderr_file)
+        if timeout_reason:
+            stderr = f"{stderr}\n{timeout_reason}\n"
+        returncode = proc.returncode if proc.returncode is not None else -9
+        result = subprocess.CompletedProcess(cmd, returncode, stdout, stderr)
+        return result, timeout_reason
 
 
 # ---------------------------------------------------------------------------
@@ -470,7 +563,7 @@ def _can_resume(run: BenchmarkRun) -> tuple[bool, int]:
     if marker_seed != run.seed:
         return (False, 0)
     done = _read_loop_total_experiments(run.target_name)
-    if done <= 0 or done >= run.target.experiment_budget:
+    if done <= 0 or done >= run.effective_experiment_budget:
         return (False, 0)
     return (True, done)
 
@@ -533,6 +626,58 @@ def _patch_model_config(target_name: str, model_route: BenchmarkModelRoute) -> N
         f"    [dim]patched agent_config.exploration_model, "
         f"diagnosis_model{research_note} → {model_route.diagnosis_model}[/dim]"
     )
+
+
+def _patch_stochastic_eval_config(run: BenchmarkRun) -> None:
+    """Patch stochastic sample/vote controls inside ``.anneal/config.toml``."""
+    if run.target.eval_mode != "stochastic":
+        return
+    if run.sample_count is None and run.judgment_votes is None:
+        return
+
+    config_path = _ANNEAL_DIR / "config.toml"
+    if not config_path.exists():
+        raise FileNotFoundError(f"anneal config not found at {config_path}")
+
+    lines = config_path.read_text(encoding="utf-8").splitlines()
+    section_header = f"[targets.{run.target_name}.eval_config.stochastic]"
+    current_section: str | None = None
+    patched_sample = run.sample_count is None
+    patched_votes = run.judgment_votes is None
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current_section = stripped
+            continue
+
+        if current_section != section_header:
+            continue
+        if run.sample_count is not None and stripped.startswith("sample_count"):
+            lines[i] = f"sample_count = {run.sample_count}"
+            patched_sample = True
+        elif run.judgment_votes is not None and stripped.startswith("judgment_votes"):
+            lines[i] = f"judgment_votes = {run.judgment_votes}"
+            patched_votes = True
+
+    if not patched_sample or not patched_votes:
+        missing: list[str] = []
+        if not patched_sample:
+            missing.append("sample_count")
+        if not patched_votes:
+            missing.append("judgment_votes")
+        raise RuntimeError(
+            f"Failed to patch stochastic fields {missing} for target "
+            f"{run.target_name}: section {section_header} not found or fields missing"
+        )
+
+    config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    parts: list[str] = []
+    if run.sample_count is not None:
+        parts.append(f"sample_count={run.sample_count}")
+    if run.judgment_votes is not None:
+        parts.append(f"judgment_votes={run.judgment_votes}")
+    console.print(f"    [dim]patched stochastic eval: {', '.join(parts)}[/dim]")
 
 
 def _read_baseline_score(target_name: str) -> float | None:
@@ -608,10 +753,10 @@ def _execute_run(run: BenchmarkRun, dry_run: bool = False) -> dict[str, object]:
     # experiment count (budget minus already-completed).
     resume_ok, already_done = _can_resume(run)
     if resume_ok:
-        remaining = run.target.experiment_budget - already_done
+        remaining = run.effective_experiment_budget - already_done
         console.print(
             f"  [cyan]resume[/cyan] {run.run_id} from experiment "
-            f"{already_done}/{run.target.experiment_budget} "
+            f"{already_done}/{run.effective_experiment_budget} "
             f"({remaining} remaining)"
         )
         run_cmd = build_run_command(run, remaining_experiments=remaining)
@@ -662,6 +807,7 @@ def _execute_run(run: BenchmarkRun, dry_run: bool = False) -> dict[str, object]:
         # Step 1a: Patch the three model slots the CLI does not expose
         # (exploration_model, diagnosis_model, research_config.model).
         _patch_model_config(run.target_name, run.model_route)
+        _patch_stochastic_eval_config(run)
 
         # Step 1b: Scrub eval harness files from the worktree so the optimization
         # agent cannot read the hidden test suite.  The eval commands reference
@@ -706,23 +852,22 @@ def _execute_run(run: BenchmarkRun, dry_run: bool = False) -> dict[str, object]:
         experiments_path,
         run_label=run.run_id,
         console=console,
-        max_experiments=run.target.experiment_budget,
+        max_experiments=run.effective_experiment_budget,
+        direction=run.target.direction,
     )
     monitor.start()
     start = time.monotonic()
-    anneal_result = subprocess.run(
+    anneal_result, timeout_reason = _run_with_progress_watchdog(
         run_cmd,
-        cwd=str(_REPO_ROOT),
-        capture_output=True,
-        text=True,
+        cwd=_REPO_ROOT,
+        progress_path=experiments_path,
     )
     elapsed = time.monotonic() - start
     records = monitor.stop()
 
     if anneal_result.returncode != 0:
-        console.print(
-            f"  [red]run failed for {run.run_id}:[/red]\n{anneal_result.stderr}"
-        )
+        label = "run timed out" if timeout_reason else "run failed"
+        console.print(f"  [red]{label} for {run.run_id}:[/red]\n{anneal_result.stderr}")
         # Still save any records collected before failure.
         if records:
             write_result(run, records)

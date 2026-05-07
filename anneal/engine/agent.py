@@ -243,6 +243,100 @@ def _extract_codex_json_event_text(stdout_text: str) -> str:
     return ""
 
 
+def _number_value(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    return None
+
+
+def _int_value(value: object) -> int:
+    number = _number_value(value)
+    if number is None:
+        return 0
+    return int(number)
+
+
+def _extract_cost_value(data: object) -> float | None:
+    if isinstance(data, dict):
+        for key in ("total_cost_usd", "cost_usd"):
+            value = _number_value(data.get(key))
+            if value is not None:
+                return value
+        for value in data.values():
+            nested = _extract_cost_value(value)
+            if nested is not None:
+                return nested
+    elif isinstance(data, list):
+        for item in data:
+            nested = _extract_cost_value(item)
+            if nested is not None:
+                return nested
+    return None
+
+
+def _extract_usage_tokens(data: object) -> tuple[int, int] | None:
+    if isinstance(data, dict):
+        input_tokens = (
+            _int_value(data.get("input_tokens"))
+            or _int_value(data.get("prompt_tokens"))
+            or _int_value(data.get("cached_input_tokens"))
+        )
+        output_tokens = (
+            _int_value(data.get("output_tokens"))
+            or _int_value(data.get("completion_tokens"))
+            or _int_value(data.get("generated_tokens"))
+        )
+        if input_tokens or output_tokens:
+            return input_tokens, output_tokens
+
+        for key in ("usage", "token_usage", "usage_metadata", "response"):
+            nested = _extract_usage_tokens(data.get(key))
+            if nested is not None:
+                return nested
+
+        for value in data.values():
+            nested = _extract_usage_tokens(value)
+            if nested is not None:
+                return nested
+    elif isinstance(data, list):
+        for item in data:
+            nested = _extract_usage_tokens(item)
+            if nested is not None:
+                return nested
+    return None
+
+
+def _extract_codex_usage(stdout_text: str, model: str) -> tuple[float, int, int]:
+    """Extract cost and token telemetry from Codex JSONL stdout."""
+    cost_usd: float | None = None
+    input_tokens = 0
+    output_tokens = 0
+
+    for line in stdout_text.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        event_cost = _extract_cost_value(event)
+        if event_cost is not None:
+            cost_usd = event_cost
+
+        event_usage = _extract_usage_tokens(event)
+        if event_usage is not None:
+            input_tokens, output_tokens = event_usage
+
+    if cost_usd is None and (input_tokens or output_tokens):
+        cost_usd = compute_cost(model, input_tokens, output_tokens)
+
+    return cost_usd or 0.0, input_tokens, output_tokens
+
+
 class AgentInvoker:
     """Invokes a mutation agent via subprocess or direct API call."""
 
@@ -511,6 +605,10 @@ class AgentInvoker:
         if not raw_output:
             raise AgentTransientError("Codex exec completed without a final message")
 
+        cost_usd, input_tokens, output_tokens = _extract_codex_usage(
+            stdout_text,
+            config.model,
+        )
         hypothesis = _extract_hypothesis(raw_output)
         hypothesis_source: Literal["agent", "synthesized"] = (
             "agent" if hypothesis is not None else "synthesized"
@@ -519,9 +617,9 @@ class AgentInvoker:
 
         return AgentInvocationResult(
             success=True,
-            cost_usd=0.0,
-            input_tokens=0,
-            output_tokens=0,
+            cost_usd=cost_usd,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
             hypothesis=hypothesis,
             hypothesis_source=hypothesis_source,
             tags=tags,

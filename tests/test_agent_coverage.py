@@ -749,6 +749,56 @@ class TestInvokeCodexExec:
         sandbox_idx = list(call_args).index("--sandbox")
         assert call_args[sandbox_idx + 1] == "read-only"
 
+    @pytest.mark.asyncio
+    async def test_parses_direct_cost_from_jsonl_stdout(self, tmp_path: Path) -> None:
+        invoker = AgentInvoker()
+        config = _codex_config()
+        stdout = (
+            b'{"type":"turn.completed","total_cost_usd":0.012,'
+            b'"usage":{"input_tokens":200,"output_tokens":80}}\n'
+        )
+        proc = _make_streaming_proc(stdout=stdout)
+
+        async def _spawn(*cmd: str, **_kwargs: object) -> MagicMock:
+            output_idx = list(cmd).index("--output-last-message")
+            Path(cmd[output_idx + 1]).write_text("done", encoding="utf-8")
+            return proc
+
+        with patch("asyncio.create_subprocess_exec", new=AsyncMock(side_effect=_spawn)):
+            result = await invoker._invoke_codex_exec(config, "prompt", tmp_path, 60)
+
+        assert result.cost_usd == pytest.approx(0.012)
+        assert result.input_tokens == 200
+        assert result.output_tokens == 80
+
+    @pytest.mark.asyncio
+    async def test_computes_cost_from_jsonl_usage_when_cost_absent(
+        self, tmp_path: Path
+    ) -> None:
+        invoker = AgentInvoker()
+        config = _codex_config(model="gpt-5.4-mini")
+        stdout = (
+            b'{"type":"response.completed","response":'
+            b'{"usage":{"input_tokens":120,"output_tokens":60}}}\n'
+        )
+        proc = _make_streaming_proc(stdout=stdout)
+
+        async def _spawn(*cmd: str, **_kwargs: object) -> MagicMock:
+            output_idx = list(cmd).index("--output-last-message")
+            Path(cmd[output_idx + 1]).write_text("done", encoding="utf-8")
+            return proc
+
+        with (
+            patch("asyncio.create_subprocess_exec", new=AsyncMock(side_effect=_spawn)),
+            patch("anneal.engine.agent.compute_cost", return_value=0.007) as cost_fn,
+        ):
+            result = await invoker._invoke_codex_exec(config, "prompt", tmp_path, 60)
+
+        cost_fn.assert_called_once_with("gpt-5.4-mini", 120, 60)
+        assert result.cost_usd == pytest.approx(0.007)
+        assert result.input_tokens == 120
+        assert result.output_tokens == 60
+
 
 # ---------------------------------------------------------------------------
 # _invoke_api full path

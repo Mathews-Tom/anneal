@@ -1,0 +1,456 @@
+{
+  "comparisons": [
+    {
+      "target_id": "B3",
+      "config_a": "control",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 20000.6,
+      "mean_b": 40000.2,
+      "p_value": 0.25683925795785656,
+      "p_value_corrected": 0.5136785159157131,
+      "cohens_d": 0.43204937989385733,
+      "cohens_d_ci": [
+        -0.2760262237369416,
+        1.2780193008453875
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B5",
+      "config_a": "control",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 5.066666666666666,
+      "mean_b": 5.066666666666666,
+      "p_value": 1.0,
+      "p_value_corrected": 1.0,
+      "cohens_d": 0.0,
+      "cohens_d_ci": [
+        -0.7771380325471956,
+        0.7428565817331251
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B3",
+      "config_a": "greedy",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 26667.133333333335,
+      "mean_b": 40000.2,
+      "p_value": 0.4142161782425253,
+      "p_value_corrected": 0.8284323564850506,
+      "cohens_d": 0.2760262237369416,
+      "cohens_d_ci": [
+        -0.43204937989385733,
+        1.0692676621563628
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B5",
+      "config_a": "greedy",
+      "config_b": "treatment",
+      "metric": "final_score",
+      "mean_a": 5.0,
+      "mean_b": 5.066666666666666,
+      "p_value": 0.9637262765337525,
+      "p_value_corrected": 0.9637262765337525,
+      "cohens_d": 0.06558258357839505,
+      "cohens_d_ci": [
+        -0.6848544068760606,
+        0.7895897101713223
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B3",
+      "config_a": "greedy",
+      "config_b": "control",
+      "metric": "final_score",
+      "mean_a": 26667.133333333335,
+      "mean_b": 20000.6,
+      "p_value": 0.7054569861112734,
+      "p_value_corrected": 1.0,
+      "cohens_d": -0.15275252316519475,
+      "cohens_d_ci": [
+        -0.9660917830792958,
+        0.5465040408511787
+      ],
+      "significant": false
+    },
+    {
+      "target_id": "B5",
+      "config_a": "greedy",
+      "config_b": "control",
+      "metric": "final_score",
+      "mean_a": 5.0,
+      "mean_b": 5.066666666666666,
+      "p_value": 0.8556516543644965,
+      "p_value_corrected": 1.0,
+      "cohens_d": 0.06342703292561538,
+      "cohens_d_ci": [
+        -0.6977145589846487,
+        0.7915775762770042
+      ],
+      "significant": false
+    }
+  ],
+  "summary_stats": [
+    {
+      "target_id": "B3",
+      "config_name": "control",
+      "metric": "final_score",
+      "n": 15,
+      "mean": 20000.6,
+      "median": 1.0,
+      "std": 41403.10548187004,
+      "iqr": 0.0,
+      "minimum": 1.0,
+      "maximum": 99999.0
+    },
+    {
+      "target_id": "B3",
+      "config_name": "control",
+      "metric": "convergence_experiment",
+      "n": 15,
+      "mean": 2.7333333333333334,
+      "median": 2.0,
+      "std": 1.533747356112131,
+      "iqr": 1.0,
+      "minimum": 1.0,
+      "maximum": 7.0
+    },
+    {
+      "target_id": "B3",
+      "config_name": "control",
+      "metric": "acceptance_rate",
+      "n": 15,
+      "mean": 0.4438534713766912,
+      "median": 0.46153846153846156,
+      "std": 0.11491443819940844,
+      "iqr": 0.11589635854341729,
+      "minimum": 0.17647058823529413,
+      "maximum": 0.631578947368421
+    },
+    {
+      "target_id": "B3",
+      "config_name": "control",
+      "metric": "total_cost_usd",
+      "n": 15,
+      "mean": 13.44943416666667,
+      "median": 12.573262500000002,
+      "std": 4.210170839055964,
+      "iqr": 4.863441250000001,
+      "minimum": 7.5690075,
+      "maximum": 25.13524
+    },
+    {
+      "target_id": "B3",
+      "config_name": "greedy",
+      "metric": "final_score",
+      "n": 15,
+      "mean": 26667.133333333335,
+      "median": 1.0,
+      "std": 45772.85534628991,
+      "iqr": 49999.0,
+      "minimum": 1.0,
+      "maximum": 99999.0
+    },
+    {
+      "target_id": "B3",
+      "config_name": "greedy",
+      "metric": "convergence_experiment",
+      "n": 15,
+      "mean": 2.8666666666666667,
+      "median": 3.0,
+      "std": 1.4074631010979937,
+      "iqr": 1.5,
+      "minimum": 1.0,
+      "maximum": 6.0
+    },
+    {
+      "target_id": "B3",
+      "config_name": "greedy",
+      "metric": "acceptance_rate",
+      "n": 15,
+      "mean": 0.16488203006693644,
+      "median": 0.12903225806451613,
+      "std": 0.09733426020747239,
+      "iqr": 0.153125,
+      "minimum": 0.05128205128205128,
+      "maximum": 0.3333333333333333
+    },
+    {
+      "target_id": "B3",
+      "config_name": "greedy",
+      "metric": "total_cost_usd",
+      "n": 15,
+      "mean": 17.74254966666667,
+      "median": 14.652435000000002,
+      "std": 7.904451257742029,
+      "iqr": 12.975217499999992,
+      "minimum": 6.839247500000001,
+      "maximum": 32.16516250000001
+    },
+    {
+      "target_id": "B3",
+      "config_name": "treatment",
+      "metric": "final_score",
+      "n": 15,
+      "mean": 40000.2,
+      "median": 1.0,
+      "std": 50708.24109860532,
+      "iqr": 99998.0,
+      "minimum": 1.0,
+      "maximum": 99999.0
+    },
+    {
+      "target_id": "B3",
+      "config_name": "treatment",
+      "metric": "convergence_experiment",
+      "n": 15,
+      "mean": 3.1333333333333333,
+      "median": 3.0,
+      "std": 1.9952324127660872,
+      "iqr": 1.5,
+      "minimum": 1.0,
+      "maximum": 8.0
+    },
+    {
+      "target_id": "B3",
+      "config_name": "treatment",
+      "metric": "acceptance_rate",
+      "n": 15,
+      "mean": 0.3909117404783039,
+      "median": 0.42857142857142855,
+      "std": 0.1006717216985433,
+      "iqr": 0.13138197586726996,
+      "minimum": 0.2,
+      "maximum": 0.5333333333333333
+    },
+    {
+      "target_id": "B3",
+      "config_name": "treatment",
+      "metric": "total_cost_usd",
+      "n": 15,
+      "mean": 12.451734500000002,
+      "median": 12.050760000000002,
+      "std": 2.6306579999247415,
+      "iqr": 3.2510387499999993,
+      "minimum": 7.70945,
+      "maximum": 16.935477500000005
+    },
+    {
+      "target_id": "B5",
+      "config_name": "control",
+      "metric": "final_score",
+      "n": 15,
+      "mean": 5.066666666666666,
+      "median": 5.0,
+      "std": 1.0327955589886446,
+      "iqr": 2.0,
+      "minimum": 3.0,
+      "maximum": 6.0
+    },
+    {
+      "target_id": "B5",
+      "config_name": "control",
+      "metric": "convergence_experiment",
+      "n": 15,
+      "mean": 1.5333333333333334,
+      "median": 1.0,
+      "std": 0.7432233529572064,
+      "iqr": 1.0,
+      "minimum": 1.0,
+      "maximum": 3.0
+    },
+    {
+      "target_id": "B5",
+      "config_name": "control",
+      "metric": "acceptance_rate",
+      "n": 15,
+      "mean": 0.3266666666666667,
+      "median": 0.25,
+      "std": 0.15220600075774496,
+      "iqr": 0.17500000000000002,
+      "minimum": 0.2,
+      "maximum": 0.75
+    },
+    {
+      "target_id": "B5",
+      "config_name": "control",
+      "metric": "total_cost_usd",
+      "n": 15,
+      "mean": 4.305971416666666,
+      "median": 4.227215,
+      "std": 0.7450806927363861,
+      "iqr": 0.7069717500000001,
+      "minimum": 2.9295635,
+      "maximum": 5.704181250000001
+    },
+    {
+      "target_id": "B5",
+      "config_name": "greedy",
+      "metric": "final_score",
+      "n": 15,
+      "mean": 5.0,
+      "median": 5.0,
+      "std": 1.0690449676496976,
+      "iqr": 1.5,
+      "minimum": 3.0,
+      "maximum": 6.0
+    },
+    {
+      "target_id": "B5",
+      "config_name": "greedy",
+      "metric": "convergence_experiment",
+      "n": 15,
+      "mean": 2.066666666666667,
+      "median": 2.0,
+      "std": 1.0327955589886444,
+      "iqr": 1.5,
+      "minimum": 1.0,
+      "maximum": 4.0
+    },
+    {
+      "target_id": "B5",
+      "config_name": "greedy",
+      "metric": "acceptance_rate",
+      "n": 15,
+      "mean": 0.3988888888888889,
+      "median": 0.4,
+      "std": 0.1492662831332759,
+      "iqr": 0.15833333333333338,
+      "minimum": 0.2,
+      "maximum": 0.75
+    },
+    {
+      "target_id": "B5",
+      "config_name": "greedy",
+      "metric": "total_cost_usd",
+      "n": 15,
+      "mean": 4.238569150000001,
+      "median": 4.435908250000001,
+      "std": 0.754650240839517,
+      "iqr": 1.0002092500000002,
+      "minimum": 2.9088890000000003,
+      "maximum": 5.78381725
+    },
+    {
+      "target_id": "B5",
+      "config_name": "treatment",
+      "metric": "final_score",
+      "n": 15,
+      "mean": 5.066666666666666,
+      "median": 5.0,
+      "std": 0.961150104723255,
+      "iqr": 2.0,
+      "minimum": 4.0,
+      "maximum": 6.0
+    },
+    {
+      "target_id": "B5",
+      "config_name": "treatment",
+      "metric": "convergence_experiment",
+      "n": 15,
+      "mean": 2.533333333333333,
+      "median": 2.0,
+      "std": 1.1872336794093272,
+      "iqr": 1.5,
+      "minimum": 1.0,
+      "maximum": 5.0
+    },
+    {
+      "target_id": "B5",
+      "config_name": "treatment",
+      "metric": "acceptance_rate",
+      "n": 15,
+      "mean": 0.44333333333333347,
+      "median": 0.4,
+      "std": 0.16131896827034797,
+      "iqr": 0.09999999999999998,
+      "minimum": 0.2,
+      "maximum": 0.8
+    },
+    {
+      "target_id": "B5",
+      "config_name": "treatment",
+      "metric": "total_cost_usd",
+      "n": 15,
+      "mean": 4.386849216666667,
+      "median": 4.0992935,
+      "std": 0.7056494956065795,
+      "iqr": 0.9895676250000003,
+      "minimum": 3.4094892500000005,
+      "maximum": 5.92550025
+    }
+  ],
+  "treatment_control_deltas": {
+    "Final score": {
+      "B3": {
+        "metric": "final_score",
+        "direction": "minimize",
+        "control_mean": 20000.6,
+        "treatment_mean": 40000.2,
+        "relative_change_pct": -100.0
+      },
+      "B5": {
+        "metric": "final_score",
+        "direction": "maximize",
+        "control_mean": 5.066667,
+        "treatment_mean": 5.066667,
+        "relative_change_pct": 0.0
+      }
+    },
+    "Total cost": {
+      "B3": {
+        "metric": "total_cost_usd",
+        "direction": "minimize",
+        "control_mean": 13.449434,
+        "treatment_mean": 12.451735,
+        "relative_change_pct": 7.42
+      },
+      "B5": {
+        "metric": "total_cost_usd",
+        "direction": "maximize",
+        "control_mean": 4.305971,
+        "treatment_mean": 4.386849,
+        "relative_change_pct": 1.88
+      }
+    },
+    "Acceptance rate": {
+      "B3": {
+        "metric": "acceptance_rate",
+        "direction": "minimize",
+        "control_mean": 0.443853,
+        "treatment_mean": 0.390912,
+        "relative_change_pct": 11.93
+      },
+      "B5": {
+        "metric": "acceptance_rate",
+        "direction": "maximize",
+        "control_mean": 0.326667,
+        "treatment_mean": 0.443333,
+        "relative_change_pct": 35.71
+      }
+    },
+    "Convergence experiment": {
+      "B3": {
+        "metric": "convergence_experiment",
+        "direction": "minimize",
+        "control_mean": 2.733333,
+        "treatment_mean": 3.133333,
+        "relative_change_pct": -14.63
+      },
+      "B5": {
+        "metric": "convergence_experiment",
+        "direction": "maximize",
+        "control_mean": 1.533333,
+        "treatment_mean": 2.533333,
+        "relative_change_pct": 65.22
+      }
+    }
+  }
+}

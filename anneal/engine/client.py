@@ -43,8 +43,9 @@ def _load_pricing() -> dict[str, tuple[float, float]]:
         "gpt-4.1-mini": (0.4, 1.6),
         "gpt-5": (5.0, 20.0),
         "gpt-5-mini": (1.0, 4.0),
-        "gpt-5.4": (5.0, 20.0),
-        "gpt-5.4-mini": (1.0, 4.0),
+        "gpt-5.5": (5.0, 30.0),
+        "gpt-5.4": (2.5, 15.0),
+        "gpt-5.4-mini": (0.75, 4.5),
         "gpt-5.4-nano": (0.2, 0.8),
         "claude-sonnet-4-6": (3.0, 15.0),
         "claude-opus-4-6": (15.0, 75.0),
@@ -60,7 +61,8 @@ def _load_pricing() -> dict[str, tuple[float, float]]:
         if overrides:
             logger.info(
                 "Loaded %d pricing override(s) from %s",
-                len(overrides), _PRICING_CONFIG_PATH,
+                len(overrides),
+                _PRICING_CONFIG_PATH,
             )
     return defaults
 
@@ -162,7 +164,7 @@ def strip_provider_prefix(model: str) -> str:
     """
     for prefix in ("ollama/", "lmstudio/", "local/"):
         if model.startswith(prefix):
-            return model[len(prefix):]
+            return model[len(prefix) :]
     return model
 
 
@@ -194,12 +196,13 @@ def is_local_model(model: str) -> bool:
 def effective_temperature(model: str, requested: float) -> float:
     """Return the temperature the model will accept.
 
-    The gpt-5 family (``gpt-5``, ``gpt-5-mini``, ``gpt-5-nano``, ``gpt-5.4``,
-    ``gpt-5.4-mini``, ``gpt-5.4-nano``) rejects any value other than 1 with
-    ``BadRequestError: Unsupported value: 'temperature' does not support X
-    with this model. Only the default (1) value is supported``. This helper
-    coerces the requested temperature to 1.0 for those models, preserving
-    the caller's request for every other provider and model family.
+    The gpt-5 family (``gpt-5``, ``gpt-5-mini``, ``gpt-5-nano``,
+    ``gpt-5.5``, ``gpt-5.4``, ``gpt-5.4-mini``, ``gpt-5.4-nano``) rejects any
+    value other than 1 with ``BadRequestError: Unsupported value:
+    'temperature' does not support X with this model. Only the default (1)
+    value is supported``. This helper coerces the requested temperature to 1.0
+    for those models, preserving the caller's request for every other provider
+    and model family.
     """
     if model.startswith("gpt-5"):
         return 1.0
@@ -218,8 +221,11 @@ def compute_cost(model: str, input_tokens: int, output_tokens: int) -> float:
             "No cost data for model %s; using default pricing ($%.2f/$%.2f per MTok). "
             "To set pricing, add to %s:\n"
             '  [models."%s"]\n  input = <$/MTok>\n  output = <$/MTok>',
-            model, _DEFAULT_COSTS[0], _DEFAULT_COSTS[1],
-            _PRICING_CONFIG_PATH, model,
+            model,
+            _DEFAULT_COSTS[0],
+            _DEFAULT_COSTS[1],
+            _PRICING_CONFIG_PATH,
+            model,
         )
     costs = get_model_costs(model)
 

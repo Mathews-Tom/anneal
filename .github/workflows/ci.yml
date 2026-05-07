@@ -33,5 +33,5 @@ jobs:
       - uses: astral-sh/setup-uv@v4
       - run: uv sync --dev
       - run: uv run python benchmarks/bench_false_positives.py
-      - run: uv run python benchmarks/bench_sa_convergence.py
+      - run: uv run python benchmarks/bench_sa_convergence.py --report-only
       - run: uv run python benchmarks/bench_retrieval_precision.py

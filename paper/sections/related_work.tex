@@ -84,7 +84,7 @@ We review the most relevant systems.
 \paragraph{Promptbreeder.}
 Fernando et al.~\cite{fernando2024promptbreeder} evolve both task prompts and the mutation operators that generate them, creating a self-referential improvement loop.
 Promptbreeder's key insight is that the space of mutation operators is itself amenable to LLM-guided search.
-\textsc{anneal} captures a related idea through its strategy manifest, which decomposes the mutation approach into named components and evolves the weakest component when progress stalls, and through the policy agent, which continuously rewrites mutation instructions based on failure patterns.
+\textsc{anneal} captures a related idea through its strategy manifest, which decomposes the mutation approach into named components and evolves the weakest component when progress stalls, and through a policy-rewriting component (\texttt{PolicyAgent}) that periodically rewrites the mutation instructions in response to recurring failure patterns recorded in episodic memory.
 Unlike Promptbreeder, \textsc{anneal} applies statistical testing to accept/reject decisions and provides multiple search strategies rather than relying on a single evolutionary scheme.
 
 \paragraph{DSPy.}
@@ -198,6 +198,6 @@ Efron and Tibshirani~\cite{efron1994bootstrap} introduce the bootstrap as a gene
 
 \paragraph{Bradley--Terry scoring and LLM-as-judge calibration.}
 Bradley and Terry~\cite{bradley1952rank} propose a paired-comparison model where each item has a latent strength parameter estimated from pairwise win/loss data.
-\textsc{anneal} uses Bradley--Terry scoring with position-bias cancellation to calibrate its LLM judge: when the number of evaluation votes is two or more, half are presented with criteria in forward order and half in reverse, and the resulting win rates are combined to estimate calibrated quality scores that cancel the position bias inherent in LLM evaluation~\cite{zheng2023judging}.
-This position-bias concern is well-established in recent LLM-as-judge work: Liu et al.~\cite{liu2023geval} report that GPT-4 as a judge shows measurable order effects and prompt sensitivity, and that calibration via chain-of-thought and probability-weighted scoring yields better alignment with human judgments than raw preference counts.
+\textsc{anneal} uses Bradley--Terry scoring with position-bias cancellation to calibrate its LLM judge: when the number of evaluation votes is two or more, half are presented with criteria in forward order and half in reverse, and the resulting win rates are combined to estimate calibrated quality scores that cancel the position bias documented in LLM-as-judge work~\cite{zheng2023judging}.
+Liu et al.~\cite{liu2023geval} extend this line by showing that calibration via chain-of-thought and probability-weighted scoring yields better alignment with human judgments than raw preference counts, motivating evaluator designs that go beyond vote tallies.
 \textsc{anneal}'s Bradley--Terry aggregator is the mechanism-level counterpart: rather than trusting raw vote counts, it computes a latent strength parameter under the paired-comparison model, which is more robust to the position-bias and binary-threshold artefacts that raw counting inherits.

@@ -9,6 +9,7 @@ and computes per-run aggregate statistics.
 
 Expected filename pattern: B1-control-seed3.jsonl
 """
+
 from __future__ import annotations
 
 import json
@@ -24,6 +25,14 @@ _FILENAME_RE = re.compile(
 
 # Fraction of best score considered "converged".
 _CONVERGENCE_THRESHOLD = 0.90
+
+
+def _float_field(record: dict[str, object], key: str) -> float:
+    """Return a numeric JSON field as float or fail on malformed records."""
+    value = record.get(key, 0.0)
+    if isinstance(value, str | int | float):
+        return float(value)
+    raise ValueError(f"Expected numeric field {key!r}, got {type(value).__name__}")
 
 
 @dataclass
@@ -64,7 +73,9 @@ def _parse_jsonl(path: Path) -> list[dict[str, object]]:
     Skips blank lines and raises ValueError on malformed JSON.
     """
     records: list[dict[str, object]] = []
-    for lineno, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for lineno, raw in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
         raw = raw.strip()
         if not raw:
             continue
@@ -100,8 +111,8 @@ def _build_run_result(
     cumulative_cost: float = 0.0
 
     for rec in records:
-        score = float(rec.get("score", 0.0))
-        cost = float(rec.get("cost_usd", 0.0))
+        score = _float_field(rec, "score")
+        cost = _float_field(rec, "cost_usd")
         outcome = str(rec.get("outcome", ""))
 
         scores.append(score)

@@ -6,6 +6,7 @@ per configuration, averaged across seeds with bootstrap CI bands.
 matplotlib is optional and must be installed via the [dashboard] extra:
     uv pip install 'anneal-cli[dashboard]'
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -123,10 +124,10 @@ def plot_convergence(
         ValueError: If no results exist for target_id.
     """
     try:
-        import matplotlib
+        import matplotlib  # type: ignore[import-not-found]
+
         matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        from matplotlib.lines import Line2D
+        import matplotlib.pyplot as plt  # type: ignore[import-not-found]
     except ImportError as exc:
         raise ImportError(
             "matplotlib is required for convergence plots. "

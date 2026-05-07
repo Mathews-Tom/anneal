@@ -1363,8 +1363,8 @@
       "maximum": 30.98307219999999
     }
   ],
-  "attribution": {
-    "Strategy Manifest": {
+  "treatment_control_deltas": {
+    "Final score": {
       "B1": {
         "metric": "final_score",
         "direction": "maximize",
@@ -1401,7 +1401,7 @@
         "relative_change_pct": 25.0
       }
     },
-    "Dual-Agent Mutation": {
+    "Total cost": {
       "B1": {
         "metric": "total_cost_usd",
         "direction": "maximize",
@@ -1438,7 +1438,7 @@
         "relative_change_pct": -9.95
       }
     },
-    "Two-Phase Mutation": {
+    "Acceptance rate": {
       "B1": {
         "metric": "acceptance_rate",
         "direction": "maximize",
@@ -1475,7 +1475,7 @@
         "relative_change_pct": -13.31
       }
     },
-    "Lineage Context": {
+    "Convergence experiment": {
       "B1": {
         "metric": "convergence_experiment",
         "direction": "maximize",
@@ -1510,43 +1510,6 @@
         "control_mean": 12.0,
         "treatment_mean": 9.6,
         "relative_change_pct": -20.0
-      }
-    },
-    "Episodic Memory": {
-      "B1": {
-        "metric": "final_score",
-        "direction": "maximize",
-        "control_mean": 2.86,
-        "treatment_mean": 2.96,
-        "relative_change_pct": 3.5
-      },
-      "B2": {
-        "metric": "final_score",
-        "direction": "maximize",
-        "control_mean": 2.54,
-        "treatment_mean": 2.8,
-        "relative_change_pct": 10.24
-      },
-      "B3": {
-        "metric": "final_score",
-        "direction": "minimize",
-        "control_mean": 49.645,
-        "treatment_mean": 40.88,
-        "relative_change_pct": 17.66
-      },
-      "B4": {
-        "metric": "final_score",
-        "direction": "maximize",
-        "control_mean": 0.701,
-        "treatment_mean": 0.7832,
-        "relative_change_pct": 11.73
-      },
-      "B5": {
-        "metric": "final_score",
-        "direction": "maximize",
-        "control_mean": 1.24,
-        "treatment_mean": 1.55,
-        "relative_change_pct": 25.0
       }
     }
   }

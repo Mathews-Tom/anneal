@@ -3,20 +3,21 @@
 Usage examples:
 
     # Full analysis (stats + convergence plots + cost efficiency plots + summaries)
-    uv run python benchmarks/analysis/run_analysis.py --results-dir benchmarks/raw_results/
+    uv run python -m benchmarks.analysis.run_analysis --results-dir benchmarks/raw_results/
 
     # Statistical tests only
-    uv run python benchmarks/analysis/run_analysis.py --stats-only
+    uv run python -m benchmarks.analysis.run_analysis --stats-only
 
     # Convergence plots only
-    uv run python benchmarks/analysis/run_analysis.py --convergence-only
+    uv run python -m benchmarks.analysis.run_analysis --convergence-only
 
     # Cost efficiency plots only
-    uv run python benchmarks/analysis/run_analysis.py --cost-only
+    uv run python -m benchmarks.analysis.run_analysis --cost-only
 
     # Write outputs to a specific directory
-    uv run python benchmarks/analysis/run_analysis.py --output-dir benchmarks/results/
+    uv run python -m benchmarks.analysis.run_analysis --output-dir benchmarks/results/
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,7 +28,7 @@ from benchmarks.analysis.loader import group_by_target, load_results
 from benchmarks.analysis.statistics import run_all_comparisons
 from benchmarks.analysis.summary import (
     compute_all_summary_stats,
-    generate_attribution_analysis,
+    generate_treatment_control_deltas,
     write_json_results,
     write_markdown_summary,
 )
@@ -57,7 +58,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=Path("benchmarks/raw_results"),
         metavar="DIR",
         help="Directory containing <target>-<config>-seed<N>.jsonl files. "
-             "Default: benchmarks/raw_results/",
+        "Default: benchmarks/raw_results/",
     )
     parser.add_argument(
         "--output-dir",
@@ -128,16 +129,16 @@ def _run_stats(args: argparse.Namespace) -> int:
     )
 
     summary_stats = compute_all_summary_stats(results)
-    attribution = generate_attribution_analysis(results)
+    deltas = generate_treatment_control_deltas(results)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     json_path = args.output_dir / "statistical_tests.json"
-    write_json_results(comparisons, summary_stats, attribution, json_path)
+    write_json_results(comparisons, summary_stats, deltas, json_path)
     print(f"Written: {json_path}", flush=True)
 
     md_path = args.output_dir / "summary_table.md"
-    write_markdown_summary(comparisons, summary_stats, attribution, md_path)
+    write_markdown_summary(comparisons, summary_stats, deltas, md_path)
     print(f"Written: {md_path}", flush=True)
 
     sig_count = sum(1 for cr in comparisons if cr.significant)

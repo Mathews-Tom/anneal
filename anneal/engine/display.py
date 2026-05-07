@@ -91,6 +91,12 @@ def _outcome_str(record: Any) -> str:
     return str(raw).upper()
 
 
+def _higher_is_better(direction: Any) -> bool:
+    """Return True unless the direction explicitly says lower is better."""
+    value = getattr(direction, "value", direction)
+    return str(value).lower() not in {"minimize", "lower_is_better", "lower"}
+
+
 def _style_for(outcome_value: str) -> OutcomeStyle:
     return _OUTCOME_STYLES_BY_VALUE.get(outcome_value, _FALLBACK_STYLE)
 
@@ -226,6 +232,7 @@ def build_run_summary(
     records: list[Any],
     *,
     baseline_score: float | None = None,
+    direction: Any = None,
     mode: OutputMode = OutputMode.RICH,
 ) -> str | dict[str, Any]:
     """Build an end-of-run summary from a list of experiment records.
@@ -238,7 +245,13 @@ def build_run_summary(
     total_duration = sum(float(_get(r, "duration_seconds", 0.0)) for r in records)
 
     scores = [float(_get(r, "score", 0.0)) for r in records]
-    best = max(scores) if scores else 0.0
+    best = (
+        max(scores)
+        if scores and _higher_is_better(direction)
+        else min(scores)
+        if scores
+        else 0.0
+    )
 
     if mode is OutputMode.JSON:
         summary: dict[str, Any] = {
@@ -292,6 +305,7 @@ class LiveProgressMonitor:
         console: Console | None = None,
         max_experiments: int | None = None,
         budget: float | None = None,
+        direction: Any = None,
     ) -> None:
         self._path = jsonl_path
         self._run_label = run_label
@@ -299,6 +313,7 @@ class LiveProgressMonitor:
         self._console = console or Console()
         self._max_experiments = max_experiments
         self._budget = budget
+        self._higher_is_better = _higher_is_better(direction)
         self._records: list[dict[str, Any]] = []
         self._offset: int = 0
         self._cumulative_cost: float = 0.0
@@ -385,8 +400,10 @@ class LiveProgressMonitor:
             score = float(record.get("score", 0.0))
             if self._best_score is None:
                 self._best_score = score
-            else:
+            elif self._higher_is_better:
                 self._best_score = max(self._best_score, score)
+            else:
+                self._best_score = min(self._best_score, score)
 
             idx = len(self._records)
             exp_line = format_experiment_line(

@@ -51,7 +51,9 @@ def _make_det_eval(
     )
 
 
-def _make_subprocess_mock(returncode: int = 0, stdout: bytes = b"0.8", stderr: bytes = b"") -> AsyncMock:
+def _make_subprocess_mock(
+    returncode: int = 0, stdout: bytes = b"0.8", stderr: bytes = b""
+) -> AsyncMock:
     """Return a mock subprocess Process with communicate() returning (stdout, stderr)."""
     proc = AsyncMock()
     proc.returncode = returncode
@@ -137,7 +139,9 @@ class TestDeterministicEvaluatorFlakeDetection:
         config = _make_det_eval(flake_detection=True)
         evaluator = DeterministicEvaluator()
 
-        scores_iter = iter([EvalResult(score=0.3), EvalResult(score=0.3), EvalResult(score=1.0)])
+        scores_iter = iter(
+            [EvalResult(score=0.3), EvalResult(score=0.3), EvalResult(score=1.0)]
+        )
 
         async def _fake_once(worktree: Path, cfg: DeterministicEval) -> EvalResult:
             return next(scores_iter)
@@ -168,7 +172,9 @@ class TestDeterministicEvaluatorRetry:
 
         attempt = 0
 
-        async def _once_fail_then_succeed(worktree: Path, cfg: DeterministicEval) -> EvalResult:
+        async def _once_fail_then_succeed(
+            worktree: Path, cfg: DeterministicEval
+        ) -> EvalResult:
             nonlocal attempt
             attempt += 1
             if attempt == 1:
@@ -178,7 +184,9 @@ class TestDeterministicEvaluatorRetry:
         evaluator._evaluate_once = _once_fail_then_succeed  # type: ignore[method-assign]
 
         # Act
-        with patch("anneal.engine.eval.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with patch(
+            "anneal.engine.eval.asyncio.sleep", new_callable=AsyncMock
+        ) as mock_sleep:
             result = await evaluator._evaluate_with_retry(tmp_path, config)
 
         # Assert
@@ -217,7 +225,9 @@ class TestDeterministicEvaluatorRetry:
 
         attempt = 0
 
-        async def _once_then_succeed(worktree: Path, cfg: DeterministicEval) -> EvalResult:
+        async def _once_then_succeed(
+            worktree: Path, cfg: DeterministicEval
+        ) -> EvalResult:
             nonlocal attempt
             attempt += 1
             if attempt < 2:
@@ -227,7 +237,9 @@ class TestDeterministicEvaluatorRetry:
         evaluator._evaluate_once = _once_then_succeed  # type: ignore[method-assign]
 
         # Act
-        with patch("anneal.engine.eval.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with patch(
+            "anneal.engine.eval.asyncio.sleep", new_callable=AsyncMock
+        ) as mock_sleep:
             await evaluator._evaluate_with_retry(tmp_path, config)
 
         # Assert
@@ -256,8 +268,12 @@ class TestDeterministicEvaluatorOnce:
             raise asyncio.TimeoutError()
 
         # Act + Assert
-        with patch("anneal.engine.eval.asyncio.create_subprocess_shell", return_value=run_proc) as mock_create:
-            with patch("anneal.engine.eval.asyncio.wait_for", side_effect=_wait_for_timeout):
+        with patch(
+            "anneal.engine.eval.asyncio.create_subprocess_shell", return_value=run_proc
+        ):
+            with patch(
+                "anneal.engine.eval.asyncio.wait_for", side_effect=_wait_for_timeout
+            ):
                 with pytest.raises(EvalError, match="run_command timed out"):
                     await evaluator._evaluate_once(tmp_path, config)
 
@@ -273,7 +289,9 @@ class TestDeterministicEvaluatorOnce:
         config = _make_det_eval()
         evaluator = DeterministicEvaluator()
 
-        run_proc = _make_subprocess_mock(returncode=1, stdout=b"", stderr=b"command failed")
+        run_proc = _make_subprocess_mock(
+            returncode=1, stdout=b"", stderr=b"command failed"
+        )
 
         call_count = 0
 
@@ -287,8 +305,13 @@ class TestDeterministicEvaluatorOnce:
                 coro.close()  # type: ignore[union-attr]
             return (b"", b"command failed")
 
-        with patch("anneal.engine.eval.asyncio.create_subprocess_shell", side_effect=_fake_create):
-            with patch("anneal.engine.eval.asyncio.wait_for", side_effect=_fake_wait_for):
+        with patch(
+            "anneal.engine.eval.asyncio.create_subprocess_shell",
+            side_effect=_fake_create,
+        ):
+            with patch(
+                "anneal.engine.eval.asyncio.wait_for", side_effect=_fake_wait_for
+            ):
                 with pytest.raises(EvalError, match="run_command exited with code 1"):
                     await evaluator._evaluate_once(tmp_path, config)
 
@@ -324,8 +347,13 @@ class TestDeterministicEvaluatorOnce:
                 return (b"raw output", b"")
             raise asyncio.TimeoutError()
 
-        with patch("anneal.engine.eval.asyncio.create_subprocess_shell", side_effect=_fake_create):
-            with patch("anneal.engine.eval.asyncio.wait_for", side_effect=_fake_wait_for):
+        with patch(
+            "anneal.engine.eval.asyncio.create_subprocess_shell",
+            side_effect=_fake_create,
+        ):
+            with patch(
+                "anneal.engine.eval.asyncio.wait_for", side_effect=_fake_wait_for
+            ):
                 with pytest.raises(EvalError, match="parse_command timed out"):
                     await evaluator._evaluate_once(tmp_path, config)
 
@@ -342,7 +370,9 @@ class TestDeterministicEvaluatorOnce:
         evaluator = DeterministicEvaluator()
 
         run_proc = _make_subprocess_mock(returncode=0, stdout=b"raw output", stderr=b"")
-        parse_proc = _make_subprocess_mock(returncode=2, stdout=b"", stderr=b"parse failed")
+        parse_proc = _make_subprocess_mock(
+            returncode=2, stdout=b"", stderr=b"parse failed"
+        )
 
         create_calls = 0
 
@@ -364,8 +394,13 @@ class TestDeterministicEvaluatorOnce:
                 return (b"raw output", b"")
             return (b"", b"parse failed")
 
-        with patch("anneal.engine.eval.asyncio.create_subprocess_shell", side_effect=_fake_create):
-            with patch("anneal.engine.eval.asyncio.wait_for", side_effect=_fake_wait_for):
+        with patch(
+            "anneal.engine.eval.asyncio.create_subprocess_shell",
+            side_effect=_fake_create,
+        ):
+            with patch(
+                "anneal.engine.eval.asyncio.wait_for", side_effect=_fake_wait_for
+            ):
                 with pytest.raises(EvalError, match="parse_command exited with code 2"):
                     await evaluator._evaluate_once(tmp_path, config)
 
@@ -379,7 +414,9 @@ class TestDeterministicEvaluatorOnce:
         evaluator = DeterministicEvaluator()
 
         run_proc = _make_subprocess_mock(returncode=0, stdout=b"raw", stderr=b"")
-        parse_proc = _make_subprocess_mock(returncode=0, stdout=b"not_a_number", stderr=b"")
+        parse_proc = _make_subprocess_mock(
+            returncode=0, stdout=b"not_a_number", stderr=b""
+        )
 
         create_calls = 0
 
@@ -401,8 +438,13 @@ class TestDeterministicEvaluatorOnce:
                 return (b"raw", b"")
             return (b"not_a_number", b"")
 
-        with patch("anneal.engine.eval.asyncio.create_subprocess_shell", side_effect=_fake_create):
-            with patch("anneal.engine.eval.asyncio.wait_for", side_effect=_fake_wait_for):
+        with patch(
+            "anneal.engine.eval.asyncio.create_subprocess_shell",
+            side_effect=_fake_create,
+        ):
+            with patch(
+                "anneal.engine.eval.asyncio.wait_for", side_effect=_fake_wait_for
+            ):
                 with pytest.raises(EvalError, match="Cannot parse score as float"):
                     await evaluator._evaluate_once(tmp_path, config)
 
@@ -443,7 +485,9 @@ class TestStochasticEvaluatorErrorPaths:
         )
 
         # Act + Assert
-        with pytest.raises(EvalError, match="StochasticEval requires generation_agent_config"):
+        with pytest.raises(
+            EvalError, match="StochasticEval requires generation_agent_config"
+        ):
             await evaluator.evaluate(tmp_path, config, "artifact")
 
 
@@ -460,10 +504,16 @@ class TestEvaluateSingleSample:
 
     def _make_gen_judge_cfg(self) -> tuple[AgentConfig, AgentConfig]:
         gen_cfg = AgentConfig(
-            mode="api", model="gpt-4.1", evaluator_model="gpt-4.1", max_budget_usd=0.10,
+            mode="api",
+            model="gpt-4.1",
+            evaluator_model="gpt-4.1",
+            max_budget_usd=0.10,
         )
         judge_cfg = AgentConfig(
-            mode="api", model="gpt-4.1", evaluator_model="gpt-4.1", max_budget_usd=0.10,
+            mode="api",
+            model="gpt-4.1",
+            evaluator_model="gpt-4.1",
+            max_budget_usd=0.10,
         )
         return gen_cfg, judge_cfg
 
@@ -482,8 +532,17 @@ class TestEvaluateSingleSample:
         evaluator._score_criterion = AsyncMock(return_value=(1.0, 0.005))  # type: ignore[method-assign]
 
         # Act
-        sample_score, sample_cost, per_criterion = await evaluator._evaluate_single_sample(
-            tmp_path, config, "artifact", "p1", gen_cfg, judge_cfg,
+        (
+            sample_score,
+            sample_cost,
+            per_criterion,
+        ) = await evaluator._evaluate_single_sample(
+            tmp_path,
+            config,
+            "artifact",
+            "p1",
+            gen_cfg,
+            judge_cfg,
         )
 
         # Assert — 2 criteria × 1.0 each = 2.0 total
@@ -491,6 +550,30 @@ class TestEvaluateSingleSample:
         assert len(per_criterion) == 2
         assert per_criterion["clarity"] == pytest.approx(1.0)
         assert per_criterion["accuracy"] == pytest.approx(1.0)
+
+    @pytest.mark.asyncio
+    async def test_evaluate_limits_prompts_to_sample_count(
+        self, tmp_path: Path
+    ) -> None:
+        """Fixed stochastic evaluation honors sample_count as the sample budget."""
+        config = _make_stochastic_config(
+            test_prompts=["p1", "p2", "p3"],
+            judgment_votes=1,
+        )
+        config.sample_count = 1
+        evaluator = StochasticEvaluator()
+        expected = EvalResult(score=1.0)
+        evaluator._evaluate_with_prompts = AsyncMock(return_value=expected)  # type: ignore[method-assign]
+
+        result = await evaluator.evaluate(tmp_path, config, "artifact")
+
+        assert result is expected
+        evaluator._evaluate_with_prompts.assert_awaited_once_with(
+            tmp_path,
+            config,
+            "artifact",
+            ["p1"],
+        )
 
     @pytest.mark.asyncio
     async def test_two_votes_forward_reverse_merge_averages_scores(
@@ -527,8 +610,17 @@ class TestEvaluateSingleSample:
         evaluator._score_criterion = _score  # type: ignore[method-assign]
 
         # Act
-        sample_score, sample_cost, per_criterion = await evaluator._evaluate_single_sample(
-            tmp_path, config, "artifact", "p1", gen_cfg, judge_cfg,
+        (
+            sample_score,
+            sample_cost,
+            per_criterion,
+        ) = await evaluator._evaluate_single_sample(
+            tmp_path,
+            config,
+            "artifact",
+            "p1",
+            gen_cfg,
+            judge_cfg,
         )
 
         # Assert — each criterion = average of 1.0 and 0.0 = 0.5, total = 1.0
@@ -564,7 +656,12 @@ class TestEvaluateSingleSample:
 
         # Act
         result = await evaluator._evaluate_fixed(
-            tmp_path, config, "artifact", ["p1", "p2"], gen_cfg, judge_cfg,
+            tmp_path,
+            config,
+            "artifact",
+            ["p1", "p2"],
+            gen_cfg,
+            judge_cfg,
         )
 
         # Assert — 2 samples × score 1.0 each → mean 1.0
@@ -597,7 +694,12 @@ class TestEvaluateSingleSample:
 
         # Act
         await evaluator._evaluate_single_sample(
-            tmp_path, config, "my artifact", "hello", gen_cfg, judge_cfg,
+            tmp_path,
+            config,
+            "my artifact",
+            "hello",
+            gen_cfg,
+            judge_cfg,
         )
 
         # Assert — template was expanded
@@ -619,7 +721,10 @@ class TestGenerateSampleAPIErrors:
         """openai.APITimeoutError during generation is converted to EvalError."""
         # Arrange
         config = AgentConfig(
-            mode="api", model="gpt-4.1", evaluator_model="gpt-4.1", max_budget_usd=0.10,
+            mode="api",
+            model="gpt-4.1",
+            evaluator_model="gpt-4.1",
+            max_budget_usd=0.10,
         )
         evaluator = StochasticEvaluator()
 
@@ -640,7 +745,10 @@ class TestGenerateSampleAPIErrors:
         """openai.APIConnectionError during generation is converted to EvalError."""
         # Arrange
         config = AgentConfig(
-            mode="api", model="gpt-4.1", evaluator_model="gpt-4.1", max_budget_usd=0.10,
+            mode="api",
+            model="gpt-4.1",
+            evaluator_model="gpt-4.1",
+            max_budget_usd=0.10,
         )
         evaluator = StochasticEvaluator()
 
@@ -663,21 +771,30 @@ class TestGenerateSampleAPIErrors:
         from anneal.engine.types import AgentInvocationResult
 
         config = AgentConfig(
-            mode="claude_code", model="claude-sonnet", evaluator_model="claude-sonnet",
+            mode="claude_code",
+            model="claude-sonnet",
+            evaluator_model="claude-sonnet",
             max_budget_usd=0.10,
         )
         evaluator = StochasticEvaluator()
 
         mock_result = AgentInvocationResult(
-            success=True, cost_usd=0.07, input_tokens=300, output_tokens=150,
-            hypothesis=None, hypothesis_source="synthesized",
-            tags=[], raw_output="claude code output",
+            success=True,
+            cost_usd=0.07,
+            input_tokens=300,
+            output_tokens=150,
+            hypothesis=None,
+            hypothesis_source="synthesized",
+            tags=[],
+            raw_output="claude code output",
         )
         evaluator._invoker = AsyncMock()
         evaluator._invoker.invoke = AsyncMock(return_value=mock_result)
 
         # Act
-        text, cost = await evaluator._generate_sample(config, "the prompt", "json", tmp_path)
+        text, cost = await evaluator._generate_sample(
+            config, "the prompt", "json", tmp_path
+        )
 
         # Assert
         assert text == "claude code output"
@@ -698,7 +815,10 @@ class TestScoreCriterionAPIErrors:
         """openai.APITimeoutError during scoring is converted to EvalError."""
         # Arrange
         config = AgentConfig(
-            mode="api", model="gpt-4.1", evaluator_model="gpt-4.1", max_budget_usd=0.10,
+            mode="api",
+            model="gpt-4.1",
+            evaluator_model="gpt-4.1",
+            max_budget_usd=0.10,
         )
         criterion = BinaryCriterion(name="crit", question="Good?")
         evaluator = StochasticEvaluator()
@@ -711,7 +831,9 @@ class TestScoreCriterionAPIErrors:
         # Act + Assert
         with patch("anneal.engine.eval.make_client", return_value=mock_client):
             with pytest.raises(EvalError, match="Scoring API call failed"):
-                await evaluator._score_criterion_once(config, "sample", criterion, tmp_path)
+                await evaluator._score_criterion_once(
+                    config, "sample", criterion, tmp_path
+                )
 
     @pytest.mark.asyncio
     async def test_score_criterion_once_api_connection_error_raises_eval_error(
@@ -720,7 +842,10 @@ class TestScoreCriterionAPIErrors:
         """openai.APIConnectionError during scoring is converted to EvalError."""
         # Arrange
         config = AgentConfig(
-            mode="api", model="gpt-4.1", evaluator_model="gpt-4.1", max_budget_usd=0.10,
+            mode="api",
+            model="gpt-4.1",
+            evaluator_model="gpt-4.1",
+            max_budget_usd=0.10,
         )
         criterion = BinaryCriterion(name="crit", question="Good?")
         evaluator = StochasticEvaluator()
@@ -733,7 +858,9 @@ class TestScoreCriterionAPIErrors:
         # Act + Assert
         with patch("anneal.engine.eval.make_client", return_value=mock_client):
             with pytest.raises(EvalError, match="Scoring API call failed"):
-                await evaluator._score_criterion_once(config, "sample", criterion, tmp_path)
+                await evaluator._score_criterion_once(
+                    config, "sample", criterion, tmp_path
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -768,7 +895,9 @@ class TestEvalEngineCacheHit:
         )
 
         # Act
-        result = await engine.evaluate(tmp_path, eval_config, artifact_content="some content")
+        result = await engine.evaluate(
+            tmp_path, eval_config, artifact_content="some content"
+        )
 
         # Assert
         assert result.score == pytest.approx(0.88)
@@ -791,7 +920,9 @@ class TestEvalEngineCacheHit:
         )
 
         # Act + Assert
-        with pytest.raises(EvalError, match="Stochastic evaluation requires artifact_content"):
+        with pytest.raises(
+            EvalError, match="Stochastic evaluation requires artifact_content"
+        ):
             await engine.evaluate(tmp_path, eval_config, artifact_content=None)
 
     @pytest.mark.asyncio
@@ -1043,9 +1174,7 @@ class TestEvalEngineCheckConstraints:
 
 class TestEvalEngineEvaluateHeldOut:
     @pytest.mark.asyncio
-    async def test_evaluate_held_out_no_stochastic_raises(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_evaluate_held_out_no_stochastic_raises(self, tmp_path: Path) -> None:
         """evaluate_held_out raises EvalError when stochastic is not configured."""
         # Arrange (line 690)
         engine = EvalEngine()
@@ -1056,7 +1185,9 @@ class TestEvalEngineEvaluateHeldOut:
         )
 
         # Act + Assert
-        with pytest.raises(EvalError, match="Held-out evaluation requires stochastic config"):
+        with pytest.raises(
+            EvalError, match="Held-out evaluation requires stochastic config"
+        ):
             await engine.evaluate_held_out(tmp_path, eval_config, "artifact")
 
     @pytest.mark.asyncio
@@ -1095,7 +1226,9 @@ class TestEvalEngineEvaluateHeldOut:
         engine._stochastic.evaluate_held_out = AsyncMock(return_value=expected_result)  # type: ignore[method-assign]
 
         # Act
-        result = await engine.evaluate_held_out(tmp_path, eval_config, "artifact content")
+        result = await engine.evaluate_held_out(
+            tmp_path, eval_config, "artifact content"
+        )
 
         # Assert
         assert result.score == pytest.approx(0.77)
@@ -1163,7 +1296,9 @@ class TestEvalEngineEvaluateMisc:
         engine._stochastic.evaluate = AsyncMock(return_value=expected_result)  # type: ignore[method-assign]
 
         # Act
-        result = await engine.evaluate(tmp_path, eval_config, artifact_content="artifact")
+        result = await engine.evaluate(
+            tmp_path, eval_config, artifact_content="artifact"
+        )
 
         # Assert
         assert result.score == pytest.approx(0.65)
@@ -1184,7 +1319,10 @@ class TestScoreCriterion:
         # Arrange (lines 655-674 majority vote path)
         evaluator = StochasticEvaluator()
         config = AgentConfig(
-            mode="api", model="gpt-4.1", evaluator_model="gpt-4.1", max_budget_usd=0.10,
+            mode="api",
+            model="gpt-4.1",
+            evaluator_model="gpt-4.1",
+            max_budget_usd=0.10,
         )
         criterion = BinaryCriterion(name="c", question="Good?")
 
@@ -1193,7 +1331,12 @@ class TestScoreCriterion:
 
         # Act
         score, cost = await evaluator._score_criterion(
-            config, "sample", criterion, tmp_path, votes=3, comparison_mode="majority_vote",
+            config,
+            "sample",
+            criterion,
+            tmp_path,
+            votes=3,
+            comparison_mode="majority_vote",
         )
 
         # Assert — all YES → majority = 1.0
@@ -1208,14 +1351,22 @@ class TestScoreCriterion:
         # Arrange
         evaluator = StochasticEvaluator()
         config = AgentConfig(
-            mode="api", model="gpt-4.1", evaluator_model="gpt-4.1", max_budget_usd=0.10,
+            mode="api",
+            model="gpt-4.1",
+            evaluator_model="gpt-4.1",
+            max_budget_usd=0.10,
         )
         criterion = BinaryCriterion(name="c", question="Good?")
         evaluator._score_criterion_once = AsyncMock(return_value=(0.0, 0.01))  # type: ignore[method-assign]
 
         # Act
         score, cost = await evaluator._score_criterion(
-            config, "sample", criterion, tmp_path, votes=3, comparison_mode="majority_vote",
+            config,
+            "sample",
+            criterion,
+            tmp_path,
+            votes=3,
+            comparison_mode="majority_vote",
         )
 
         # Assert — all NO → majority = 0.0
@@ -1229,7 +1380,10 @@ class TestScoreCriterion:
         # Arrange (lines 663-666 bradley_terry early stop)
         evaluator = StochasticEvaluator()
         config = AgentConfig(
-            mode="api", model="gpt-4.1", evaluator_model="gpt-4.1", max_budget_usd=0.10,
+            mode="api",
+            model="gpt-4.1",
+            evaluator_model="gpt-4.1",
+            max_budget_usd=0.10,
         )
         criterion = BinaryCriterion(name="c", question="Good?")
 
@@ -1238,7 +1392,12 @@ class TestScoreCriterion:
 
         # Act — with 10 votes, but should stop after 2 if confidence is met
         score, cost = await evaluator._score_criterion(
-            config, "sample", criterion, tmp_path, votes=10, comparison_mode="bradley_terry",
+            config,
+            "sample",
+            criterion,
+            tmp_path,
+            votes=10,
+            comparison_mode="bradley_terry",
         )
 
         # Assert — score should be high (all YES), stopped before 10 votes
@@ -1254,7 +1413,10 @@ class TestScoreCriterion:
         # Arrange (lines 668-670 bradley_terry no early stop)
         evaluator = StochasticEvaluator()
         config = AgentConfig(
-            mode="api", model="gpt-4.1", evaluator_model="gpt-4.1", max_budget_usd=0.10,
+            mode="api",
+            model="gpt-4.1",
+            evaluator_model="gpt-4.1",
+            max_budget_usd=0.10,
         )
         criterion = BinaryCriterion(name="c", question="Good?")
 
@@ -1270,7 +1432,12 @@ class TestScoreCriterion:
 
         # Act — with only 2 votes (minimum to potentially trigger), uncertain result
         score, cost = await evaluator._score_criterion(
-            config, "sample", criterion, tmp_path, votes=2, comparison_mode="bradley_terry",
+            config,
+            "sample",
+            criterion,
+            tmp_path,
+            votes=2,
+            comparison_mode="bradley_terry",
         )
 
         # Assert — BT mean is returned (not 0.0 or 1.0 exactly)

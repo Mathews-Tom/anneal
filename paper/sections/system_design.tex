@@ -53,7 +53,7 @@ The experiment cycle within the worktree proceeds as follows; \cref{alg:experime
 \begin{algorithmic}[1]
 \Require Target $\mathcal{T} = (\text{artifact}, \text{eval}, \text{agent})$, worktree $W$, search strategy $\mathcal{S}$
 \State $\textit{sha}_{\text{pre}} \gets \Call{RevParse}{W, \text{HEAD}}$
-\State \Call{VerifyScopeHash}{$\mathcal{T}$.\textit{scope\_path}, $\mathcal{T}$.\textit{scope\_hash}}
+\State \Call{VerifyScopeHash}{$\mathcal{T}$.\textit{scope\_path}, $\mathcal{T}$.\textit{scope\_hash}} \Comment{halt if SHA-256 of \texttt{scope.yaml} differs from registration}
 \State $\textit{prompt} \gets \Call{BuildContext}{\mathcal{T}, W, \textit{history}}$ \Comment{knowledge + lineage + research hints}
 \If{$\mathcal{T}$.\textit{two\_phase\_mutation}}
     \State $\textit{diagnosis} \gets \Call{Diagnose}{\textit{artifact}, \textit{last\_eval}, \textit{history}}$

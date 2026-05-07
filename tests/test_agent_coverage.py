@@ -66,6 +66,14 @@ def _cc_config(*, model: str = "gpt-4.1") -> AgentConfig:
     )
 
 
+def _codex_config(*, model: str = "gpt-5.4") -> AgentConfig:
+    return AgentConfig(
+        mode="codex_exec",
+        model=model,
+        evaluator_model="gpt-5.4-mini",
+    )
+
+
 def _mock_openai_response(
     content: str,
     prompt_tokens: int = 100,
@@ -686,6 +694,110 @@ class TestInvokeClaudeCodeAllowedTools:
         assert result.cost_usd == pytest.approx(0.015)
         assert result.input_tokens == 200
         assert result.output_tokens == 80
+
+
+class TestInvokeCodexExec:
+    @pytest.mark.asyncio
+    async def test_normal_mode_uses_workspace_write_sandbox(
+        self, tmp_path: Path
+    ) -> None:
+        invoker = AgentInvoker()
+        config = _codex_config()
+        proc = _make_streaming_proc(stdout=b"")
+
+        async def _spawn(*cmd: str, **_kwargs: object) -> MagicMock:
+            output_idx = list(cmd).index("--output-last-message")
+            Path(cmd[output_idx + 1]).write_text(
+                "## Hypothesis\nUse Codex.\n## Tags\ncodex, backend",
+                encoding="utf-8",
+            )
+            return proc
+
+        with patch(
+            "asyncio.create_subprocess_exec", new=AsyncMock(side_effect=_spawn)
+        ) as mock_exec:
+            result = await invoker._invoke_codex_exec(config, "prompt", tmp_path, 60)
+
+        call_args = mock_exec.call_args[0]
+        sandbox_idx = list(call_args).index("--sandbox")
+        model_idx = list(call_args).index("--model")
+        assert call_args[0:2] == ("codex", "exec")
+        assert call_args[sandbox_idx + 1] == "workspace-write"
+        assert call_args[model_idx + 1] == "gpt-5.4"
+        assert result.hypothesis == "Use Codex."
+        assert result.tags == ["codex", "backend"]
+
+    @pytest.mark.asyncio
+    async def test_deployment_mode_uses_read_only_sandbox(self, tmp_path: Path) -> None:
+        invoker = AgentInvoker()
+        config = _codex_config()
+        proc = _make_streaming_proc(stdout=b"")
+
+        async def _spawn(*cmd: str, **_kwargs: object) -> MagicMock:
+            output_idx = list(cmd).index("--output-last-message")
+            Path(cmd[output_idx + 1]).write_text("readonly", encoding="utf-8")
+            return proc
+
+        with patch(
+            "asyncio.create_subprocess_exec", new=AsyncMock(side_effect=_spawn)
+        ) as mock_exec:
+            await invoker._invoke_codex_exec(
+                config, "prompt", tmp_path, 60, deployment_mode=True
+            )
+
+        call_args = mock_exec.call_args[0]
+        sandbox_idx = list(call_args).index("--sandbox")
+        assert call_args[sandbox_idx + 1] == "read-only"
+
+    @pytest.mark.asyncio
+    async def test_parses_direct_cost_from_jsonl_stdout(self, tmp_path: Path) -> None:
+        invoker = AgentInvoker()
+        config = _codex_config()
+        stdout = (
+            b'{"type":"turn.completed","total_cost_usd":0.012,'
+            b'"usage":{"input_tokens":200,"output_tokens":80}}\n'
+        )
+        proc = _make_streaming_proc(stdout=stdout)
+
+        async def _spawn(*cmd: str, **_kwargs: object) -> MagicMock:
+            output_idx = list(cmd).index("--output-last-message")
+            Path(cmd[output_idx + 1]).write_text("done", encoding="utf-8")
+            return proc
+
+        with patch("asyncio.create_subprocess_exec", new=AsyncMock(side_effect=_spawn)):
+            result = await invoker._invoke_codex_exec(config, "prompt", tmp_path, 60)
+
+        assert result.cost_usd == pytest.approx(0.012)
+        assert result.input_tokens == 200
+        assert result.output_tokens == 80
+
+    @pytest.mark.asyncio
+    async def test_computes_cost_from_jsonl_usage_when_cost_absent(
+        self, tmp_path: Path
+    ) -> None:
+        invoker = AgentInvoker()
+        config = _codex_config(model="gpt-5.4-mini")
+        stdout = (
+            b'{"type":"response.completed","response":'
+            b'{"usage":{"input_tokens":120,"output_tokens":60}}}\n'
+        )
+        proc = _make_streaming_proc(stdout=stdout)
+
+        async def _spawn(*cmd: str, **_kwargs: object) -> MagicMock:
+            output_idx = list(cmd).index("--output-last-message")
+            Path(cmd[output_idx + 1]).write_text("done", encoding="utf-8")
+            return proc
+
+        with (
+            patch("asyncio.create_subprocess_exec", new=AsyncMock(side_effect=_spawn)),
+            patch("anneal.engine.agent.compute_cost", return_value=0.007) as cost_fn,
+        ):
+            result = await invoker._invoke_codex_exec(config, "prompt", tmp_path, 60)
+
+        cost_fn.assert_called_once_with("gpt-5.4-mini", 120, 60)
+        assert result.cost_usd == pytest.approx(0.007)
+        assert result.input_tokens == 120
+        assert result.output_tokens == 60
 
 
 # ---------------------------------------------------------------------------

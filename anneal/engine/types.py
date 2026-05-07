@@ -70,7 +70,7 @@ class RunnerState(Enum):
 class AgentConfig(BaseModel):
     """Configuration for the mutation agent."""
 
-    mode: Literal["claude_code", "api"]
+    mode: Literal["claude_code", "codex_exec", "api"]
     model: str
     evaluator_model: str
     max_budget_usd: float = Field(default=0.10, gt=0)

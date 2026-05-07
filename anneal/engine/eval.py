@@ -42,9 +42,15 @@ def _sanitize_api_content(text: str) -> str:
     carriage return) that cause openai.BadRequestError on serialization.
     """
     return text.translate(
-        str.maketrans("", "", "".join(chr(c) for c in range(32) if c not in (9, 10, 13)))
+        str.maketrans(
+            "", "", "".join(chr(c) for c in range(32) if c not in (9, 10, 13))
+        )
     )
-_CLAUDE_CODE_SEMAPHORE = asyncio.Semaphore(3)  # Limit concurrent Claude Code subprocesses
+
+
+_CLAUDE_CODE_SEMAPHORE = asyncio.Semaphore(
+    3
+)  # Limit concurrent Claude Code subprocesses
 
 
 class EvalError(Exception):
@@ -78,7 +84,9 @@ async def run_verifiers(
             if proc is not None:
                 proc.kill()
                 await proc.wait()
-            results.append((verifier.name, False, f"timed out after {verifier.timeout_seconds}s"))
+            results.append(
+                (verifier.name, False, f"timed out after {verifier.timeout_seconds}s")
+            )
             return results
 
         assert proc is not None
@@ -128,7 +136,9 @@ class DeterministicEvaluator:
             for i in range(3):
                 result = await self._evaluate_with_retry(worktree_path, config)
                 scores.append(result.score)
-                logger.debug("Flake detection run %d/3: score=%.4f", i + 1, result.score)
+                logger.debug(
+                    "Flake detection run %d/3: score=%.4f", i + 1, result.score
+                )
             median = float(sorted(scores)[1])
             return EvalResult(score=median)
         return await self._evaluate_with_retry(worktree_path, config)
@@ -147,7 +157,10 @@ class DeterministicEvaluator:
                 if attempt < config.max_retries - 1:
                     logger.warning(
                         "Eval attempt %d/%d failed: %s. Retrying in %.1fs...",
-                        attempt + 1, config.max_retries, exc, config.retry_delay_seconds,
+                        attempt + 1,
+                        config.max_retries,
+                        exc,
+                        config.retry_delay_seconds,
                     )
                     await asyncio.sleep(config.retry_delay_seconds)
         raise last_error  # type: ignore[misc]
@@ -217,7 +230,9 @@ class DeterministicEvaluator:
         try:
             score = float(output)
         except ValueError:
-            raise EvalError(f"Cannot parse score as float from parse_command output: {output!r}")
+            raise EvalError(
+                f"Cannot parse score as float from parse_command output: {output!r}"
+            )
 
         return EvalResult(score=score)
 
@@ -278,8 +293,14 @@ class StochasticEvaluator:
         config: StochasticEval,
         artifact_content: str,
     ) -> EvalResult:
+        prompts = config.test_prompts[: config.sample_count]
+        if not prompts:
+            raise EvalError("No test_prompts configured for stochastic evaluation")
         return await self._evaluate_with_prompts(
-            worktree_path, config, artifact_content, config.test_prompts,
+            worktree_path,
+            config,
+            artifact_content,
+            prompts,
         )
 
     async def evaluate_held_out(
@@ -296,7 +317,10 @@ class StochasticEvaluator:
         if not config.held_out_prompts:
             raise EvalError("No held_out_prompts configured for held-out evaluation")
         return await self._evaluate_with_prompts(
-            worktree_path, config, artifact_content, config.held_out_prompts,
+            worktree_path,
+            config,
+            artifact_content,
+            config.held_out_prompts,
         )
 
     async def _evaluate_with_prompts(
@@ -324,10 +348,20 @@ class StochasticEvaluator:
 
         if config.adaptive_sampling:
             return await self._evaluate_adaptive(
-                worktree_path, config, artifact_content, prompts, gen_cfg, judge_cfg,
+                worktree_path,
+                config,
+                artifact_content,
+                prompts,
+                gen_cfg,
+                judge_cfg,
             )
         return await self._evaluate_fixed(
-            worktree_path, config, artifact_content, prompts, gen_cfg, judge_cfg,
+            worktree_path,
+            config,
+            artifact_content,
+            prompts,
+            gen_cfg,
+            judge_cfg,
         )
 
     async def _evaluate_single_sample(
@@ -353,20 +387,28 @@ class StochasticEvaluator:
             artifact_content=artifact_content,
         )
         sample_text, gen_cost = await self._generate_sample(
-            gen_cfg, formatted_prompt, config.output_format, worktree_path,
+            gen_cfg,
+            formatted_prompt,
+            config.output_format,
+            worktree_path,
         )
         sample_cost = gen_cost
 
         per_criterion: dict[str, float] = {}
 
         async def _score_batch(
-            criteria: list[BinaryCriterion], batch_votes: int,
+            criteria: list[BinaryCriterion],
+            batch_votes: int,
         ) -> dict[str, tuple[float, float]]:
             """Score all criteria concurrently. Returns {name: (score, cost)}."""
             tasks = [
                 self._score_criterion(
-                    judge_cfg, sample_text, criterion, worktree_path,
-                    votes=batch_votes, comparison_mode=comparison_mode,
+                    judge_cfg,
+                    sample_text,
+                    criterion,
+                    worktree_path,
+                    votes=batch_votes,
+                    comparison_mode=comparison_mode,
                 )
                 for criterion in criteria
             ]
@@ -418,8 +460,7 @@ class StochasticEvaluator:
         criterion_names = [c.name for c in config.criteria]
 
         per_criterion_scores = {
-            name: float(np.mean(per_criterion_totals[name]))
-            for name in criterion_names
+            name: float(np.mean(per_criterion_totals[name])) for name in criterion_names
         }
 
         score_bytes = ",".join(f"{s:.6f}" for s in per_sample_scores).encode()
@@ -456,11 +497,18 @@ class StochasticEvaluator:
         """
         total_cost = 0.0
         per_sample_scores: list[float] = []
-        per_criterion_totals: dict[str, list[float]] = {c.name: [] for c in config.criteria}
+        per_criterion_totals: dict[str, list[float]] = {
+            c.name: [] for c in config.criteria
+        }
 
         sample_tasks = [
             self._evaluate_single_sample(
-                worktree_path, config, artifact_content, prompt, gen_cfg, judge_cfg,
+                worktree_path,
+                config,
+                artifact_content,
+                prompt,
+                gen_cfg,
+                judge_cfg,
             )
             for prompt in prompts
         ]
@@ -473,7 +521,10 @@ class StochasticEvaluator:
                 per_criterion_totals[crit_name].append(crit_val)
 
         return self._aggregate_eval_result(
-            config, per_sample_scores, per_criterion_totals, total_cost,
+            config,
+            per_sample_scores,
+            per_criterion_totals,
+            total_cost,
         )
 
     async def _evaluate_adaptive(
@@ -497,12 +548,23 @@ class StochasticEvaluator:
 
         total_cost = 0.0
         all_scores: list[float] = []
-        per_criterion_totals: dict[str, list[float]] = {c.name: [] for c in config.criteria}
+        per_criterion_totals: dict[str, list[float]] = {
+            c.name: [] for c in config.criteria
+        }
 
         async def _collect_sample(index: int) -> None:
             prompt = prompts[index % len(prompts)]
-            sample_score, sample_cost, per_criterion = await self._evaluate_single_sample(
-                worktree_path, config, artifact_content, prompt, gen_cfg, judge_cfg,
+            (
+                sample_score,
+                sample_cost,
+                per_criterion,
+            ) = await self._evaluate_single_sample(
+                worktree_path,
+                config,
+                artifact_content,
+                prompt,
+                gen_cfg,
+                judge_cfg,
             )
             all_scores.append(sample_score)
             nonlocal total_cost
@@ -519,26 +581,32 @@ class StochasticEvaluator:
         if n >= 2:
             mean = sum(all_scores) / n
             variance = sum((s - mean) ** 2 for s in all_scores) / (n - 1)
-            std = variance ** 0.5
+            std = variance**0.5
             if std > 0:
                 effect_size = abs(mean) / std
 
                 if effect_size > config.early_stop_effect_size:
                     logger.info(
                         "Adaptive sampling: early stop at %d/%d samples (d=%.2f)",
-                        n, config.sample_count, effect_size,
+                        n,
+                        config.sample_count,
+                        effect_size,
                     )
                 elif effect_size < config.extend_effect_size:
                     extend_count = min(config.sample_count // 2, max_count - n)
                     logger.info(
                         "Adaptive sampling: extending by %d samples (d=%.2f)",
-                        extend_count, effect_size,
+                        extend_count,
+                        effect_size,
                     )
                     for i in range(extend_count):
                         await _collect_sample(n + i)
 
         return self._aggregate_eval_result(
-            config, all_scores, per_criterion_totals, total_cost,
+            config,
+            all_scores,
+            per_criterion_totals,
+            total_cost,
         )
 
     async def _generate_sample(
@@ -552,12 +620,15 @@ class StochasticEvaluator:
 
         Dispatches to Claude Code subprocess or API based on config.mode.
         """
-        if config.mode == "claude_code":
+        if config.mode in {"claude_code", "codex_exec"}:
             async with _CLAUDE_CODE_SEMAPHORE:
                 full_prompt = f"Generate output in {output_format} format.\n\n{prompt}"
                 result = await self._invoker.invoke(
-                    config, full_prompt, worktree_path,
-                    time_budget_seconds=120, deployment_mode=True,
+                    config,
+                    full_prompt,
+                    worktree_path,
+                    time_budget_seconds=120,
+                    deployment_mode=True,
                 )
                 return result.raw_output, result.cost_usd
 
@@ -577,7 +648,11 @@ class StochasticEvaluator:
                         {"role": "user", "content": prompt},
                     ],
                 )
-        except (openai.APITimeoutError, openai.APIConnectionError, openai.BadRequestError) as exc:
+        except (
+            openai.APITimeoutError,
+            openai.APIConnectionError,
+            openai.BadRequestError,
+        ) as exc:
             raise EvalError(f"Generation API call failed: {exc}") from exc
         text = _sanitize_api_content(response.choices[0].message.content or "")
         cost = _extract_cost(response, model)
@@ -605,12 +680,15 @@ class StochasticEvaluator:
             f"## Output to evaluate\n\n{sanitized_sample}"
         )
 
-        if config.mode == "claude_code":
+        if config.mode in {"claude_code", "codex_exec"}:
             async with _CLAUDE_CODE_SEMAPHORE:
                 full_prompt = f"{system_msg}\n\n{user_msg}"
                 result = await self._invoker.invoke(
-                    config, full_prompt, worktree_path,
-                    time_budget_seconds=60, deployment_mode=True,
+                    config,
+                    full_prompt,
+                    worktree_path,
+                    time_budget_seconds=60,
+                    deployment_mode=True,
                 )
                 return _parse_yes_no(result.raw_output), result.cost_usd
 
@@ -627,8 +705,14 @@ class StochasticEvaluator:
                         {"role": "user", "content": user_msg},
                     ],
                 )
-        except (openai.APITimeoutError, openai.APIConnectionError, openai.BadRequestError) as exc:
-            raise EvalError(f"Scoring API call failed for {criterion.name}: {exc}") from exc
+        except (
+            openai.APITimeoutError,
+            openai.APIConnectionError,
+            openai.BadRequestError,
+        ) as exc:
+            raise EvalError(
+                f"Scoring API call failed for {criterion.name}: {exc}"
+            ) from exc
         raw_answer = response.choices[0].message.content or ""
         cost = _extract_cost(response, model)
         return _parse_yes_no(raw_answer), cost
@@ -652,18 +736,24 @@ class StochasticEvaluator:
         to a single judgment call.
         """
         if votes <= 1 and comparison_mode == "majority_vote":
-            return await self._score_criterion_once(config, sample, criterion, worktree_path)
+            return await self._score_criterion_once(
+                config, sample, criterion, worktree_path
+            )
 
         yes_count = 0
         total_cost = 0.0
 
         for i in range(votes):
-            binary, cost = await self._score_criterion_once(config, sample, criterion, worktree_path)
+            binary, cost = await self._score_criterion_once(
+                config, sample, criterion, worktree_path
+            )
             yes_count += int(binary)
             total_cost += cost
 
             if comparison_mode == "bradley_terry" and i >= 1:
-                mean, uncertainty = BradleyTerryScorer.estimate_strength(yes_count, i + 1)
+                mean, uncertainty = BradleyTerryScorer.estimate_strength(
+                    yes_count, i + 1
+                )
                 if BradleyTerryScorer.should_stop_early(mean, uncertainty):
                     return (mean, total_cost)
 
@@ -710,7 +800,9 @@ class EvalEngine:
         artifact_content: str | None = None,
     ) -> EvalResult:
         if eval_config.deterministic is not None:
-            return await self._deterministic.evaluate(worktree_path, eval_config.deterministic)
+            return await self._deterministic.evaluate(
+                worktree_path, eval_config.deterministic
+            )
 
         if eval_config.stochastic is not None:
             if artifact_content is None:
@@ -721,7 +813,8 @@ class EvalEngine:
                 cached = self._cache.get(artifact_content, criteria_names)
                 if cached is not None:
                     logger.info(
-                        "EvalCache hit (rate=%.1f%%)", self._cache.hit_rate * 100,
+                        "EvalCache hit (rate=%.1f%%)",
+                        self._cache.hit_rate * 100,
                     )
                     return EvalResult(
                         score=cached.score,
@@ -745,7 +838,9 @@ class EvalEngine:
 
             return result
 
-        raise EvalError("EvalConfig has neither deterministic nor stochastic configuration")
+        raise EvalError(
+            "EvalConfig has neither deterministic nor stochastic configuration"
+        )
 
     async def evaluate_held_out(
         self,
@@ -759,7 +854,9 @@ class EvalEngine:
         if not eval_config.stochastic.held_out_prompts:
             raise EvalError("No held_out_prompts configured")
         return await self._stochastic.evaluate_held_out(
-            worktree_path, eval_config.stochastic, artifact_content,
+            worktree_path,
+            eval_config.stochastic,
+            artifact_content,
         )
 
     async def check_constraints(
@@ -783,7 +880,10 @@ class EvalEngine:
             and eval_config.stochastic.min_criterion_scores
             and per_criterion_scores is not None
         ):
-            for criterion_name, threshold in eval_config.stochastic.min_criterion_scores.items():
+            for (
+                criterion_name,
+                threshold,
+            ) in eval_config.stochastic.min_criterion_scores.items():
                 actual = per_criterion_scores.get(criterion_name, 0.0)
                 passed = actual >= threshold
                 results.append((criterion_name, passed, actual))
